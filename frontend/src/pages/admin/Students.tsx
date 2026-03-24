@@ -1,0 +1,631 @@
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import { useNotification } from '../../context/NotificationContext';
+
+const generateRandomPassword = () => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let pass = '';
+    for (let i = 0; i < 8; i++) {
+        pass += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return pass;
+};
+
+const Students: React.FC = () => {
+    const [students, setStudents] = useState<any[]>([]);
+    const [classes, setClasses] = useState<any[]>([]);
+    const [sections, setSections] = useState<any[]>([]);
+    const { addNotification } = useNotification();
+
+    const [loading, setLoading] = useState(false);
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [currentPage, setCurrentPage] = useState(1);
+    const recordsPerPage = 5;
+
+    // Form fields
+    const [firstName, setFirstName] = useState('');
+    const [lastName, setLastName] = useState('');
+    const [email, setEmail] = useState('');
+    const [phone, setPhone] = useState('');
+    const [password, setPassword] = useState(generateRandomPassword()); // Default password
+    const [admissionNo, setAdmissionNo] = useState('');
+    const [classId, setClassId] = useState('');
+    const [sectionId, setSectionId] = useState('');
+
+    const [gender, setGender] = useState('');
+    const [dob, setDob] = useState('');
+    const [address, setAddress] = useState('');
+    const [bloodGroup, setBloodGroup] = useState('');
+    const [category, setCategory] = useState('');
+    const [religion, setReligion] = useState('');
+    const [nationality, setNationality] = useState('');
+    const [aadhaar, setAadhaar] = useState('');
+    const [photo, setPhoto] = useState('');
+    const [showPhotoModal, setShowPhotoModal] = useState(false);
+
+    const [activeTab, setActiveTab] = useState('personal');
+    // Academic fields
+    const [admissionDate, setAdmissionDate] = useState('');
+    const [rollNumber, setRollNumber] = useState('');
+    const [medium, setMedium] = useState('');
+    const [academicYear, setAcademicYear] = useState('');
+    const [house, setHouse] = useState('');
+
+    const [prevSchoolName, setPrevSchoolName] = useState('');
+    const [prevClass, setPrevClass] = useState('');
+    const [prevSchoolAddress, setPrevSchoolAddress] = useState('');
+    const [prevMarks, setPrevMarks] = useState('');
+    const [leavingReason, setLeavingReason] = useState('');
+    const [siblingInfo, setSiblingInfo] = useState('');
+
+    // Parent details
+    const [fatherName, setFatherName] = useState('');
+    const [fatherMobile, setFatherMobile] = useState('');
+    const [fatherOccupation, setFatherOccupation] = useState('');
+    const [fatherQualification, setFatherQualification] = useState('');
+    const [fatherEmail, setFatherEmail] = useState('');
+
+    const [motherName, setMotherName] = useState('');
+    const [motherMobile, setMotherMobile] = useState('');
+    const [motherOccupation, setMotherOccupation] = useState('');
+    const [motherQualification, setMotherQualification] = useState('');
+
+    useEffect(() => {
+        fetchStudents();
+        fetchClasses();
+    }, []);
+
+
+    useEffect(() => {
+        // When class changes, update available sections
+        if (classId) {
+            const cls = classes.find(c => c.id === classId);
+            setSections(cls?.sections || []);
+            setSectionId(''); // Reset section
+        } else {
+            setSections([]);
+        }
+    }, [classId, classes]);
+
+    const fetchStudents = async () => {
+        try {
+            const res = await axios.get('http://localhost:5000/api/admin/students');
+            setStudents(res.data);
+            setCurrentPage(1);
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
+    const fetchClasses = async () => {
+        try {
+            const res = await axios.get('http://localhost:5000/api/admin/classes');
+            setClasses(res.data);
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
+    const resetForm = () => {
+        setEditingId(null);
+        setFirstName(''); setLastName(''); setEmail(''); setPhone(''); setPassword(generateRandomPassword()); setAdmissionNo('');
+        setClassId(''); setSectionId('');
+        setGender(''); setDob(''); setAddress(''); setBloodGroup(''); setCategory('');
+        setReligion(''); setNationality(''); setAadhaar(''); setPhoto('');
+        setPrevSchoolName(''); setPrevClass(''); setPrevSchoolAddress(''); setPrevMarks(''); setLeavingReason(''); setSiblingInfo('');
+        setAdmissionDate(''); setRollNumber(''); setMedium(''); setAcademicYear(''); setHouse('');
+        setFatherName(''); setFatherMobile(''); setFatherOccupation(''); setFatherQualification(''); setFatherEmail('');
+        setMotherName(''); setMotherMobile(''); setMotherOccupation(''); setMotherQualification('');
+        setActiveTab('personal');
+    };
+
+    const handleEdit = (student: any) => {
+        setEditingId(student.id);
+        
+        const parts = student.name ? student.name.split(' ') : [];
+        setFirstName(parts[0] || '');
+        setLastName(parts.slice(1).join(' ') || '');
+        
+        setEmail(student.email || '');
+        setPhone(student.user?.phone || student.phone || '');
+        setPassword('');
+        
+        setAdmissionNo(student.admissionNo || '');
+        
+        setClassId(student.classId || '');
+        setTimeout(() => setSectionId(student.sectionId || ''), 100);
+        
+        setGender(student.gender || '');
+        setDob(student.dateOfBirth || '');
+        setAddress(student.user?.address || student.address || '');
+        setBloodGroup(student.bloodGroup || '');
+        setCategory(student.category || '');
+        setReligion(student.religion || '');
+        setNationality(student.nationality || '');
+        setAadhaar(student.aadhaarNumber || '');
+        setPhoto(student.photo || '');
+        
+        setAdmissionDate(student.admissionDate ? new Date(student.admissionDate).toISOString().split('T')[0] : '');
+        setRollNumber(student.rollNumber || '');
+        setMedium(student.medium || '');
+        setAcademicYear(student.academicYear || '');
+        setHouse(student.house || '');
+        
+        setPrevSchoolName(student.prevSchoolName || '');
+        setPrevClass(student.prevClass || '');
+        setPrevSchoolAddress(student.prevSchoolAddress || '');
+        setPrevMarks(student.prevMarks || '');
+        setLeavingReason(student.leavingReason || '');
+        setSiblingInfo(student.siblingInfo || '');
+        
+        setFatherName(student.fatherName || '');
+        setFatherMobile(student.fatherMobile || '');
+        setFatherOccupation(student.fatherOccupation || '');
+        setFatherQualification(student.fatherQualification || '');
+        setFatherEmail(student.fatherEmail || '');
+        
+        setMotherName(student.motherName || '');
+        setMotherMobile(student.motherMobile || '');
+        setMotherOccupation(student.motherOccupation || '');
+        setMotherQualification(student.motherQualification || '');
+        
+        setActiveTab('personal');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!firstName || !classId || !sectionId) return alert('Please fill required fields');
+
+        setLoading(true);
+        
+        let finalEmail = email.trim();
+        if (!finalEmail) {
+            finalEmail = `${firstName.toLowerCase().replace(/\s+/g, '')}.${Math.floor(Math.random() * 10000)}@bips.local`;
+        }
+        
+        try {
+            if (editingId) {
+                const originalStudent = students.find(s => s.id === editingId);
+                let finalAdmissionNo = admissionNo || originalStudent?.admissionNo;
+
+                await axios.put(`http://localhost:5000/api/admin/students/${editingId}`, {
+                    firstName, lastName, email: finalEmail, phone, password, admissionNo: finalAdmissionNo, classId, sectionId,
+                    gender, dob, address, bloodGroup, category, religion, nationality, aadhaar, photo,
+                    prevSchoolName, prevClass, prevSchoolAddress, prevMarks, leavingReason, siblingInfo,
+                    admissionDate, rollNumber, medium, academicYear, house,
+                    fatherName, fatherMobile, fatherOccupation, fatherQualification, fatherEmail,
+                    motherName, motherMobile, motherOccupation, motherQualification
+                });
+                addNotification('admission', 'Student Updated', `${firstName} ${lastName} has been updated successfully!`);
+            } else {
+                const nextNumber = students.length + 1;
+                const finalAdmissionNo = `BIPS/26/${String(nextNumber).padStart(3, '0')}`;
+                
+                await axios.post('http://localhost:5000/api/admin/students', {
+                    firstName, lastName, email: finalEmail, phone, password, admissionNo: finalAdmissionNo, classId, sectionId,
+                    gender, dob, address, bloodGroup, category, religion, nationality, aadhaar, photo,
+                    prevSchoolName, prevClass, prevSchoolAddress, prevMarks, leavingReason, siblingInfo,
+                    admissionDate, rollNumber, medium, academicYear, house,
+                    fatherName, fatherMobile, fatherOccupation, fatherQualification, fatherEmail,
+                    motherName, motherMobile, motherOccupation, motherQualification
+                });
+                addNotification('admission', 'New Admission', `${firstName} ${lastName} has been admitted successfully!`);
+            }
+            
+            fetchStudents();
+            resetForm();
+        } catch (err: any) {
+            console.error(err);
+            alert(err.response?.data?.error || 'Failed to save student');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleDelete = async (id: string) => {
+        if (!window.confirm('Are you sure you want to delete this student?')) return;
+        try {
+            await axios.delete(`http://localhost:5000/api/admin/students/${id}`);
+            fetchStudents();
+            alert('Student deleted successfully');
+        } catch (err) {
+            alert('Failed to delete student');
+        }
+    };
+
+    return (
+        <div>
+            <h1 style={{ marginBottom: '2rem', fontSize: '1.875rem', fontWeight: 800 }}>Student Management</h1>
+
+            {/* Add Student Card */}
+            <div className="stat-card" style={{ display: 'block', marginBottom: '2rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                    <h3 style={{ fontWeight: 'bold', margin: 0 }}>{editingId ? 'Edit Student Details' : 'Admit New Student'}</h3>
+                    {editingId && <button type="button" onClick={resetForm} className="btn-secondary" style={{ padding: '0.4rem 1rem', borderRadius: '4px', cursor: 'pointer', background: '#e5e7eb', border: 'none' }}>Cancel Edit</button>}
+                </div>
+
+                <form onSubmit={handleSubmit}>
+                    <div style={{ display: 'flex', gap: '1rem', borderBottom: '1px solid #e5e7eb', marginBottom: '1.5rem' }}>
+                        <button type="button" onClick={() => setActiveTab('personal')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.5rem 1rem', fontSize: '1rem', fontWeight: activeTab === 'personal' ? 'bold' : 'normal', color: activeTab === 'personal' ? '#2563eb' : '#6b7280', borderBottom: activeTab === 'personal' ? '2px solid #2563eb' : 'none' }}>Personal Information</button>
+                        <button type="button" onClick={() => setActiveTab('academic')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.5rem 1rem', fontSize: '1rem', fontWeight: activeTab === 'academic' ? 'bold' : 'normal', color: activeTab === 'academic' ? '#2563eb' : '#6b7280', borderBottom: activeTab === 'academic' ? '2px solid #2563eb' : 'none' }}>Previous Schooling & Details</button>
+                        <button type="button" onClick={() => setActiveTab('parent')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.5rem 1rem', fontSize: '1rem', fontWeight: activeTab === 'parent' ? 'bold' : 'normal', color: activeTab === 'parent' ? '#2563eb' : '#6b7280', borderBottom: activeTab === 'parent' ? '2px solid #2563eb' : 'none' }}>Parent Information</button>
+                        <button type="button" onClick={() => setActiveTab('sibling')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.5rem 1rem', fontSize: '1rem', fontWeight: activeTab === 'sibling' ? 'bold' : 'normal', color: activeTab === 'sibling' ? '#2563eb' : '#6b7280', borderBottom: activeTab === 'sibling' ? '2px solid #2563eb' : 'none' }}>Sibling Information</button>
+                    </div>
+
+                    {activeTab === 'personal' && (
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
+                            <div className="form-group">
+                                <label>Student ID</label>
+                                <input type="text" className="form-control" value="Auto Generated" disabled style={{ backgroundColor: '#f0f0f0' }} />
+                            </div>
+
+                             <div className="form-group">
+                                <label>Class of Admission</label>
+                                <select className="form-control" value={classId} onChange={e => setClassId(e.target.value)} required>
+                                    <option value="">Select Class</option>
+                                    {classes.map(cls => <option key={cls.id} value={cls.id}>{cls.name}</option>)}
+                                </select>
+                            </div>
+
+                            <div className="form-group">
+                                <label>First Name</label>
+                                <input type="text" className="form-control" value={firstName} onChange={e => setFirstName(e.target.value)} required />
+                            </div>
+
+                            <div className="form-group">
+                                <label>Last Name (optional)</label>
+                                <input type="text" className="form-control" value={lastName} onChange={e => setLastName(e.target.value)} />
+                            </div>
+
+                            <div className="form-group">
+                                <label>Gender</label>
+                                <select className="form-control" value={gender} onChange={e => setGender(e.target.value)}>
+                                    <option value="">Select Gender</option>
+                                    <option value="Male">Male</option>
+                                    <option value="Female">Female</option>
+                                    <option value="Other">Other</option>
+                                </select>
+                            </div>
+
+                            <div className="form-group">
+                                <label>Date of Birth</label>
+                                <input type="date" className="form-control" value={dob} onChange={e => setDob(e.target.value)} />
+                            </div>
+
+                            <div className="form-group">
+                                <label>Email Address(optional)</label>
+                                <input type="email" className="form-control" value={email} onChange={e => setEmail(e.target.value)} />
+                            </div>
+
+                            <div className="form-group">
+                                <label>Phone Number</label>
+                                <input type="text" className="form-control" maxLength={10} value={phone} onChange={e => setPhone(e.target.value.replace(/\D/g, ''))} />
+                            </div>
+
+                            <div className="form-group">
+                                <label>Blood Group</label>
+                                <select className="form-control" value={bloodGroup} onChange={e => setBloodGroup(e.target.value)}>
+                                    <option value="">Select Blood Group</option>
+                                    <option value="A+">A+</option>
+                                    <option value="A-">A-</option>
+                                    <option value="B+">B+</option>
+                                    <option value="B-">B-</option>
+                                    <option value="AB+">AB+</option>
+                                    <option value="AB-">AB-</option>
+                                    <option value="O+">O+</option>
+                                    <option value="O-">O-</option>
+                                </select>
+                            </div>
+
+                            <div className="form-group">
+                                <label>Category</label>
+                                <select className="form-control" value={category} onChange={e => setCategory(e.target.value)}>
+                                    <option value="">Select Category</option>
+                                    <option value="General">General</option>
+                                    <option value="OBC">OBC</option>
+                                    <option value="SC">SC</option>
+                                    <option value="ST">ST</option>
+                                </select>
+                            </div>
+
+                            <div className="form-group">
+                                <label>Religion</label>
+                                <input type="text" className="form-control" value={religion} onChange={e => setReligion(e.target.value)} />
+                            </div>
+
+                            <div className="form-group">
+                                <label>Nationality</label>
+                                <input type="text" className="form-control" value={nationality} onChange={e => setNationality(e.target.value)} />
+                            </div>
+
+                            <div className="form-group">
+                                <label>Address</label>
+                                <input type="text" className="form-control" value={address} onChange={e => setAddress(e.target.value)} />
+                            </div>
+
+                            <div className="form-group">
+                                <label>Aadhaar Number (optional)</label>
+                                <input type="text" className="form-control" value={aadhaar} onChange={e => setAadhaar(e.target.value)} />
+                            </div>
+
+                            <div className="form-group">
+                                <label>Student Photo (Upload)</label>
+                                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                                    <input type="file" className="form-control" accept="image/*" onChange={e => {
+                                        const file = e.target.files?.[0];
+                                        if (file) {
+                                            const reader = new FileReader();
+                                            reader.onloadend = () => setPhoto(reader.result as string);
+                                            reader.readAsDataURL(file);
+                                        }
+                                    }} style={{ flex: 1 }} />
+                                    {photo && (
+                                        <div 
+                                            onClick={() => setShowPhotoModal(true)}
+                                            title="Click to view full photo"
+                                            style={{ width: '45px', height: '45px', borderRadius: '8px', overflow: 'hidden', border: '1px solid #cbd5e1', boxShadow: '0 2px 5px rgba(0,0,0,0.05)', flexShrink: 0, cursor: 'pointer' }}
+                                        >
+                                            <img src={photo} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="form-group">
+                                <label>Default Password</label>
+                                <input type="text" className="form-control" value={password} onChange={e => setPassword(e.target.value)} />
+                            </div>
+
+                        </div>
+                    )}
+
+                    {activeTab === 'academic' && (
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
+                            <div className="form-group">
+                                <label>Admission Date</label>
+                                <input type="date" className="form-control" value={admissionDate} onChange={e => setAdmissionDate(e.target.value)} />
+                            </div>
+
+
+                            <div className="form-group">
+                                <label>Section</label>
+                                <select className="form-control" value={sectionId} onChange={e => setSectionId(e.target.value)} required disabled={!classId}>
+                                    <option value="">Select Section</option>
+                                    {sections.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                </select>
+                            </div>
+
+                            <div className="form-group">
+                                <label>Roll Number</label>
+                                <input type="text" className="form-control" value={rollNumber} onChange={e => setRollNumber(e.target.value)} />
+                            </div>
+
+                            <div className="form-group">
+                                <label>Medium</label>
+                                <select className="form-control" value={medium} onChange={e => setMedium(e.target.value)}>
+                                    <option value="">Select Medium</option>
+                                    <option value="English">English</option>
+                                    <option value="Hindi">Hindi</option>
+                                </select>
+                            </div>
+
+                            <div className="form-group">
+                                <label>Academic Year</label>
+                                <input type="text" className="form-control" value={academicYear} onChange={e => setAcademicYear(e.target.value)} placeholder="e.g. 2026-2027" />
+                            </div>
+
+                            <div className="form-group">
+                                <label>House (optional)</label>
+                                <input type="text" className="form-control" value={house} onChange={e => setHouse(e.target.value)} />
+                            </div>
+
+                            <div className="form-group">
+                                <label>Previous School Name</label>
+                                <input type="text" className="form-control" value={prevSchoolName} onChange={e => setPrevSchoolName(e.target.value)} />
+                            </div>
+                            <div className="form-group">
+                                <label>Previous Class / Course</label>
+                                <input type="text" className="form-control" value={prevClass} onChange={e => setPrevClass(e.target.value)} />
+                            </div>
+                            <div className="form-group">
+                                <label>Previous School Address</label>
+                                <input type="text" className="form-control" value={prevSchoolAddress} onChange={e => setPrevSchoolAddress(e.target.value)} />
+                            </div>
+                            <div className="form-group">
+                                <label>Previous Marks / Percentage</label>
+                                <input type="text" className="form-control" value={prevMarks} onChange={e => setPrevMarks(e.target.value)} />
+                            </div>
+                            <div className="form-group">
+                                <label>Reason of Leaving</label>
+                                <input type="text" className="form-control" value={leavingReason} onChange={e => setLeavingReason(e.target.value)} placeholder="e.g. Relocating, Fees issue" />
+                            </div>
+                        </div>
+                    )}
+
+                    {activeTab === 'parent' && (
+                        <div>
+                            <h4 style={{ marginBottom: '1rem', fontSize: '1.1rem', fontWeight: 'bold' }}>Father Details</h4>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '2rem' }}>
+                                <div className="form-group">
+                                    <label>Father Name</label>
+                                    <input type="text" className="form-control" value={fatherName} onChange={e => setFatherName(e.target.value)} />
+                                </div>
+                                <div className="form-group">
+                                    <label>Father Mobile</label>
+                                    <input type="text" className="form-control" maxLength={10} value={fatherMobile} onChange={e => setFatherMobile(e.target.value.replace(/\D/g, ''))} />
+                                </div>
+                                <div className="form-group">
+                                    <label>Father Occupation</label>
+                                    <input type="text" className="form-control" value={fatherOccupation} onChange={e => setFatherOccupation(e.target.value)} />
+                                </div>
+                                <div className="form-group">
+                                    <label>Father Qualification</label>
+                                    <input type="text" className="form-control" value={fatherQualification} onChange={e => setFatherQualification(e.target.value)} />
+                                </div>
+                                <div className="form-group">
+                                    <label>Father Email</label>
+                                    <input type="email" className="form-control" value={fatherEmail} onChange={e => setFatherEmail(e.target.value)} />
+                                </div>
+                            </div>
+
+                            <h4 style={{ marginBottom: '1rem', fontSize: '1.1rem', fontWeight: 'bold' }}>Mother Details</h4>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
+                                <div className="form-group">
+                                    <label>Mother Name</label>
+                                    <input type="text" className="form-control" value={motherName} onChange={e => setMotherName(e.target.value)} />
+                                </div>
+                                <div className="form-group">
+                                    <label>Mother Mobile</label>
+                                    <input type="text" className="form-control" maxLength={10} value={motherMobile} onChange={e => setMotherMobile(e.target.value.replace(/\D/g, ''))} />
+                                </div>
+                                <div className="form-group">
+                                    <label>Mother Occupation</label>
+                                    <input type="text" className="form-control" value={motherOccupation} onChange={e => setMotherOccupation(e.target.value)} />
+                                </div>
+                                <div className="form-group">
+                                    <label>Mother Qualification</label>
+                                    <input type="text" className="form-control" value={motherQualification} onChange={e => setMotherQualification(e.target.value)} />
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {activeTab === 'sibling' && (
+                        <div>
+                            <h4 style={{ marginBottom: '1rem', fontSize: '1.1rem', fontWeight: 'bold', color: '#1e40af', borderBottom: '2px solid #e2e8f0', paddingBottom: '0.5rem' }}>Sibling Information</h4>
+                            <div className="form-group">
+                                <label>Brother & Sisters Studying here (Name, Class)</label>
+                                <textarea 
+                                    className="form-control" 
+                                    value={siblingInfo} 
+                                    onChange={e => setSiblingInfo(e.target.value)} 
+                                    placeholder="Enter sibling names and classes if any..." 
+                                    style={{ minHeight: '120px', padding: '0.75rem' }}
+                                />
+                            </div>
+                        </div>
+                    )}
+
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid #e5e7eb' }}>
+                        <button type="submit" className="btn-primary" disabled={loading}>
+                            {editingId ? 'Update Student' : 'Submit Admission'}
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            {/* List */}
+            <div className="data-table-container">
+                <div className="table-header">
+                    <h2 style={{ fontSize: '1.25rem', fontWeight: 700 }}>Student Records</h2>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>S.R No</th>
+                            <th>STUDENT ID</th>
+                            <th>CLASS OF ADM.</th>
+                            <th>NAME</th>
+                            <th>EMAIL</th>
+                            <th>CLASS</th>
+                            <th>SECTION</th>
+                            <th>STATUS</th>
+                            <th>ACTION</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {(() => {
+                            const lastIndex = currentPage * recordsPerPage;
+                            const firstIndex = lastIndex - recordsPerPage;
+                            const currentRecords = [...students].reverse().slice(firstIndex, lastIndex);
+                            
+                            return currentRecords.map((s, idx) => (
+                                <tr key={s.id}>
+                                    <td>{s.admissionNo || `BIPS/26/${String(students.length - (firstIndex + idx)).padStart(3, '0')}`}</td>
+                                    <td>{s.studentId || 'N/A'}</td>
+                                    <td style={{ fontWeight: 'bold' }}>{s.className || 'N/A'}</td>
+                                    <td>{s.name}</td>
+                                    <td>{s.email}</td>
+                                    <td>{s.className}</td>
+                                    <td>{s.sectionName}</td>
+                                    <td><span className="badge badge-success">Active</span></td>
+                                    <td style={{ display: 'flex', gap: '0.5rem' }}>
+                                        <button 
+                                            className="btn-primary" 
+                                            onClick={() => handleEdit(s)} 
+                                            style={{ padding: '0.3rem 0.6rem', fontSize: '0.875rem', backgroundColor: '#3b82f6', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                                        >
+                                            Edit
+                                        </button>
+                                        <button 
+                                            className="btn-danger" 
+                                            onClick={() => handleDelete(s.id)} 
+                                            style={{ padding: '0.3rem 0.6rem', fontSize: '0.875rem', backgroundColor: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                                        >
+                                            Delete
+                                        </button>
+                                    </td>
+                                </tr>
+                            ));
+                        })()}
+                    </tbody>
+                </table>
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem', marginTop: '1.5rem', padding: '1rem' }}>
+                    {(() => {
+                        const totalPages = Math.ceil(students.length / recordsPerPage);
+                        const pages = [];
+                        for(let i=1; i<=totalPages; i++) pages.push(i);
+                        
+                        return (
+                            <>
+                                <button 
+                                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))} 
+                                    disabled={currentPage === 1}
+                                    style={{ padding: '0.4rem 0.8rem', border: '1px solid #e2e8f0', borderRadius: '6px', background: 'white', cursor: currentPage === 1 ? 'not-allowed' : 'pointer', opacity: currentPage === 1 ? 0.5 : 1 }}
+                                >
+                                    Previous
+                                </button>
+                                {pages.map(p => (
+                                    <button 
+                                        key={p} 
+                                        onClick={() => setCurrentPage(p)}
+                                        style={{ 
+                                            padding: '0.4rem 0.8rem', 
+                                            border: '1px solid #e2e8f0', 
+                                            borderRadius: '6px', 
+                                            backgroundColor: currentPage === p ? '#2563eb' : 'white', 
+                                            color: currentPage === p ? 'white' : '#64748b',
+                                            fontWeight: 'bold',
+                                            cursor: 'pointer'
+                                        }}
+                                    >
+                                        {p}
+                                    </button>
+                                ))}
+                                <button 
+                                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} 
+                                    disabled={currentPage === totalPages}
+                                    style={{ padding: '0.4rem 0.8rem', border: '1px solid #e2e8f0', borderRadius: '6px', background: 'white', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer', opacity: currentPage === totalPages ? 0.5 : 1 }}
+                                >
+                                    Next
+                                </button>
+                            </>
+                        );
+                    })()}
+                </div>
+            </div>
+            {showPhotoModal && photo && (
+                <div 
+                    onClick={() => setShowPhotoModal(false)}
+                    title="Click anywhere to close"
+                    style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'zoom-out' }}
+                >
+                    <img src={photo} alt="Student Full Preview" style={{ maxHeight: '90vh', maxWidth: '90vw', border: '4px solid white', borderRadius: '12px', objectFit: 'contain', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)' }} />
+                </div>
+            )}
+        </div>
+    );
+};
+
+export default Students;

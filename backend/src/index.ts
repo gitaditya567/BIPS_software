@@ -21,6 +21,11 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
+// Remove double slashes from URL (Nginx/aaPanel proxy quirk)
+app.use((req, res, next) => {
+    req.url = req.url.replace(/\/{2,}/g, '/');
+    next();
+});
 
 // Routes
 app.use('/api/admin', adminRoutes);

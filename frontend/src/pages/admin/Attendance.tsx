@@ -38,7 +38,7 @@ const Attendance: React.FC = () => {
 
     const fetchClasses = async () => {
         try {
-            const res = await axios.get('http://localhost:5000/api/admin/classes');
+            const res = await axios.get('/api/admin/classes');
             setClasses(res.data);
         } catch (err) {
             console.error('Error fetching classes:', err);
@@ -48,7 +48,7 @@ const Attendance: React.FC = () => {
     const fetchStudents = async () => {
         setLoading(true);
         try {
-            const res = await axios.get('http://localhost:5000/api/admin/students');
+            const res = await axios.get('/api/admin/students');
             // Filter by class and section
             const filtered = res.data.filter((s: any) => s.classId === selectedClass && s.sectionId === selectedSection);
             setStudents(filtered.map((s: any, index: number) => ({
@@ -75,7 +75,7 @@ const Attendance: React.FC = () => {
         }
         
         try {
-            await axios.post('http://localhost:5000/api/general/attendance', {
+            await axios.post('/api/general/attendance', {
                 date,
                 classId: selectedClass,
                 sectionId: selectedSection,

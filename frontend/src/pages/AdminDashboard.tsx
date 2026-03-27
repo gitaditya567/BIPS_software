@@ -11,7 +11,6 @@ import {
     Bell,
     CheckCircle2,
     Clock,
-    DollarSign,
     UserPlus,
     School,
     IndianRupee,
@@ -33,7 +32,7 @@ const AdminDashboard: React.FC = () => {
     useEffect(() => {
         const fetchDashboardData = async () => {
             try {
-                const res = await axios.get('http://localhost:5000/api/admin/dashboard/stats');
+                const res = await axios.get('/api/admin/dashboard/stats');
                 if (res.data) {
                     setStats(res.data.stats);
                     setRecentActivities(res.data.recentActivities);

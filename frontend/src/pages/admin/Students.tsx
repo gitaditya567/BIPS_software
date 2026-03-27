@@ -22,6 +22,31 @@ const Students: React.FC = () => {
     const [currentPage, setCurrentPage] = useState(1);
     const recordsPerPage = 5;
 
+    const [filterClassId, setFilterClassId] = useState('');
+    const [filterSectionId, setFilterSectionId] = useState('');
+    const [filterSections, setFilterSections] = useState<any[]>([]);
+    const [searchQuery, setSearchQuery] = useState('');
+
+    useEffect(() => {
+        if (filterClassId) {
+            const cls = classes.find(c => c.id === filterClassId);
+            setFilterSections(cls?.sections || []);
+            setFilterSectionId('');
+        } else {
+            setFilterSections([]);
+            setFilterSectionId('');
+        }
+        setCurrentPage(1);
+    }, [filterClassId, classes]);
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [filterSectionId]);
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchQuery]);
+
     // Form fields
     const [firstName, setFirstName] = useState('');
     const [lastName, setLastName] = useState('');
@@ -89,7 +114,7 @@ const Students: React.FC = () => {
 
     const fetchStudents = async () => {
         try {
-            const res = await axios.get('http://localhost:5000/api/admin/students');
+            const res = await axios.get('/api/admin/students');
             setStudents(res.data);
             setCurrentPage(1);
         } catch (err) {
@@ -99,7 +124,7 @@ const Students: React.FC = () => {
 
     const fetchClasses = async () => {
         try {
-            const res = await axios.get('http://localhost:5000/api/admin/classes');
+            const res = await axios.get('/api/admin/classes');
             setClasses(res.data);
         } catch (err) {
             console.error(err);
@@ -189,7 +214,7 @@ const Students: React.FC = () => {
                 const originalStudent = students.find(s => s.id === editingId);
                 let finalAdmissionNo = admissionNo || originalStudent?.admissionNo;
 
-                await axios.put(`http://localhost:5000/api/admin/students/${editingId}`, {
+                await axios.put(`/api/admin/students/${editingId}`, {
                     firstName, lastName, email: finalEmail, phone, password, admissionNo: finalAdmissionNo, classId, sectionId,
                     gender, dob, address, bloodGroup, category, religion, nationality, aadhaar, photo,
                     prevSchoolName, prevClass, prevSchoolAddress, prevMarks, leavingReason, siblingInfo,
@@ -202,7 +227,7 @@ const Students: React.FC = () => {
                 const nextNumber = students.length + 1;
                 const finalAdmissionNo = `BIPS/26/${String(nextNumber).padStart(3, '0')}`;
                 
-                await axios.post('http://localhost:5000/api/admin/students', {
+                await axios.post('/api/admin/students', {
                     firstName, lastName, email: finalEmail, phone, password, admissionNo: finalAdmissionNo, classId, sectionId,
                     gender, dob, address, bloodGroup, category, religion, nationality, aadhaar, photo,
                     prevSchoolName, prevClass, prevSchoolAddress, prevMarks, leavingReason, siblingInfo,
@@ -226,13 +251,30 @@ const Students: React.FC = () => {
     const handleDelete = async (id: string) => {
         if (!window.confirm('Are you sure you want to delete this student?')) return;
         try {
-            await axios.delete(`http://localhost:5000/api/admin/students/${id}`);
+            await axios.delete(`/api/admin/students/${id}`);
             fetchStudents();
             alert('Student deleted successfully');
         } catch (err) {
             alert('Failed to delete student');
         }
     };
+
+    let filteredStudents = [...students].reverse();
+    if (filterClassId) {
+        filteredStudents = filteredStudents.filter(s => s.classId === filterClassId);
+    }
+    if (filterSectionId) {
+        filteredStudents = filteredStudents.filter(s => s.sectionId === filterSectionId);
+    }
+    if (searchQuery) {
+        const lowerQ = searchQuery.toLowerCase();
+        filteredStudents = filteredStudents.filter(s => 
+            (s.name && s.name.toLowerCase().includes(lowerQ)) ||
+            (s.admissionNo && s.admissionNo.toLowerCase().includes(lowerQ)) ||
+            (s.studentId && s.studentId.toLowerCase().includes(lowerQ))
+        );
+    }
+    const totalPages = Math.ceil(filteredStudents.length / recordsPerPage) || 1;
 
     return (
         <div>
@@ -517,8 +559,26 @@ const Students: React.FC = () => {
 
             {/* List */}
             <div className="data-table-container">
-                <div className="table-header">
-                    <h2 style={{ fontSize: '1.25rem', fontWeight: 700 }}>Student Records</h2>
+                <div className="table-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+                    <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0 }}>Student Records</h2>
+                    <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                        <input 
+                            type="text" 
+                            className="form-control" 
+                            placeholder="Search Name or SR No..." 
+                            value={searchQuery} 
+                            onChange={e => setSearchQuery(e.target.value)}
+                            style={{ width: '220px', margin: 0, padding: '0.4rem 0.8rem', borderRadius: '6px', border: '1px solid #cbd5e1' }}
+                        />
+                        <select className="form-control" value={filterClassId} onChange={e => setFilterClassId(e.target.value)} style={{ width: '200px', margin: 0, padding: '0.4rem', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+                            <option value="">All Classes</option>
+                            {classes.map(cls => <option key={cls.id} value={cls.id}>{cls.name}</option>)}
+                        </select>
+                        <select className="form-control" value={filterSectionId} onChange={e => setFilterSectionId(e.target.value)} disabled={!filterClassId} style={{ width: '200px', margin: 0, padding: '0.4rem', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+                            <option value="">All Sections</option>
+                            {filterSections.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                        </select>
+                    </div>
                 </div>
                 <table>
                     <thead>
@@ -538,11 +598,11 @@ const Students: React.FC = () => {
                         {(() => {
                             const lastIndex = currentPage * recordsPerPage;
                             const firstIndex = lastIndex - recordsPerPage;
-                            const currentRecords = [...students].reverse().slice(firstIndex, lastIndex);
+                            const currentRecords = filteredStudents.slice(firstIndex, lastIndex);
                             
                             return currentRecords.map((s, idx) => (
                                 <tr key={s.id}>
-                                    <td>{s.admissionNo || `BIPS/26/${String(students.length - (firstIndex + idx)).padStart(3, '0')}`}</td>
+                                    <td>{s.admissionNo || `BIPS/26/${String(filteredStudents.length - (firstIndex + idx)).padStart(3, '0')}`}</td>
                                     <td>{s.studentId || 'N/A'}</td>
                                     <td style={{ fontWeight: 'bold' }}>{s.className || 'N/A'}</td>
                                     <td>{s.name}</td>
@@ -573,7 +633,6 @@ const Students: React.FC = () => {
                 </table>
                 <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem', marginTop: '1.5rem', padding: '1rem' }}>
                     {(() => {
-                        const totalPages = Math.ceil(students.length / recordsPerPage);
                         const pages = [];
                         for(let i=1; i<=totalPages; i++) pages.push(i);
                         

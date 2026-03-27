@@ -23,18 +23,18 @@ const MyFees: React.FC = () => {
     const fetchData = async () => {
         try {
             // Fetch History
-            const historyRes = await axios.get(`http://localhost:5000/api/fees/history/${studentInfo.id}`);
+            const historyRes = await axios.get(`/api/fees/history/${studentInfo.id}`);
             setFeeHistory(historyRes.data);
             
             // Fetch Structure
-            const structRes = await axios.get('http://localhost:5000/api/fees/structure');
+            const structRes = await axios.get('/api/fees/structure');
             const studentClassStruct = structRes.data.find((s: any) => s.id === studentInfo.class?.id || s.className === studentInfo.class?.name);
             if (studentClassStruct && studentClassStruct.fees) {
                 setFeeStructure(studentClassStruct.fees);
             }
 
             // Fetch Heads (to know type)
-            const headsRes = await axios.get('http://localhost:5000/api/fees/heads');
+            const headsRes = await axios.get('/api/fees/heads');
             setFeeHeads(headsRes.data);
             
         } catch (error) {

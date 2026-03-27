@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Bus, MapPin, Clock, Plus, Phone, User, Users, CheckCircle, XCircle, Trash2 } from 'lucide-react';
+import { Bus, MapPin, Clock } from 'lucide-react';
 
 const Transport: React.FC = () => {
     const [activeTab, setActiveTab] = useState('bus-timing');
@@ -43,7 +43,6 @@ const Transport: React.FC = () => {
     // Form states
     const [newBus, setNewBus] = useState({ busNo: '', vehicleNo: '', driverName: '', mobile: '', conductorName: '', seats: '', status: 'Active' });
     const [newRoute, setNewRoute] = useState({ routeName: '', busNo: '', startLocation: '', endLocation: '' });
-    const [tempPickupPoint, setTempPickupPoint] = useState({ stop: '', time: '' });
     const [addedPoints, setAddedPoints] = useState<{ stop: string, time: string }[]>([]);
 
     // Timing Form State

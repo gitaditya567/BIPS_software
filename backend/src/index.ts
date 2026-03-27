@@ -15,6 +15,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkey12345';
 import adminRoutes from './routes/admin';
 import feeRoutes from './routes/fees';
 import generalRoutes from './routes/general';
+import teacherRoutes from './routes/teacher';
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
@@ -25,6 +26,13 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use('/api/admin', adminRoutes);
 app.use('/api/fees', feeRoutes);
 app.use('/api/general', generalRoutes);
+app.use('/api/teacher', teacherRoutes);
+
+// Fallback Routes for stripped prefixes (aaPanel)
+app.use('/admin', adminRoutes);
+app.use('/fees', feeRoutes);
+app.use('/general', generalRoutes);
+app.use('/teacher', teacherRoutes);
 
 
 app.get('/api/health', (req, res) => {
@@ -32,7 +40,7 @@ app.get('/api/health', (req, res) => {
 });
 
 // Admin Login
-app.post('/api/login', async (req, res) => {
+const loginHandler = async (req: express.Request, res: express.Response): Promise<any> => {
     try {
         const { email, password, role } = req.body;
         let user;
@@ -107,7 +115,11 @@ app.post('/api/login', async (req, res) => {
         console.error('Login error:', error);
         res.status(500).json({ error: 'Internal server error' });
     }
-});
+};
+
+app.post('/api/login', loginHandler);
+app.post('/login', loginHandler);
+app.post('//login', loginHandler);
 
 app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);

@@ -1,33 +1,115 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
 import { useNotification } from '../../context/NotificationContext';
 
 const Attendance: React.FC = () => {
     const { addNotification } = useNotification();
-    // Form states
     const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
-    const [selectedClass, setSelectedClass] = useState('');
-    const [section, setSection] = useState('');
-    const [subject, setSubject] = useState('');
+    const [selectedClassId, setSelectedClassId] = useState('');
+    const [sectionId, setSectionId] = useState('');
 
-    // Attendance students list
-    const [students, setStudents] = useState([
-        { rollNo: 1, name: 'Aditya', attendance: 'Present' },
-        { rollNo: 2, name: 'Rahul', attendance: 'Absent' },
-    ]);
+    const [classes, setClasses] = useState<any[]>([]);
+    const [students, setStudents] = useState<any[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [isSaved, setIsSaved] = useState(false);
 
-    const handleAttendanceChange = (rollNo: number, status: string) => {
-        setStudents(students.map(s => s.rollNo === rollNo ? { ...s, attendance: status } : s));
+    const userRaw = localStorage.getItem('user');
+    const user = userRaw ? JSON.parse(userRaw) : null;
+    const teacherId = user?.id;
+
+    useEffect(() => {
+        if (!teacherId) return;
+        const fetchClasses = async () => {
+            try {
+                const res = await axios.get(`/api/teacher/${teacherId}/classes`);
+                setClasses(res.data);
+            } catch (err) {
+                console.error("Failed to fetch classes", err);
+            }
+        };
+        fetchClasses();
+    }, [teacherId]);
+
+    const fetchStudentsForClass = async (classId: string, sectId: string, targetDate: string) => {
+        if (!classId || !sectId) return;
+        setLoading(true);
+        try {
+            const res = await axios.get(`/api/teacher/students?classId=${classId}&sectionId=${sectId}&date=${targetDate}`);
+            
+            let hasSaved = false;
+            const sList = res.data.map((s: any) => {
+                if (s.existingAttendance) hasSaved = true;
+                return {
+                    id: s.id,
+                    rollNo: s.rollNo,
+                    name: s.name,
+                    attendance: s.existingAttendance || 'Present'
+                };
+            });
+            
+            setStudents(sList);
+            setIsSaved(hasSaved); // If any has past attendance on this date, lock it
+        } catch (err) {
+            console.error("Failed to fetch students", err);
+        } finally {
+            setLoading(false);
+        }
     };
 
-    const handleSave = (e: React.FormEvent) => {
-        e.preventDefault();
-        const presentCount = students.filter(s => s.attendance === 'Present').length;
-        addNotification('attendance', 'Attendance Marked', `Class ${selectedClass || ''}-${section || ''}: ${presentCount}/${students.length} students present.`);
+    // Re-fetch when date changes if a class is already selected
+    useEffect(() => {
+        if (selectedClassId && sectionId) {
+            fetchStudentsForClass(selectedClassId, sectionId, date);
+        }
+    }, [date]);
+
+    const handleClassChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+        setIsSaved(false);
+        const uniqueKey = e.target.value;
+        const cls = classes.find((c) => c.id === uniqueKey);
+        
+        if (!cls) {
+            setSelectedClassId('');
+            setSectionId('');
+            setStudents([]);
+            return;
+        }
+
+        setSelectedClassId(cls.classId);
+        setSectionId(cls.sectionId);
+        fetchStudentsForClass(cls.classId, cls.sectionId, date);
     };
 
-    const handleEdit = (e: React.FormEvent) => {
+    const handleAttendanceChange = (studentId: string, status: string) => {
+        setStudents(students.map(s => s.id === studentId ? { ...s, attendance: status } : s));
+    };
+
+    const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
-        alert('Edit Mode Enabled (Frontend Only)');
+        
+        if (!selectedClassId || !sectionId || students.length === 0) {
+            alert("No students to mark attendance for.");
+            return;
+        }
+
+        try {
+            const records = students.map(s => ({
+                studentId: s.id,
+                status: s.attendance
+            }));
+            
+            await axios.post('/api/general/attendance', {
+                records,
+                date
+            });
+
+            const presentCount = students.filter(s => s.attendance === 'Present').length;
+            addNotification('attendance', 'Attendance Marked Successfully', `Saved ${presentCount}/${students.length} present records.`);
+            setIsSaved(true);
+        } catch (err) {
+            console.error("Failed to save attendance", err);
+            alert("Failed to save attendance.");
+        }
     };
 
     return (
@@ -40,23 +122,24 @@ const Attendance: React.FC = () => {
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '1rem' }}>
                         <div className="form-group">
                             <label>Date</label>
-                            <input type="date" className="form-control" value={date} onChange={e => setDate(e.target.value)} />
+                            <input 
+                                type="date" 
+                                className="form-control" 
+                                value={date} 
+                                max={new Date().toISOString().split('T')[0]}
+                                onChange={e => { setDate(e.target.value); setIsSaved(false); }} 
+                            />
                         </div>
-                        <div className="form-group">
-                            <label>Class</label>
-                            <select className="form-control" value={selectedClass} onChange={e => setSelectedClass(e.target.value)}>
-                                <option value="">Select Class</option>
-                                <option value="9">Class 9</option>
-                                <option value="10">Class 10</option>
+                        <div className="form-group" style={{ gridColumn: 'span 3' }}>
+                            <label>Assigned Class & Section</label>
+                            <select className="form-control" onChange={handleClassChange}>
+                                <option value="">Select Class & Section</option>
+                                {classes.map((cls) => (
+                                    <option key={cls.id} value={cls.id}>
+                                        Class {cls.grade} - {cls.section} ({cls.subject})
+                                    </option>
+                                ))}
                             </select>
-                        </div>
-                        <div className="form-group">
-                            <label>Section</label>
-                            <input type="text" className="form-control" value={section} onChange={e => setSection(e.target.value)} placeholder="e.g. A" />
-                        </div>
-                        <div className="form-group">
-                            <label>Subject</label>
-                            <input type="text" className="form-control" value={subject} onChange={e => setSubject(e.target.value)} placeholder="e.g. Mathematics" />
                         </div>
                     </div>
                 </form>
@@ -67,18 +150,15 @@ const Attendance: React.FC = () => {
                 <div className="table-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <h2 style={{ fontSize: '1.25rem', fontWeight: 700 }}>Student Attendance Table</h2>
                     <div style={{ display: 'flex', gap: '0.5rem' }}>
-                        <button className="btn-secondary" onClick={handleEdit} style={{ background: '#f59e0b', color: 'white', border: 'none', padding: '0.5rem 1rem', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
-                            Edit Attendance
-                        </button>
-                        <button className="btn-primary" onClick={handleSave} style={{ padding: '0.5rem 1rem' }}>
-                            Save Attendance
+                        <button className="btn-primary" onClick={handleSave} style={{ padding: '0.5rem 1rem' }} disabled={isSaved}>
+                            {isSaved ? 'Saved' : 'Save Attendance'}
                         </button>
                     </div>
                 </div>
                 <table>
                     <thead>
                         <tr>
-                            <th>Roll</th>
+                            <th>S.No.</th>
                             <th>Name</th>
                             <th style={{ textAlign: 'center' }}>Present</th>
                             <th style={{ textAlign: 'center' }}>Absent</th>
@@ -86,39 +166,52 @@ const Attendance: React.FC = () => {
                         </tr>
                     </thead>
                     <tbody>
-                        {students.map((student) => (
-                            <tr key={student.rollNo}>
-                                <td>{student.rollNo}</td>
-                                <td style={{ fontWeight: 'bold' }}>{student.name}</td>
-                                <td style={{ textAlign: 'center', verticalAlign: 'middle' }}>
-                                    <input
-                                        type="radio"
-                                        name={`attendance-${student.rollNo}`}
-                                        checked={student.attendance === 'Present'}
-                                        onChange={() => handleAttendanceChange(student.rollNo, 'Present')}
-                                        style={{ transform: 'scale(1.5)', cursor: 'pointer', margin: 0 }}
-                                    />
-                                </td>
-                                <td style={{ textAlign: 'center', verticalAlign: 'middle' }}>
-                                    <input
-                                        type="radio"
-                                        name={`attendance-${student.rollNo}`}
-                                        checked={student.attendance === 'Absent'}
-                                        onChange={() => handleAttendanceChange(student.rollNo, 'Absent')}
-                                        style={{ transform: 'scale(1.5)', cursor: 'pointer', margin: 0 }}
-                                    />
-                                </td>
-                                <td style={{ textAlign: 'center', verticalAlign: 'middle' }}>
-                                    <input
-                                        type="radio"
-                                        name={`attendance-${student.rollNo}`}
-                                        checked={student.attendance === 'Leave'}
-                                        onChange={() => handleAttendanceChange(student.rollNo, 'Leave')}
-                                        style={{ transform: 'scale(1.5)', cursor: 'pointer', margin: 0 }}
-                                    />
-                                </td>
+                        {loading ? (
+                            <tr>
+                                <td colSpan={5} style={{ textAlign: 'center', padding: '2rem' }}>Loading students...</td>
                             </tr>
-                        ))}
+                        ) : students.length === 0 ? (
+                            <tr>
+                                <td colSpan={5} style={{ textAlign: 'center', padding: '2rem' }}>Select a class or no students found.</td>
+                            </tr>
+                        ) : (
+                            students.map((student, idx) => (
+                                <tr key={student.id}>
+                                    <td>{idx + 1}</td>
+                                    <td style={{ fontWeight: 'bold' }}>{student.name}</td>
+                                    <td style={{ textAlign: 'center', verticalAlign: 'middle' }}>
+                                        <input
+                                            type="radio"
+                                            name={`attendance-${student.id}`}
+                                            checked={student.attendance === 'Present'}
+                                            onChange={() => handleAttendanceChange(student.id, 'Present')}
+                                            disabled={isSaved}
+                                            style={{ transform: 'scale(1.5)', cursor: isSaved ? 'not-allowed' : 'pointer', margin: 0 }}
+                                        />
+                                    </td>
+                                    <td style={{ textAlign: 'center', verticalAlign: 'middle' }}>
+                                        <input
+                                            type="radio"
+                                            name={`attendance-${student.id}`}
+                                            checked={student.attendance === 'Absent'}
+                                            onChange={() => handleAttendanceChange(student.id, 'Absent')}
+                                            disabled={isSaved}
+                                            style={{ transform: 'scale(1.5)', cursor: isSaved ? 'not-allowed' : 'pointer', margin: 0 }}
+                                        />
+                                    </td>
+                                    <td style={{ textAlign: 'center', verticalAlign: 'middle' }}>
+                                        <input
+                                            type="radio"
+                                            name={`attendance-${student.id}`}
+                                            checked={student.attendance === 'Leave'}
+                                            onChange={() => handleAttendanceChange(student.id, 'Leave')}
+                                            disabled={isSaved}
+                                            style={{ transform: 'scale(1.5)', cursor: isSaved ? 'not-allowed' : 'pointer', margin: 0 }}
+                                        />
+                                    </td>
+                                </tr>
+                            ))
+                        )}
                     </tbody>
                 </table>
             </div>

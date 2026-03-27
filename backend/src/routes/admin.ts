@@ -102,7 +102,8 @@ router.post('/teachers', async (req, res) => {
         const {
             teacherName, gender, dob, photo, mobile, email, aadhaar,
             qualification, subject, experience, joiningDate, salary, employeeType,
-            address, city, stateLocation, pincode, username, password
+            address, city, stateLocation, pincode, username, password,
+            assignClass, assignSection, assignSubject
         } = req.body;
 
         // Generate TCH ID first to ensure uniqueness
@@ -121,11 +122,11 @@ router.post('/teachers', async (req, res) => {
         
         const employeeId = `TCH-${year}-${String(nextCount).padStart(4, '0')}`;
 
-        const finalEmail = email || `${employeeId}@bips.local`;
+        const loginEmail = username || email || `${employeeId}@bips.local`;
 
         // Base search or validation
-        const existing = await prisma.user.findUnique({ where: { email : finalEmail } });
-        if (existing) return res.status(400).json({ error: 'User with this email or system ID already exists' });
+        const existing = await prisma.user.findUnique({ where: { email : loginEmail } });
+        if (existing) return res.status(400).json({ error: 'User with this email or username already exists' });
 
         const hashedPassword = await bcrypt.hash(password || '123456', 10);
         
@@ -134,7 +135,7 @@ router.post('/teachers', async (req, res) => {
         const newTeacher = await prisma.user.create({
             data: {
                 name: teacherName,
-                email: finalEmail,
+                email: loginEmail,
                 password: hashedPassword,
                 phone: mobile,
                 role: Role.TEACHER,
@@ -151,12 +152,55 @@ router.post('/teachers', async (req, res) => {
                         joiningDate: joiningDate ? new Date(joiningDate) : new Date(),
                         salary,
                         employeeType,
-                        mainSubject: subject
+                        mainSubject: assignSubject || subject
                     }
                 }
             },
             include: { teacherProfile: true }
         });
+
+        const profileId = newTeacher.teacherProfile?.id;
+
+        // Process Assignment if provided
+        if (profileId && assignClass) {
+            try {
+                // Find class by name or ID (assuming ID if coming from a select, or name if hardcoded string)
+                // In my frontend I'm using string "1", "2" etc. for classes.
+                // Assuming classes are pre-seeded or exist.
+                let classRecord = await prisma.class.findUnique({
+                    where: { id: assignClass }
+                });
+                
+                if (!classRecord) {
+                    classRecord = await prisma.class.findFirst({
+                        where: { name: assignClass }
+                    });
+                }
+
+                if (classRecord) {
+                    // Update Class Teacher
+                    await prisma.class.update({
+                        where: { id: classRecord.id },
+                        data: { classTeacherId: profileId }
+                    });
+
+                    // Create/Assign Subject
+                    if (assignSubject) {
+                        await prisma.subject.create({
+                            data: {
+                                name: assignSubject,
+                                code: `SUB-${assignClass}-${assignSubject.substring(0,3).toUpperCase()}-${Date.now().toString().slice(-4)}`,
+                                classId: classRecord.id,
+                                teacherId: profileId
+                            }
+                        });
+                    }
+                }
+            } catch (assignErr) {
+                console.error('Failed to perform assignment during teacher registration:', assignErr);
+                // We don't fail the whole registration if assignment fails
+            }
+        }
 
         res.json(newTeacher);
     } catch (err: any) {
@@ -172,7 +216,8 @@ router.put('/teachers/:id', async (req, res) => {
         const {
             teacherName, gender, dob, photo, mobile, email, aadhaar,
             qualification, subject, experience, joiningDate, salary, employeeType,
-            address, city, stateLocation, pincode, username, password
+            address, city, stateLocation, pincode, username, password,
+            assignClass, assignSection, assignSubject
         } = req.body;
 
         const profile = await prisma.teacherProfile.findUnique({ where: { id } });
@@ -205,12 +250,53 @@ router.put('/teachers/:id', async (req, res) => {
                         joiningDate: joiningDate ? new Date(joiningDate) : undefined,
                         salary,
                         employeeType,
-                        mainSubject: subject
+                        mainSubject: subject || assignSubject
                     }
                 }
             },
             include: { teacherProfile: true }
         });
+
+        // Assignment logic (Update class teacher & subject)
+        if (assignClass) {
+            try {
+                let classRecord = await prisma.class.findUnique({
+                    where: { id: assignClass }
+                });
+                if (!classRecord) {
+                    classRecord = await prisma.class.findFirst({
+                        where: { name: assignClass }
+                    });
+                }
+
+                if (classRecord) {
+                    await prisma.class.update({
+                        where: { id: classRecord.id },
+                        data: { classTeacherId: profile.id }
+                    });
+
+                    if (assignSubject) {
+                        // Check if subject already exists for this teacher and class
+                        const existingSubject = await prisma.subject.findFirst({
+                            where: { teacherId: profile.id, classId: classRecord.id, name: assignSubject }
+                        });
+                        
+                        if (!existingSubject) {
+                            await prisma.subject.create({
+                                data: {
+                                    name: assignSubject,
+                                    code: `SUB-${classRecord.name}-${assignSubject.substring(0,3).toUpperCase()}-${Date.now().toString().slice(-4)}`,
+                                    classId: classRecord.id,
+                                    teacherId: profile.id
+                                }
+                            });
+                        }
+                    }
+                }
+            } catch (assignErr) {
+                console.error("Assignment update failed:", assignErr);
+            }
+        }
 
         res.json(updated);
     } catch (err: any) {

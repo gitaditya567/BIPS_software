@@ -23,6 +23,7 @@ import LeaveApply from './pages/teacher/LeaveApply';
 import ServiceRecord from './pages/teacher/ServiceRecord';
 import MyFees from './pages/student/MyFees';
 import MyAttendance from './pages/student/MyAttendance';
+import StudentProfile from './pages/student/StudentProfile';
 import './index.css';
 
 const App: React.FC = () => {
@@ -64,8 +65,8 @@ const App: React.FC = () => {
             {/* ── Student / Parent Routes ── */}
             <Route path="student" element={<RoleDashboard />} />
             <Route path="parent" element={<RoleDashboard />} />
-            <Route path="student/profile" element={<div style={{ padding: '2rem' }}><h2>My Profile</h2></div>} />
-            <Route path="parent/profile" element={<div style={{ padding: '2rem' }}><h2>Student Profile</h2></div>} />
+            <Route path="student/profile" element={<StudentProfile />} />
+            <Route path="parent/profile" element={<StudentProfile />} />
             <Route path="student/attendance" element={<MyAttendance />} />
             <Route path="student/marks" element={<div style={{ padding: '2rem' }}><h2>My Marks</h2></div>} />
             <Route path="student/fees" element={<MyFees />} />

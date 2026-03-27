@@ -40,8 +40,8 @@ const TransferCertificate: React.FC = () => {
     const [sRegisterNo, setSRegisterNo] = useState('');
     const [className, setClassName] = useState('');
     const [leavingDate, setLeavingDate] = useState('');
-    const [reason, setReason] = useState('');
-    const [conduct, setConduct] = useState('Satisfactory');
+    const [reason] = useState('');
+    const [conduct] = useState('Satisfactory');
     const [fatherName, setFatherName] = useState('');
     const [motherName, setMotherName] = useState('');
     const [occupation, setOccupation] = useState('');
@@ -60,7 +60,7 @@ const TransferCertificate: React.FC = () => {
 
     const fetchStudents = async () => {
         try {
-            const res = await axios.get('http://localhost:5000/api/admin/students');
+            const res = await axios.get('/api/admin/students');
             setStudents(res.data);
         } catch (err) {
             console.error(err);
@@ -310,9 +310,12 @@ const TransferCertificate: React.FC = () => {
                             color: 'black',
                             fontFamily: '"Times New Roman", Times, serif'
                         }}>
-                            <h2 style={{ textAlign: 'center', margin: '0 0 1rem 0', textTransform: 'uppercase', fontSize: '22px', fontWeight: 'bold' }}>
-                                Scholar's Register & Transfer Certificate Form
-                            </h2>
+                            <div style={{ position: 'relative', marginBottom: '1rem', minHeight: '80px', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 80px' }}>
+                                <img src="/bips-logo.png" alt="BIPS Logo" style={{ position: 'absolute', left: '0', top: '50%', transform: 'translateY(-50%)', width: '70px', height: '70px', objectFit: 'contain' }} />
+                                <h2 style={{ textAlign: 'center', margin: '0', textTransform: 'uppercase', fontSize: '22px', fontWeight: 'bold' }}>
+                                    Scholar's Register & Transfer Certificate Form
+                                </h2>
+                            </div>
 
                             <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr 1fr', gap: '10px', marginBottom: '10px', fontSize: '13px' }}>
                                 <div>Adm. No. <span style={{ borderBottom: '1px dashed black', flex: 1, padding: '0 5px' }}>{selectedTC.admissionNo}</span></div>

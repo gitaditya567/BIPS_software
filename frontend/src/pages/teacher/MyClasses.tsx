@@ -1,17 +1,41 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
 
 const MyClasses: React.FC = () => {
     const [viewClass, setViewClass] = useState<any | null>(null);
+    const [classes, setClasses] = useState<any[]>([]);
+    const [students, setStudents] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
 
-    const classes = [
-        { id: 1, grade: '10', section: 'A', subject: 'Math', studentsCount: 35 },
-        { id: 2, grade: '9', section: 'B', subject: 'Math', studentsCount: 32 },
-    ];
+    const userRaw = localStorage.getItem('user');
+    const user = userRaw ? JSON.parse(userRaw) : null;
+    const teacherId = user?.id; // Assuming user.id corresponds to userId in teacherProfile
 
-    const students = [
-        { rollNo: 1, name: 'Aditya', status: 'Active' },
-        { rollNo: 2, name: 'Rahul', status: 'Active' },
-    ];
+    useEffect(() => {
+        if (!teacherId) return;
+        const fetchClasses = async () => {
+            try {
+                const res = await axios.get(`/api/teacher/${teacherId}/classes`);
+                setClasses(res.data);
+                setLoading(false);
+            } catch (err) {
+                console.error("Failed to fetch classes", err);
+                setLoading(false);
+            }
+        };
+        fetchClasses();
+    }, [teacherId]);
+
+    const handleViewClass = async (cls: any) => {
+        setViewClass(cls);
+        try {
+            const res = await axios.get(`/api/teacher/students?classId=${cls.classId}&sectionId=${cls.sectionId}`);
+            setStudents(res.data);
+        } catch (err) {
+            console.error("Failed to fetch students", err);
+        }
+    };
+
 
     return (
         <div>
@@ -21,19 +45,21 @@ const MyClasses: React.FC = () => {
             <div className="stat-card" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '2rem' }}>
                 <div>
                     <span style={{ color: '#6b7280', fontSize: '0.875rem', fontWeight: 600 }}>Teacher Name</span>
-                    <p style={{ fontSize: '1.25rem', fontWeight: 700, marginTop: '0.5rem' }}>John Doe</p>
+                    <p style={{ fontSize: '1.25rem', fontWeight: 700, marginTop: '0.5rem' }}>{user?.name || 'Loading...'}</p>
                 </div>
                 <div>
-                    <span style={{ color: '#6b7280', fontSize: '0.875rem', fontWeight: 600 }}>Subject</span>
-                    <p style={{ fontSize: '1.25rem', fontWeight: 700, marginTop: '0.5rem' }}>Math</p>
+                    <span style={{ color: '#6b7280', fontSize: '0.875rem', fontWeight: 600 }}>Main Subject</span>
+                    <p style={{ fontSize: '1.25rem', fontWeight: 700, marginTop: '0.5rem' }}>{classes.length > 0 ? classes[0].subject : 'N/A'}</p>
                 </div>
                 <div>
                     <span style={{ color: '#6b7280', fontSize: '0.875rem', fontWeight: 600 }}>Assigned Classes Count</span>
-                    <p style={{ fontSize: '1.25rem', fontWeight: 700, marginTop: '0.5rem' }}>2</p>
+                    <p style={{ fontSize: '1.25rem', fontWeight: 700, marginTop: '0.5rem' }}>{classes.length}</p>
                 </div>
             </div>
 
-            {viewClass ? (
+            {loading ? (
+                <div style={{ padding: '2rem', textAlign: 'center' }}>Loading classes...</div>
+            ) : viewClass ? (
                 // View Class Data (Students)
                 <div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
@@ -44,7 +70,7 @@ const MyClasses: React.FC = () => {
                         <table>
                             <thead>
                                 <tr>
-                                    <th>Roll No</th>
+                                    <th>S.No.</th>
                                     <th>Student Name</th>
                                     <th>Status</th>
                                 </tr>
@@ -52,7 +78,7 @@ const MyClasses: React.FC = () => {
                             <tbody>
                                 {students.map((student, idx) => (
                                     <tr key={idx}>
-                                        <td>{student.rollNo}</td>
+                                        <td>{idx + 1}</td>
                                         <td>{student.name}</td>
                                         <td><span className="badge badge-success">{student.status}</span></td>
                                     </tr>
@@ -85,7 +111,7 @@ const MyClasses: React.FC = () => {
                                     <td>{c.subject}</td>
                                     <td>{c.studentsCount}</td>
                                     <td>
-                                        <button className="btn-primary" style={{ padding: '0.3rem 0.6rem', fontSize: '0.875rem' }} onClick={() => setViewClass(c)}>
+                                        <button className="btn-primary" style={{ padding: '0.3rem 0.6rem', fontSize: '0.875rem' }} onClick={() => handleViewClass(c)}>
                                             View
                                         </button>
                                     </td>

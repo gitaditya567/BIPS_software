@@ -45,7 +45,7 @@ const PromoteStudent: React.FC = () => {
 
     const fetchStudents = async () => {
         try {
-            const res = await axios.get('http://localhost:5000/api/admin/students');
+            const res = await axios.get('/api/admin/students');
             setStudents(res.data);
         } catch (err) {
             console.error(err);
@@ -54,7 +54,7 @@ const PromoteStudent: React.FC = () => {
 
     const fetchClasses = async () => {
         try {
-            const res = await axios.get('http://localhost:5000/api/admin/classes');
+            const res = await axios.get('/api/admin/classes');
             setClasses(res.data);
         } catch (err) {
             console.error(err);
@@ -69,7 +69,7 @@ const PromoteStudent: React.FC = () => {
         if (!targetClass) return alert('Invalid target class');
 
         try {
-            await axios.post('http://localhost:5000/api/admin/students/promote', {
+            await axios.post('/api/admin/students/promote', {
                 studentId: selectedStudentId,
                 newClassId: targetClass.id,
                 actionType

@@ -8,15 +8,38 @@ const prisma = new PrismaClient();
 router.post('/attendance', async (req, res) => {
     try {
         const { records, date } = req.body;
-        // In this implementation, we simply create individual attendance records
         const attendanceDate = new Date(date);
-        
+        const startOfDay = new Date(attendanceDate.setHours(0, 0, 0, 0));
+        const endOfDay = new Date(attendanceDate.setHours(23, 59, 59, 999));
+
+        if (!records || records.length === 0) {
+            return res.status(400).json({ error: 'No records provided' });
+        }
+
+        const studentIds = records.map((r: any) => r.studentId);
+
+        // Check if attendance is already marked for these students on this date
+        const existingRecords = await prisma.attendance.findMany({
+            where: {
+                studentId: { in: studentIds },
+                date: {
+                    gte: startOfDay,
+                    lte: endOfDay
+                }
+            }
+        });
+
+        if (existingRecords.length > 0) {
+            return res.status(400).json({ error: 'Attendance has already been marked for this date and cannot be modified.' });
+        }
+
+        // Proceed to mark attendance
         const created = await Promise.all(records.map((rec: any) => 
             prisma.attendance.create({
                 data: {
                     studentId: rec.studentId,
                     status: rec.status,
-                    date: attendanceDate
+                    date: new Date(date)
                 }
             })
         ));
@@ -45,8 +68,25 @@ router.get('/attendance/:studentId', async (req, res) => {
 router.get('/notices', async (req, res) => {
     try {
         const notices = await prisma.notice.findMany({ orderBy: { date: 'desc' } });
-        res.json(notices);
-    } catch (error) { res.status(500).json({ error: 'Failed' }); }
+        
+        // Fetch classes to map Class IDs to Names
+        const classes = await prisma.class.findMany();
+        const classMap = new Map();
+        classes.forEach(c => classMap.set(c.id, c.name));
+
+        const mappedNotices = notices.map(notice => {
+            let className = notice.class;
+            if (notice.class && notice.class.length === 24) {
+                className = classMap.get(notice.class) || notice.class;
+            }
+            return {
+                ...notice,
+                className
+            };
+        });
+
+        res.json(mappedNotices);
+    } catch (error) { res.status(500).json({ error: 'Failed to fetch notices' }); }
 });
 
 router.post('/notices', async (req, res) => {
@@ -62,7 +102,15 @@ router.post('/notices', async (req, res) => {
                 date: new Date()
             }
         });
-        res.json(notice);
+
+        // Add className dynamically for the immediate response
+        let className = targetClass;
+        if (targetClass && targetClass.length === 24) {
+            const classObj = await prisma.class.findUnique({ where: { id: targetClass }});
+            if (classObj) className = classObj.name;
+        }
+
+        res.json({ ...notice, className });
     } catch (error) { res.status(500).json({ error: 'Failed' }); }
 });
 

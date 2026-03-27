@@ -156,10 +156,10 @@ const getRoleConfig = (role: string, statsData: any) => {
                 accentColor: '#3182ce',
                 badge: { label: 'TEACHER', bg: '#ebf8ff', color: '#2c5282' },
                 stats: [
-                    { title: 'My Students', value: '0', icon: <Users size={22} />, color: '#4a90e2', trend: '' },
-                    { title: 'Classes Today', value: '0', icon: <Calendar size={22} />, color: '#9f7aea', trend: '' },
-                    { title: 'Pending Results', value: '0', icon: <FileText size={22} />, color: '#ed8936', trend: '' },
-                    { title: 'Attendance Marked', value: '0/0', icon: <CheckCircle2 size={22} />, color: '#48bb78', trend: '' },
+                    { title: 'My Students', value: statsData?.myStudents || '0', icon: <Users size={22} />, color: '#4a90e2', trend: '' },
+                    { title: 'Classes Assigned', value: statsData?.classesAssigned || '0', icon: <Calendar size={22} />, color: '#9f7aea', trend: '' },
+                    { title: 'Pending Results', value: statsData?.pendingResults || '0', icon: <FileText size={22} />, color: '#ed8936', trend: '' },
+                    { title: 'Attendance Marked', value: statsData?.attendanceMarked || '0/0', icon: <CheckCircle2 size={22} />, color: '#48bb78', trend: '' },
                 ],
             };
         case 'TRANSPORT':
@@ -204,10 +204,10 @@ const getRoleConfig = (role: string, statsData: any) => {
 
 const getQuickLinks = (role: string) => {
     if (role === 'TEACHER') return [
-        { icon: <Calendar size={22} />, color: '#4a90e2', label: 'Mark Attendance' },
-        { icon: <FileText size={22} />, color: '#9f7aea', label: 'Submit Results' },
-        { icon: <Bell size={22} />, color: '#ed8936', label: 'Post Notice' },
-        { icon: <ArrowUpCircle size={22} />, color: '#48bb78', label: 'Leave Apply' },
+        { icon: <Calendar size={22} />, color: '#4a90e2', label: 'Mark Attendance', path: '/teacher/attendance' },
+        { icon: <FileText size={22} />, color: '#9f7aea', label: 'Submit Results', path: '/teacher/classes' },
+        { icon: <Bell size={22} />, color: '#ed8936', label: 'Post Notice', path: '/teacher/notice' },
+        { icon: <ArrowUpCircle size={22} />, color: '#48bb78', label: 'Leave Apply', path: '/teacher/leave' },
     ];
     if (role === 'ACCOUNTS') return [
         { icon: <Wallet size={22} />, color: '#38a169', label: 'Collect Fee', path: '/admin/fees' },
@@ -217,10 +217,10 @@ const getQuickLinks = (role: string) => {
     ];
 
     if (role === 'TRANSPORT') return [
-        { icon: <Bus size={22} />, color: '#d69e2e', label: 'Manage Buses' },
-        { icon: <Users size={22} />, color: '#4a90e2', label: 'Assign Students' },
-        { icon: <Wallet size={22} />, color: '#48bb78', label: 'Collect Dues' },
-        { icon: <BarChart2 size={22} />, color: '#9f7aea', label: 'Route Report' },
+        { icon: <Bus size={22} />, color: '#d69e2e', label: 'Manage Buses', path: '/admin/transport' },
+        { icon: <Users size={22} />, color: '#4a90e2', label: 'Assign Students', path: '/admin/transport' },
+        { icon: <Wallet size={22} />, color: '#48bb78', label: 'Collect Dues', path: '/admin/transport' },
+        { icon: <BarChart2 size={22} />, color: '#9f7aea', label: 'Route Report', path: '/admin/transport' },
     ];
     if (role === 'PRINCIPAL') return [
         { icon: <Users size={22} />, color: '#805ad5', label: 'View Students', path: '/admin/students' },
@@ -229,20 +229,23 @@ const getQuickLinks = (role: string) => {
         { icon: <FileText size={22} />, color: '#ed8936', label: 'Report Cards', path: '/admin/report-card' },
     ];
 
-    if (role === 'PARENT' || role === 'STUDENT') return [
-        { icon: <Calendar size={22} />, color: '#4a90e2', label: 'My Attendance' },
-        { icon: <Wallet size={22} />, color: '#48bb78', label: 'Fee Details' },
-        { icon: <BookOpen size={22} />, color: '#9f7aea', label: 'My Marks' },
-        { icon: <Users size={22} />, color: '#ed8936', label: 'My Profile' },
-    ];
+    if (role === 'PARENT' || role === 'STUDENT') {
+        const basePath = role === 'PARENT' ? '/parent' : '/student';
+        return [
+            { icon: <Calendar size={22} />, color: '#4a90e2', label: 'My Attendance', path: role === 'STUDENT' ? '/student/attendance' : '/parent/profile' },
+            { icon: <Wallet size={22} />, color: '#48bb78', label: 'Fee Details', path: role === 'STUDENT' ? '/student/fees' : '/parent/profile' },
+            { icon: <BookOpen size={22} />, color: '#9f7aea', label: 'My Marks', path: role === 'STUDENT' ? '/student/marks' : '/parent/profile' },
+            { icon: <Users size={22} />, color: '#ed8936', label: 'My Profile', path: `${basePath}/profile` },
+        ];
+    }
     // ADMIN
     return [
-        { icon: <UserPlus size={22} />, color: '#4a90e2', label: 'Add Student' },
-        { icon: <Wallet size={22} />, color: '#48bb78', label: 'Collect Fee' },
-        { icon: <Calendar size={22} />, color: '#ed8936', label: 'Attendance' },
-        { icon: <Shield size={22} />, color: '#9f7aea', label: 'Role Control' },
-        { icon: <School size={22} />, color: '#e53e3e', label: 'Classes' },
-        { icon: <Bus size={22} />, color: '#d69e2e', label: 'Transport' },
+        { icon: <UserPlus size={22} />, color: '#4a90e2', label: 'Add Student', path: '/admin/students' },
+        { icon: <Wallet size={22} />, color: '#48bb78', label: 'Collect Fee', path: '/admin/fees' },
+        { icon: <Calendar size={22} />, color: '#ed8936', label: 'Attendance', path: '/admin/attendance' },
+        { icon: <Shield size={22} />, color: '#9f7aea', label: 'Role Control', path: '/admin/roles' },
+        { icon: <School size={22} />, color: '#e53e3e', label: 'Classes', path: '/admin/classes' },
+        { icon: <Bus size={22} />, color: '#d69e2e', label: 'Transport', path: '/admin/transport' },
     ];
 };
 
@@ -264,14 +267,14 @@ const RoleDashboard: React.FC = () => {
         const fetchDashboardData = async () => {
             try {
                 if (['ADMIN', 'PRINCIPAL', 'ACCOUNTS'].includes(role)) {
-                    const res = await axios.get('http://localhost:5000/api/admin/dashboard/stats');
+                    const res = await axios.get('/api/admin/dashboard/stats');
                     if (res.data) {
                         setStatsData(res.data.stats);
                         setFetchedActivities(res.data.recentActivities || []);
                     }
                 } else if (['PARENT', 'STUDENT'].includes(role) && user.id) {
                     // Fetch latest profile to keep changes synced with admin panel
-                    const res = await axios.get(`http://localhost:5000/api/general/user/${user.id}`);
+                    const res = await axios.get(`/api/general/user/${user.id}`);
                     if (res.data) {
                         const updatedUser = { ...user, ...res.data, role: user.role }; 
                         setUser(updatedUser);
@@ -279,11 +282,17 @@ const RoleDashboard: React.FC = () => {
                     }
                     
                     if (user.studentInfo?.id) {
-                        const statsRes = await axios.get(`http://localhost:5000/api/general/dashboard-stats/student/${user.studentInfo.id}`);
+                        const statsRes = await axios.get(`/api/general/dashboard-stats/student/${user.studentInfo.id}`);
                         if (statsRes.data) {
                             setStatsData(statsRes.data.stats);
                             setFetchedActivities(statsRes.data.recentActivities || []);
                         }
+                    }
+                } else if (role === 'TEACHER' && user.id) {
+                    const statsRes = await axios.get(`/api/teacher/${user.id}/dashboard-stats`);
+                    if (statsRes.data) {
+                        setStatsData(statsRes.data.stats);
+                        setFetchedActivities(statsRes.data.recentActivities || []);
                     }
                 }
             } catch (err) {
@@ -402,76 +411,7 @@ const RoleDashboard: React.FC = () => {
                 </div>
             )}
 
-            {/* ── Student/Parent Profile Details ── */}
-            {(role === 'PARENT' || role === 'STUDENT') && (
-                <div style={{ marginTop: '2rem', display: 'grid', gridTemplateColumns: '2fr 1.2fr', gap: '2rem' }}>
-                    
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-                        <SectionCard title="👤 Personal & Parent Details">
-                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
-                                <div><label style={{ fontSize: '0.75rem', color: '#718096', textTransform: 'uppercase', fontWeight: 700 }}>Full Name</label><p style={{ margin: '0.2rem 0', fontWeight: '600' }}>{user.studentInfo?.user?.name || user.name}</p></div>
-                                <div><label style={{ fontSize: '0.75rem', color: '#718096', textTransform: 'uppercase', fontWeight: 700 }}>SR No (Admission No)</label><p style={{ margin: '0.2rem 0', fontWeight: '800', color: '#2b6cb0' }}>{user.studentInfo?.admissionNo || 'N/A'}</p></div>
-                                <div><label style={{ fontSize: '0.75rem', color: '#718096', textTransform: 'uppercase', fontWeight: 700 }}>Date of Birth</label><p style={{ margin: '0.2rem 0' }}>{user.studentInfo?.dateOfBirth || 'N/A'}</p></div>
-                                <div><label style={{ fontSize: '0.75rem', color: '#718096', textTransform: 'uppercase', fontWeight: 700 }}>Gender</label><p style={{ margin: '0.2rem 0' }}>{user.studentInfo?.gender || 'N/A'}</p></div>
-                                
-                                <div style={{ borderTop: '1px solid #edf2f7', gridColumn: 'span 2', paddingTop: '1.5rem', marginBottom: '0.5rem' }}>
-                                    <h4 style={{ margin: 0, fontSize: '0.95rem', color: '#4a5568' }}>Guardian Information</h4>
-                                </div>
-                                
-                                <div><label style={{ fontSize: '0.75rem', color: '#718096', textTransform: 'uppercase', fontWeight: 700 }}>Father Name</label><p style={{ margin: '0.2rem 0', fontWeight: '600' }}>{user.studentInfo?.fatherName || 'N/A'}</p></div>
-                                <div><label style={{ fontSize: '0.75rem', color: '#718096', textTransform: 'uppercase', fontWeight: 700 }}>Mother Name</label><p style={{ margin: '0.2rem 0', fontWeight: '600' }}>{user.studentInfo?.motherName || 'N/A'}</p></div>
-                                <div><label style={{ fontSize: '0.75rem', color: '#718096', textTransform: 'uppercase', fontWeight: 700 }}>Father Contact</label><p style={{ margin: '0.2rem 0' }}>{user.studentInfo?.fatherMobile || 'N/A'}</p></div>
-                                <div><label style={{ fontSize: '0.75rem', color: '#718096', textTransform: 'uppercase', fontWeight: 700 }}>Address</label><p style={{ margin: '0.2rem 0', fontSize: '0.85rem' }}>{user.studentInfo?.user?.address || 'N/A'}</p></div>
-                           </div>
-                        </SectionCard>
-
-                        <SectionCard title="🏫 Previous Schooling">
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
-                                <div><label style={{ fontSize: '0.75rem', color: '#718096', textTransform: 'uppercase', fontWeight: 700 }}>Prev. School</label><p style={{ margin: '0.2rem 0' }}>{user.studentInfo?.prevSchoolName || 'N/A'}</p></div>
-                                <div><label style={{ fontSize: '0.75rem', color: '#718096', textTransform: 'uppercase', fontWeight: 700 }}>Leaving Reason</label><p style={{ margin: '0.2rem 0' }}>{user.studentInfo?.leavingReason || 'N/A'}</p></div>
-                            </div>
-                        </SectionCard>
-                    </div>
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-                        <SectionCard title="🎓 Academic Info">
-                             <div style={{ textAlign: 'center', padding: '1.5rem 0', backgroundColor: '#f9f9ff', borderRadius: '16px', border: '1px dashed #cbd5e0', marginBottom: '1.5rem' }}>
-                                 <p style={{ margin: 0, fontSize: '0.8rem', color: '#718096' }}>Current Class</p>
-                                 <h2 style={{ margin: '0.5rem 0', color: '#4a90e2', fontSize: '2.5rem' }}>{user.studentInfo?.class?.name || 'N/A'}</h2>
-                                 <span style={{ backgroundColor: '#edf2ff', color: '#4451b2', padding: '0.3rem 1rem', borderRadius: '20px', fontWeight: '700', fontSize: '0.8rem' }}>Section {user.studentInfo?.section?.name || 'A'}</span>
-                             </div>
-
-                             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '0.75rem', borderBottom: '1px solid #f1f5f9' }}>
-                                    <span style={{ color: '#718096', fontSize: '0.9rem' }}>Roll No</span>
-                                    <span style={{ fontWeight: '700' }}>{user.studentInfo?.rollNumber || 'N/A'}</span>
-                                </div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '0.75rem', borderBottom: '1px solid #f1f5f9' }}>
-                                    <span style={{ color: '#718096', fontSize: '0.9rem' }}>Blood Group</span>
-                                    <span style={{ fontWeight: '700', color: '#e53e3e' }}>{user.studentInfo?.bloodGroup || 'N/A'}</span>
-                                </div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '0.75rem', borderBottom: '1px solid #f1f5f9' }}>
-                                    <span style={{ color: '#718096', fontSize: '0.9rem' }}>Admission Date</span>
-                                    <span style={{ fontWeight: '700' }}>{user.studentInfo?.admissionDate ? new Date(user.studentInfo.admissionDate).toLocaleDateString('en-GB') : 'N/A'}</span>
-                                </div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                    <span style={{ color: '#718096', fontSize: '0.9rem' }}>House</span>
-                                    <span style={{ fontWeight: '700', color: '#38a169' }}>{user.studentInfo?.house || 'N/A'}</span>
-                                </div>
-                             </div>
-                        </SectionCard>
-
-                        {user.studentInfo?.photo && (
-                            <SectionCard title="📸 Student Photo">
-                                <div style={{ textAlign: 'center' }}>
-                                    <img src={user.studentInfo.photo} alt="Student" style={{ width: '100%', maxWidth: '200px', borderRadius: '16px', border: '5px solid #fff', boxShadow: '0 4px 15px rgba(0,0,0,0.1)' }} />
-                                </div>
-                            </SectionCard>
-                        )}
-                    </div>
-
-                </div>
-            )}
+            {/* ── Student/Parent Profile Details Removed (moved to StudentProfile tab) ── */}
         </div>
     );
 };

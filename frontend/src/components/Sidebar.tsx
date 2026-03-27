@@ -84,8 +84,8 @@ const Sidebar: React.FC = () => {
     const rolePerms = permissions[role];
     let links: typeof allLinks;
 
-    if (!rolePerms || rolePerms.length === 0) {
-        // No permissions saved for this role → use hardcoded defaults
+    if (role === 'ADMIN' || !rolePerms || rolePerms.length === 0) {
+        // Force ADMIN to default links, or fallback for others
         const defaultIds = ROLE_DEFAULT_IDS[role] || ROLE_DEFAULT_IDS['ADMIN'];
         links = allLinks.filter(l => defaultIds.includes(l.id));
     } else {

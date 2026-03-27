@@ -87,7 +87,6 @@ const Fees: React.FC = () => {
     const [selectedFees, setSelectedFees] = useState<string[]>([]);
     const [selectedMonth, setSelectedMonth] = useState('April');
     const [showSearchDropdown, setShowSearchDropdown] = useState(false);
-    const [searchQuery, setSearchQuery] = useState('');
 
     const isFeePaid = (headName: string) => {
         const headObj = feeHeads.find(h => h.name === headName);
@@ -178,7 +177,7 @@ const Fees: React.FC = () => {
 
     const fetchNextReceiptNo = async () => {
         try {
-            const res = await axios.get('http://localhost:5000/api/fees/next-receipt');
+            const res = await axios.get('/api/fees/next-receipt');
             if (res.data && res.data.receiptNo) {
                 setReceiptNo(res.data.receiptNo);
             }
@@ -191,7 +190,7 @@ const Fees: React.FC = () => {
 
     const fetchPendingApprovals = async () => {
         try {
-            const res = await axios.get('http://localhost:5000/api/fees/pending');
+            const res = await axios.get('/api/fees/pending');
             // Map backend amountPaid to frontend paidAmount
             const mappedData = res.data.map((r: any) => ({
                 ...r,
@@ -209,7 +208,7 @@ const Fees: React.FC = () => {
 
     const fetchStudentHistory = async (studentId: string, studentNameVal: string) => {
         try {
-            const res = await axios.get(`http://localhost:5000/api/fees/history/${studentId}`);
+            const res = await axios.get(`/api/fees/history/${studentId}`);
             setStudentHistory(res.data.map((r: any) => ({
                 ...r,
                 paidAmount: r.amountPaid || r.paidAmount || 0,
@@ -225,7 +224,7 @@ const Fees: React.FC = () => {
 
     const fetchClasses = async () => {
         try {
-            const res = await axios.get('http://localhost:5000/api/admin/classes');
+            const res = await axios.get('/api/admin/classes');
             setClasses(res.data);
         } catch (err) { console.error('Failed to fetch classes'); }
     };
@@ -233,7 +232,7 @@ const Fees: React.FC = () => {
     const handleDeleteFeeStructure = async (classId: string) => {
         if (!window.confirm('Are you sure you want to permanently delete the fee structure for this class?')) return;
         try {
-            await axios.delete(`http://localhost:5000/api/fees/structure/${classId}`);
+            await axios.delete(`/api/fees/structure/${classId}`);
             setFeeStructure(prev => prev.filter(f => f.id !== classId));
             alert('Fee structure deleted permanently.');
         } catch (err) {
@@ -243,7 +242,7 @@ const Fees: React.FC = () => {
 
     const fetchAllHistory = async () => {
         try {
-            const res = await axios.get('http://localhost:5000/api/fees');
+            const res = await axios.get('/api/fees');
             setFeeRecords(res.data.map((r: any) => ({
                 ...r,
                 paidAmount: r.amountPaid || r.paidAmount || 0,
@@ -260,7 +259,7 @@ const Fees: React.FC = () => {
 
     const fetchStudents = async () => {
         try {
-            const res = await axios.get('http://localhost:5000/api/admin/students');
+            const res = await axios.get('/api/admin/students');
             if (res.data && res.data.length > 0) {
                 setStudents(res.data);
             }
@@ -271,7 +270,7 @@ const Fees: React.FC = () => {
 
     const fetchFeeHeads = async () => {
         try {
-            const res = await axios.get('http://localhost:5000/api/fees/heads');
+            const res = await axios.get('/api/fees/heads');
             setFeeHeads(res.data);
         } catch (err) { console.error('Failed to fetch fee heads'); }
     };
@@ -280,7 +279,7 @@ const Fees: React.FC = () => {
 
     const fetchFeeStructure = async () => {
         try {
-            const res = await axios.get('http://localhost:5000/api/fees/structure');
+            const res = await axios.get('/api/fees/structure');
             setFeeStructure(res.data);
         } catch (err) { console.error('Failed to fetch fee structure'); }
     };
@@ -328,7 +327,7 @@ const Fees: React.FC = () => {
                 submittedBy: user?.name || 'User'
             };
 
-            const res = await axios.post('http://localhost:5000/api/fees/collect', payload);
+            const res = await axios.post('/api/fees/collect', payload);
             const savedRecord = res.data.data;
             
             const newRecord: FeeRecord = { 
@@ -372,7 +371,7 @@ const Fees: React.FC = () => {
 
     const approveFee = async (id: string) => {
         try {
-            await axios.post(`http://localhost:5000/api/fees/${id}/approve`, { approvedBy: user?.name });
+            await axios.post(`/api/fees/${id}/approve`, { approvedBy: user?.name });
             setFeeRecords(prev => prev.map(rec => 
                 rec.id === id ? { ...rec, status: 'APPROVED' } : rec
             ));
@@ -384,7 +383,7 @@ const Fees: React.FC = () => {
 
     const rejectFee = async (id: string) => {
         try {
-            await axios.post(`http://localhost:5000/api/fees/${id}/reject`, { approvedBy: user?.name });
+            await axios.post(`/api/fees/${id}/reject`, { approvedBy: user?.name });
             setFeeRecords(prev => prev.map(rec => 
                 rec.id === id ? { ...rec, status: 'REJECTED' } : rec
             ));
@@ -399,7 +398,7 @@ const Fees: React.FC = () => {
         e.preventDefault();
         if (!newHeadName) return alert('Please fill required fields');
         try {
-            const res = await axios.post('http://localhost:5000/api/fees/heads', { name: newHeadName, type: newHeadType });
+            const res = await axios.post('/api/fees/heads', { name: newHeadName, type: newHeadType });
             setFeeHeads([...feeHeads, res.data]);
             setNewHeadName('');
             setNewHeadType('Monthly');
@@ -412,7 +411,7 @@ const Fees: React.FC = () => {
     const handleDeleteFeeHead = async (id: string, name: string) => {
         if (!window.confirm(`Are you sure you want to permanently delete "${name}"?`)) return;
         try {
-            await axios.delete(`http://localhost:5000/api/fees/heads/${id}`);
+            await axios.delete(`/api/fees/heads/${id}`);
             setFeeHeads(feeHeads.filter(h => h.id !== id));
         } catch (err: any) {
             alert(err.response?.data?.error || 'Failed to delete fee head');
@@ -880,7 +879,7 @@ const Fees: React.FC = () => {
                             });
                             
                             try {
-                                await axios.post('http://localhost:5000/api/fees/structure', { classId: selectedClassId, fees });
+                                await axios.post('/api/fees/structure', { classId: selectedClassId, fees });
                                 fetchFeeStructure();
                                 form.reset();
                                 alert('Fee Structure defined and saved successfully!');

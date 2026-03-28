@@ -63,6 +63,7 @@ const Fees: React.FC = () => {
         monthly: [],
         classWise: []
     });
+    const [reportFilterMonth, setReportFilterMonth] = useState(new Date().toLocaleString('en-GB', { month: 'long' }));
 
     const fetchReports = async () => {
         try {
@@ -1242,83 +1243,114 @@ const Fees: React.FC = () => {
                         <div className="table-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <h2 style={{ fontSize: '1.25rem', fontWeight: 700 }}>
                                 {activeReport === 'daily' && 'Daily Collection Report'}
-                                {activeReport === 'monthly' && 'Monthly Collection Summary'}
+                                {activeReport === 'monthly' && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                        Monthly Collection Summary
+                                        <select 
+                                            value={reportFilterMonth} 
+                                            onChange={(e) => setReportFilterMonth(e.target.value)}
+                                            style={{ 
+                                                marginLeft: '1rem', 
+                                                padding: '0.4rem 0.8rem', 
+                                                borderRadius: '8px', 
+                                                border: '1px solid #e2e8f0', 
+                                                fontSize: '0.85rem', 
+                                                fontWeight: '600', 
+                                                color: '#475569',
+                                                backgroundColor: '#f8fafc',
+                                                cursor: 'pointer'
+                                            }}
+                                        >
+                                            {['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'].map(m => (
+                                                <option key={m} value={m}>{m}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
                                 {activeReport === 'class' && 'Class-wise Fee Collection'}
                                 {activeReport === 'pending' && 'Outstanding Dues Report'}
                             </h2>
                             <button onClick={exportToPDF} className="btn-primary" style={{ width: 'auto', padding: '0.5rem 1.5rem', backgroundColor: '#ec4899' }}>Export PDF</button>
                         </div>
-
-                        <table style={{ width: '100%' }}>
-                            <thead>
-                                <tr style={{ backgroundColor: '#f1f5f9' }}>
-                                    {activeReport === 'daily' && (<><th style={{ padding: '1rem 1.5rem' }}>Date</th><th style={{ padding: '1rem 1.5rem' }}>Receipt No</th><th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Amount (₹)</th><th style={{ padding: '1rem 1.5rem', textAlign: 'center' }}>Action</th></>)}
-                                    {activeReport === 'monthly' && (<><th style={{ padding: '1rem 1.5rem' }}>Month</th><th style={{ padding: '1rem 1.5rem' }}>Year</th><th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Total Collection (₹)</th></>)}
-                                    {activeReport === 'class' && (<><th style={{ padding: '1rem 1.5rem' }}>Class</th><th style={{ padding: '1rem 1.5rem' }}>Students</th><th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Collected Amount (₹)</th></>)}
-                                    {activeReport === 'pending' && (<><th style={{ padding: '1rem 1.5rem' }}>Class</th><th style={{ padding: '1rem 1.5rem' }}>Total Dues</th><th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Pending Amount (₹)</th></>)}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {activeReport === 'daily' && reportData.daily.map((d, i) => (
-                                    <tr key={i}>
-                                        <td style={{ padding: '1rem 1.5rem' }}>{d.date}</td>
-                                        <td style={{ padding: '1rem 1.5rem', fontWeight: '900', color: '#2563eb' }}>{d.receiptNo}</td>
-                                        <td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontWeight: '800', color: '#059669' }}>₹{d.paidAmount.toLocaleString()}</td>
-                                        <td style={{ padding: '1rem 1.5rem', textAlign: 'center' }}>
-                                            <button 
-                                                onClick={() => { setSelectedReceipt(d); setShowReceipt(true); }}
-                                                style={{ 
-                                                    padding: '0.4rem 0.8rem', 
-                                                    backgroundColor: '#eff6ff', 
-                                                    border: '1px solid #bfdbfe', 
-                                                    color: '#2563eb', 
-                                                    borderRadius: '6px', 
-                                                    cursor: 'pointer', 
-                                                    fontSize: '0.75rem', 
-                                                    fontWeight: '800' 
-                                                }}
-                                            >
-                                                View Recipt
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))}
-                                {activeReport === 'monthly' && reportData.monthly.map((m, i) => (
-                                    <tr key={i}>
-                                        <td style={{ padding: '1rem 1.5rem' }}>{m.month}</td>
-                                        <td style={{ padding: '1rem 1.5rem' }}>{m.year}</td>
-                                        <td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontWeight: '800', color: '#4f46e5' }}>₹{m.total.toLocaleString()}</td>
-                                    </tr>
-                                ))}
-                                {activeReport === 'class' && reportData.classWise.map((c, idx) => (
-                                    <tr key={idx}>
-                                        <td style={{ padding: '1rem 1.5rem' }}>{c.className}</td>
-                                        <td style={{ padding: '1rem 1.5rem' }}>{c.students}</td>
-                                        <td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontWeight: '700' }}>₹{c.total.toLocaleString()}</td>
-                                    </tr>
-                                ))}
-                                {activeReport === 'pending' && (
-                                    <tr>
-                                        <td colSpan={3} style={{ padding: '4rem', textAlign: 'center', color: '#94a3b8' }}>
-                                            Use the "Due Fees" tab for detailed outstanding collections.
-                                        </td>
-                                    </tr>
-                                )}
-                            </tbody>
-                            <tfoot>
-                                <tr style={{ backgroundColor: '#f8fafc', borderTop: '2px solid #e2e8f0' }}>
-                                    <td colSpan={2} style={{ padding: '1rem 1.5rem', fontWeight: '800', textAlign: 'right' }}>Grand Total:</td>
-                                    <td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontWeight: '900', color: '#111827', fontSize: '1.1rem' }}>
-                                        ₹{(() => {
-                                            if (activeReport === 'daily') return reportData.daily.reduce((s, d) => s + d.paidAmount, 0).toLocaleString();
-                                            if (activeReport === 'monthly') return reportData.monthly.reduce((s, m) => s + m.total, 0).toLocaleString();
-                                            if (activeReport === 'class') return reportData.classWise.reduce((s, c) => s + c.total, 0).toLocaleString();
-                                            return '0';
-                                        })()}
-                                    </td>
-                                    {activeReport === 'daily' && <td></td>}
-                                </tr>
-                            </tfoot>
+ 
+                         <table style={{ width: '100%' }}>
+                             <thead>
+                                 <tr style={{ backgroundColor: '#f1f5f9' }}>
+                                     {activeReport === 'daily' && (<><th style={{ padding: '1rem 1.5rem' }}>Date</th><th style={{ padding: '1rem 1.5rem' }}>Receipt No</th><th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Amount (₹)</th><th style={{ padding: '1rem 1.5rem', textAlign: 'center' }}>Action</th></>)}
+                                     {activeReport === 'monthly' && (<><th style={{ padding: '1rem 1.5rem' }}>Month</th><th style={{ padding: '1rem 1.5rem' }}>Year</th><th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Total Collection (₹)</th></>)}
+                                     {activeReport === 'class' && (<><th style={{ padding: '1rem 1.5rem' }}>Class</th><th style={{ padding: '1rem 1.5rem' }}>Students</th><th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Collected Amount (₹)</th></>)}
+                                     {activeReport === 'pending' && (<><th style={{ padding: '1rem 1.5rem' }}>Class</th><th style={{ padding: '1rem 1.5rem' }}>Total Dues</th><th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Pending Amount (₹)</th></>)}
+                                 </tr>
+                             </thead>
+                             <tbody>
+                                 {activeReport === 'daily' && reportData.daily.map((d, i) => (
+                                     <tr key={i}>
+                                         <td style={{ padding: '1rem 1.5rem' }}>{d.date}</td>
+                                         <td style={{ padding: '1rem 1.5rem', fontWeight: '900', color: '#2563eb' }}>{d.receiptNo}</td>
+                                         <td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontWeight: '800', color: '#059669' }}>₹{d.paidAmount.toLocaleString()}</td>
+                                         <td style={{ padding: '1rem 1.5rem', textAlign: 'center' }}>
+                                             <button 
+                                                 onClick={() => { setSelectedReceipt(d); setShowReceipt(true); }}
+                                                 style={{ 
+                                                     padding: '0.4rem 0.8rem', 
+                                                     backgroundColor: '#eff6ff', 
+                                                     border: '1px solid #bfdbfe', 
+                                                     color: '#2563eb', 
+                                                     borderRadius: '6px', 
+                                                     cursor: 'pointer', 
+                                                     fontSize: '0.75rem', 
+                                                     fontWeight: '800' 
+                                                 }}
+                                             >
+                                                 View Recipt
+                                             </button>
+                                         </td>
+                                     </tr>
+                                 ))}
+                                 {activeReport === 'monthly' && (
+                                    reportData.monthly.filter(m => m.month === reportFilterMonth).length > 0 ? (
+                                        reportData.monthly.filter(m => m.month === reportFilterMonth).map((m, i) => (
+                                            <tr key={i}>
+                                                <td style={{ padding: '1rem 1.5rem' }}>{m.month}</td>
+                                                <td style={{ padding: '1rem 1.5rem' }}>{m.year}</td>
+                                                <td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontWeight: '800', color: '#4f46e5' }}>₹{m.total.toLocaleString()}</td>
+                                            </tr>
+                                        ))
+                                    ) : (
+                                        <tr>
+                                            <td colSpan={3} style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8', fontStyle: 'italic' }}>No collection data for {reportFilterMonth}.</td>
+                                        </tr>
+                                    )
+                                 )}
+                                 {activeReport === 'class' && reportData.classWise.map((c, idx) => (
+                                     <tr key={idx}>
+                                         <td style={{ padding: '1rem 1.5rem' }}>{c.className}</td>
+                                         <td style={{ padding: '1rem 1.5rem' }}>{c.students}</td>
+                                         <td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontWeight: '700' }}>₹{c.total.toLocaleString()}</td>
+                                     </tr>
+                                 ))}
+                                 {activeReport === 'pending' && (
+                                     <tr>
+                                         <td colSpan={3} style={{ padding: '4rem', textAlign: 'center', color: '#94a3b8' }}>
+                                             Use the "Due Fees" tab for detailed outstanding collections.
+                                         </td>
+                                     </tr>
+                                 )}
+                             </tbody>
+                             <tfoot>
+                                 <tr style={{ backgroundColor: '#f8fafc', borderTop: '2px solid #e2e8f0' }}>
+                                     <td colSpan={2} style={{ padding: '1rem 1.5rem', fontWeight: '800', textAlign: 'right' }}>Grand Total:</td>
+                                     <td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontWeight: '900', color: '#111827', fontSize: '1.1rem' }}>
+                                         ₹{(() => {
+                                             if (activeReport === 'daily') return reportData.daily.reduce((s, d) => s + d.paidAmount, 0).toLocaleString();
+                                             if (activeReport === 'monthly') return reportData.monthly.filter(m => m.month === reportFilterMonth).reduce((s, m) => s + m.total, 0).toLocaleString();
+                                             if (activeReport === 'class') return reportData.classWise.reduce((s, c) => s + c.total, 0).toLocaleString();
+                                             return '0';
+                                         })()}
+                                     </td>
+                                     {activeReport === 'daily' && <td></td>}
+                                 </tr>
+                             </tfoot>
                         </table>
                     </div>
                 </div>

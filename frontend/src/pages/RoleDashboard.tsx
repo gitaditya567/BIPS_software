@@ -272,6 +272,21 @@ const RoleDashboard: React.FC = () => {
                         setStatsData(res.data.stats);
                         setFetchedActivities(res.data.recentActivities || []);
                     }
+                } else if (role === 'TEACHER' && user.id) {
+                    // Sync Profile for Service Record
+                    const profileRes = await axios.get(`/api/general/user/${user.id}`);
+                    if (profileRes.data) {
+                        const updatedUser = { ...user, ...profileRes.data, role: user.role };
+                        setUser(updatedUser);
+                        localStorage.setItem('user', JSON.stringify(updatedUser));
+                    }
+
+                    // Fetch Stats
+                    const statsRes = await axios.get(`/api/teacher/${user.id}/dashboard-stats`);
+                    if (statsRes.data) {
+                        setStatsData(statsRes.data.stats);
+                        setFetchedActivities(statsRes.data.recentActivities || []);
+                    }
                 } else if (['PARENT', 'STUDENT'].includes(role) && user.id) {
                     // Fetch latest profile to keep changes synced with admin panel
                     const res = await axios.get(`/api/general/user/${user.id}`);
@@ -287,12 +302,6 @@ const RoleDashboard: React.FC = () => {
                             setStatsData(statsRes.data.stats);
                             setFetchedActivities(statsRes.data.recentActivities || []);
                         }
-                    }
-                } else if (role === 'TEACHER' && user.id) {
-                    const statsRes = await axios.get(`/api/teacher/${user.id}/dashboard-stats`);
-                    if (statsRes.data) {
-                        setStatsData(statsRes.data.stats);
-                        setFetchedActivities(statsRes.data.recentActivities || []);
                     }
                 }
             } catch (err) {

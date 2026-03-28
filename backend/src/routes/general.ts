@@ -128,7 +128,8 @@ router.get('/user/:id', async (req, res) => {
             include: {
                 studentProfile: {
                     include: { user: true, class: true, section: true }
-                }
+                },
+                teacherProfile: true
             }
         });
         if (!fullUser) return res.status(404).json({ error: 'User not found' });
@@ -138,7 +139,8 @@ router.get('/user/:id', async (req, res) => {
             email: fullUser.email,
             name: fullUser.name,
             role: fullUser.role, 
-            studentInfo: fullUser.studentProfile
+            studentInfo: fullUser.studentProfile,
+            teacherInfo: fullUser.teacherProfile
         });
     } catch (error) { res.status(500).json({ error: 'Failed to fetch user' }); }
 });

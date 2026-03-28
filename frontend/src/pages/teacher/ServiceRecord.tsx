@@ -1,17 +1,27 @@
 import React from 'react';
 
 const ServiceRecord: React.FC = () => {
-    // Current Teacher Info (Dummy Data)
+    // Get current teacher data from localStorage
+    const userRaw = localStorage.getItem('user');
+    const user = userRaw ? JSON.parse(userRaw) : null;
+    const teacher = user?.teacherInfo;
+
     const teacherProfile = {
-        teacherId: 'TCH-2024-0015',
-        name: 'John Doe',
-        qualification: 'M.Sc. Mathematics, B.Ed.',
-        department: 'Science & Mathematics',
+        teacherId: teacher?.employeeId || 'N/A',
+        name: user?.name || 'N/A',
+        qualification: teacher?.qualification || 'N/A',
+        department: teacher?.mainSubject || 'N/A',
     };
 
-    // Joining/Relieving Details
+    // Joining Details from record
     const records = [
-        { joiningDate: '01 July 2024', position: 'Math Teacher', status: 'Active' }
+        { 
+            joiningDate: teacher?.joiningDate ? new Date(teacher.joiningDate).toLocaleDateString('en-IN', {
+                year: 'numeric', month: 'long', day: 'numeric'
+            }) : 'N/A', 
+            position: teacher?.employeeType || 'Teacher', 
+            status: 'Active' 
+        }
     ];
 
     return (

@@ -91,7 +91,8 @@ const loginHandler = async (req: express.Request, res: express.Response): Promis
                         class: true,
                         section: true
                     }
-                }
+                },
+                teacherProfile: true
             }
         });
 
@@ -112,7 +113,8 @@ const loginHandler = async (req: express.Request, res: express.Response): Promis
                 email: fullUser.email,
                 name: fullUser.name,
                 role: role === 'PARENT' ? 'PARENT' : fullUser.role,
-                studentInfo: fullUser.studentProfile
+                studentInfo: fullUser.studentProfile,
+                teacherInfo: fullUser.teacherProfile
             }
         });
 

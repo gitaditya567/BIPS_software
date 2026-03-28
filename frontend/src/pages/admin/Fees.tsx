@@ -1207,7 +1207,7 @@ const Fees: React.FC = () => {
                         <table style={{ width: '100%' }}>
                             <thead>
                                 <tr style={{ backgroundColor: '#f1f5f9' }}>
-                                    {activeReport === 'daily' && (<><th style={{ padding: '1rem 1.5rem' }}>Date</th><th style={{ padding: '1rem 1.5rem' }}>Receipts</th><th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Total Collection (₹)</th></>)}
+                                    {activeReport === 'daily' && (<><th style={{ padding: '1rem 1.5rem' }}>Date</th><th style={{ padding: '1rem 1.5rem' }}>Receipt No</th><th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Amount (₹)</th></>)}
                                     {activeReport === 'monthly' && (<><th style={{ padding: '1rem 1.5rem' }}>Month</th><th style={{ padding: '1rem 1.5rem' }}>Year</th><th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Total Collection (₹)</th></>)}
                                     {activeReport === 'class' && (<><th style={{ padding: '1rem 1.5rem' }}>Class</th><th style={{ padding: '1rem 1.5rem' }}>Students</th><th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Collected Amount (₹)</th></>)}
                                     {activeReport === 'pending' && (<><th style={{ padding: '1rem 1.5rem' }}>Class</th><th style={{ padding: '1rem 1.5rem' }}>Total Dues</th><th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Pending Amount (₹)</th></>)}
@@ -1217,7 +1217,7 @@ const Fees: React.FC = () => {
                                 {activeReport === 'daily' && reportData.daily.map((d, i) => (
                                     <tr key={i}>
                                         <td style={{ padding: '1rem 1.5rem' }}>{d.date}</td>
-                                        <td style={{ padding: '1rem 1.5rem' }}>{d.count}</td>
+                                        <td style={{ padding: '1rem 1.5rem', fontWeight: 'bold', color: '#2563eb' }}>{d.receiptNo}</td>
                                         <td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontWeight: '800', color: '#059669' }}>₹{d.total.toLocaleString()}</td>
                                     </tr>
                                 ))}

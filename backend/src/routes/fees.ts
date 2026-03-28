@@ -268,21 +268,16 @@ router.get('/reports', async (req, res) => {
     try {
         const allPayments = await prisma.feePayment.findMany({
             where: { status: 'APPROVED' },
-            include: { student: { include: { class: true } } }
+            include: { student: { include: { class: true, user: true } } }
         });
 
-        // 1. Daily Report
-        const dailyMap: any = {};
-        allPayments.forEach(p => {
-            const dateObj = new Date(p.paymentDate);
-            const dateStr = dateObj.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-            if(!dailyMap[dateStr]) dailyMap[dateStr] = { date: dateStr, count: 0, total: 0 };
-            dailyMap[dateStr].count += 1;
-            dailyMap[dateStr].total += p.amountPaid;
-        });
-        const daily = Object.values(dailyMap).sort((a: any, b: any) => 
-            new Date(b.date).getTime() - new Date(a.date).getTime()
-        );
+        // 1. Detailed Daily Report (Individual transactions)
+        const daily = allPayments.map(p => ({
+            date: new Date(p.paymentDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+            receiptNo: p.receiptNo,
+            studentName: p.student?.user?.name || 'Unknown',
+            total: p.amountPaid
+        })).sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
         // 2. Monthly Report
         const monthlyMap: any = {};

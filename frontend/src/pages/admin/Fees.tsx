@@ -55,9 +55,21 @@ const Fees: React.FC = () => {
     // Due Fees State
     const [dueFees] = useState<DueFee[]>([]);
 
+    // Reports State
+    const [reportData, setReportData] = useState<{ daily: any[], monthly: any[], classWise: any[] }>({
+        daily: [],
+        monthly: [],
+        classWise: []
+    });
 
-    // Concessions State
-    // Concessions State Removed
+    const fetchReports = async () => {
+        try {
+            const res = await axios.get('/api/fees/reports');
+            setReportData(res.data);
+        } catch (err) {
+            console.error("Failed to fetch reports");
+        }
+    };
 
 
     // Fee Structure State
@@ -137,6 +149,7 @@ const Fees: React.FC = () => {
             }
             if (parsedUser.role === 'ACCOUNTS') {
                 fetchAllHistory();
+                fetchReports();
             }
 
             // Click outside listener for search dropdown
@@ -155,6 +168,10 @@ const Fees: React.FC = () => {
                 }
                 if (parsedUser.role === 'ACCOUNTS') {
                     fetchAllHistory();
+                }
+                // Refresh reports if active
+                if (activeTab === 'reports') {
+                    fetchReports();
                 }
             }, 5000);
 
@@ -1197,40 +1214,45 @@ const Fees: React.FC = () => {
                                 </tr>
                             </thead>
                             <tbody>
-                                {activeReport === 'daily' && (
-                                    <>
-                                        <tr><td style={{ padding: '1rem 1.5rem' }}>10 Mar 2026</td><td style={{ padding: '1rem 1.5rem' }}>25</td><td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontWeight: '800', color: '#059669' }}>₹50,000</td></tr>
-                                        <tr><td style={{ padding: '1rem 1.5rem' }}>09 Mar 2026</td><td style={{ padding: '1rem 1.5rem' }}>18</td><td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontWeight: '800', color: '#059669' }}>₹32,400</td></tr>
-                                        <tr><td style={{ padding: '1rem 1.5rem' }}>08 Mar 2026</td><td style={{ padding: '1rem 1.5rem' }}>12</td><td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontWeight: '800', color: '#059669' }}>₹15,000</td></tr>
-                                    </>
-                                )}
-                                {activeReport === 'monthly' && (
-                                    <>
-                                        <tr><td style={{ padding: '1rem 1.5rem' }}>March</td><td style={{ padding: '1rem 1.5rem' }}>2026</td><td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontWeight: '800', color: '#4f46e5' }}>₹4,50,000</td></tr>
-                                        <tr><td style={{ padding: '1rem 1.5rem' }}>February</td><td style={{ padding: '1rem 1.5rem' }}>2026</td><td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontWeight: '800', color: '#4f46e5' }}>₹3,80,200</td></tr>
-                                    </>
-                                )}
-                                {activeReport === 'class' && (
-                                    <>
-                                        <tr><td style={{ padding: '1rem 1.5rem' }}>Class 1</td><td style={{ padding: '1rem 1.5rem' }}>40</td><td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontWeight: '700' }}>₹80,000</td></tr>
-                                        <tr><td style={{ padding: '1rem 1.5rem' }}>Class 6</td><td style={{ padding: '1rem 1.5rem' }}>35</td><td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontWeight: '700' }}>₹95,500</td></tr>
-                                    </>
-                                )}
+                                {activeReport === 'daily' && reportData.daily.map((d, i) => (
+                                    <tr key={i}>
+                                        <td style={{ padding: '1rem 1.5rem' }}>{d.date}</td>
+                                        <td style={{ padding: '1rem 1.5rem' }}>{d.count}</td>
+                                        <td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontWeight: '800', color: '#059669' }}>₹{d.total.toLocaleString()}</td>
+                                    </tr>
+                                ))}
+                                {activeReport === 'monthly' && reportData.monthly.map((m, i) => (
+                                    <tr key={i}>
+                                        <td style={{ padding: '1rem 1.5rem' }}>{m.month}</td>
+                                        <td style={{ padding: '1rem 1.5rem' }}>{m.year}</td>
+                                        <td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontWeight: '800', color: '#4f46e5' }}>₹{m.total.toLocaleString()}</td>
+                                    </tr>
+                                ))}
+                                {activeReport === 'class' && reportData.classWise.map((c, idx) => (
+                                    <tr key={idx}>
+                                        <td style={{ padding: '1rem 1.5rem' }}>{c.className}</td>
+                                        <td style={{ padding: '1rem 1.5rem' }}>{c.students}</td>
+                                        <td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontWeight: '700' }}>₹{c.total.toLocaleString()}</td>
+                                    </tr>
+                                ))}
                                 {activeReport === 'pending' && (
-                                    <>
-                                        <tr><td style={{ padding: '1rem 1.5rem' }}>Class 10</td><td style={{ padding: '1rem 1.5rem' }}>5 Students</td><td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontWeight: '800', color: '#ef4444' }}>₹25,000</td></tr>
-                                        <tr><td style={{ padding: '1rem 1.5rem' }}>Class 12</td><td style={{ padding: '1rem 1.5rem' }}>3 Students</td><td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontWeight: '800', color: '#ef4444' }}>₹12,000</td></tr>
-                                    </>
+                                    <tr>
+                                        <td colSpan={3} style={{ padding: '4rem', textAlign: 'center', color: '#94a3b8' }}>
+                                            Use the "Due Fees" tab for detailed outstanding collections.
+                                        </td>
+                                    </tr>
                                 )}
                             </tbody>
                             <tfoot>
                                 <tr style={{ backgroundColor: '#f8fafc', borderTop: '2px solid #e2e8f0' }}>
-                                    <td colSpan={2} style={{ padding: '1rem 1.5rem', fontWeight: '800', textAlign: 'right' }}>Total:</td>
+                                    <td colSpan={2} style={{ padding: '1rem 1.5rem', fontWeight: '800', textAlign: 'right' }}>Grand Total:</td>
                                     <td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontWeight: '900', color: '#111827', fontSize: '1.1rem' }}>
-                                        {activeReport === 'daily' && '₹97,400'}
-                                        {activeReport === 'monthly' && '₹8,30,200'}
-                                        {activeReport === 'class' && '₹1,75,500'}
-                                        {activeReport === 'pending' && '₹37,000'}
+                                        ₹{(() => {
+                                            if (activeReport === 'daily') return reportData.daily.reduce((s, d) => s + d.total, 0).toLocaleString();
+                                            if (activeReport === 'monthly') return reportData.monthly.reduce((s, m) => s + m.total, 0).toLocaleString();
+                                            if (activeReport === 'class') return reportData.classWise.reduce((s, c) => s + c.total, 0).toLocaleString();
+                                            return '0';
+                                        })()}
                                     </td>
                                 </tr>
                             </tfoot>

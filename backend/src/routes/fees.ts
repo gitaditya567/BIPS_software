@@ -262,6 +262,58 @@ router.get('/concessions', async (req, res) => {
     } catch (error) { res.status(500).json({ error: 'Failed' }); }
 });
 
+
+// Real-time Reports
+router.get('/reports', async (req, res) => {
+    try {
+        const allPayments = await prisma.feePayment.findMany({
+            where: { status: 'APPROVED' },
+            include: { student: { include: { class: true } } }
+        });
+
+        // 1. Daily Report
+        const dailyMap: any = {};
+        allPayments.forEach(p => {
+            const dateObj = new Date(p.paymentDate);
+            const dateStr = dateObj.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+            if(!dailyMap[dateStr]) dailyMap[dateStr] = { date: dateStr, count: 0, total: 0 };
+            dailyMap[dateStr].count += 1;
+            dailyMap[dateStr].total += p.amountPaid;
+        });
+        const daily = Object.values(dailyMap).sort((a: any, b: any) => 
+            new Date(b.date).getTime() - new Date(a.date).getTime()
+        );
+
+        // 2. Monthly Report
+        const monthlyMap: any = {};
+        allPayments.forEach(p => {
+            const key = `${p.month} ${p.year}`;
+            if(!monthlyMap[key]) monthlyMap[key] = { month: p.month, year: p.year, total: 0 };
+            monthlyMap[key].total += p.amountPaid;
+        });
+        const monthly = Object.values(monthlyMap);
+
+        // 3. Class-wise Report
+        const classMap: any = {};
+        allPayments.forEach(p => {
+            const className = p.student?.class?.name || 'Unknown';
+            if(!classMap[className]) classMap[className] = { className: className, students: new Set(), total: 0 };
+            classMap[className].students.add(p.studentId);
+            classMap[className].total += p.amountPaid;
+        });
+        const classWise = Object.values(classMap).map((c: any) => ({
+            className: c.className,
+            students: c.students.size,
+            total: c.total
+        }));
+
+        res.json({ daily, monthly, classWise });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Failed to fetch reports' });
+    }
+});
+
 export default router;
 
 

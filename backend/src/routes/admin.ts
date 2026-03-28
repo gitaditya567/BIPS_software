@@ -608,7 +608,12 @@ router.get('/dashboard/stats', async (req, res) => {
         
         const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         const attendances = await prisma.attendance.findMany({
-            where: { date: { gte: startOfDay }, teacherId: null }
+            where: { 
+                date: { 
+                    gte: startOfDay,
+                    lt: new Date(startOfDay.getTime() + 24 * 60 * 60 * 1000)
+                }
+            }
         });
         const presentCount = attendances.filter(a => a.status === 'Present').length;
         const totalAttendanceCount = attendances.length;

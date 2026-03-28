@@ -1207,7 +1207,7 @@ const Fees: React.FC = () => {
                         <table style={{ width: '100%' }}>
                             <thead>
                                 <tr style={{ backgroundColor: '#f1f5f9' }}>
-                                    {activeReport === 'daily' && (<><th style={{ padding: '1rem 1.5rem' }}>Date</th><th style={{ padding: '1rem 1.5rem' }}>Receipt No</th><th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Amount (₹)</th></>)}
+                                    {activeReport === 'daily' && (<><th style={{ padding: '1rem 1.5rem' }}>Date</th><th style={{ padding: '1rem 1.5rem' }}>Receipt No</th><th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Amount (₹)</th><th style={{ padding: '1rem 1.5rem', textAlign: 'center' }}>Action</th></>)}
                                     {activeReport === 'monthly' && (<><th style={{ padding: '1rem 1.5rem' }}>Month</th><th style={{ padding: '1rem 1.5rem' }}>Year</th><th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Total Collection (₹)</th></>)}
                                     {activeReport === 'class' && (<><th style={{ padding: '1rem 1.5rem' }}>Class</th><th style={{ padding: '1rem 1.5rem' }}>Students</th><th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Collected Amount (₹)</th></>)}
                                     {activeReport === 'pending' && (<><th style={{ padding: '1rem 1.5rem' }}>Class</th><th style={{ padding: '1rem 1.5rem' }}>Total Dues</th><th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Pending Amount (₹)</th></>)}
@@ -1217,8 +1217,25 @@ const Fees: React.FC = () => {
                                 {activeReport === 'daily' && reportData.daily.map((d, i) => (
                                     <tr key={i}>
                                         <td style={{ padding: '1rem 1.5rem' }}>{d.date}</td>
-                                        <td style={{ padding: '1rem 1.5rem', fontWeight: 'bold', color: '#2563eb' }}>{d.receiptNo}</td>
-                                        <td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontWeight: '800', color: '#059669' }}>₹{d.total.toLocaleString()}</td>
+                                        <td style={{ padding: '1rem 1.5rem', fontWeight: '900', color: '#2563eb' }}>{d.receiptNo}</td>
+                                        <td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontWeight: '800', color: '#059669' }}>₹{d.paidAmount.toLocaleString()}</td>
+                                        <td style={{ padding: '1rem 1.5rem', textAlign: 'center' }}>
+                                            <button 
+                                                onClick={() => { setSelectedReceipt(d); setShowReceipt(true); }}
+                                                style={{ 
+                                                    padding: '0.4rem 0.8rem', 
+                                                    backgroundColor: '#eff6ff', 
+                                                    border: '1px solid #bfdbfe', 
+                                                    color: '#2563eb', 
+                                                    borderRadius: '6px', 
+                                                    cursor: 'pointer', 
+                                                    fontSize: '0.75rem', 
+                                                    fontWeight: '800' 
+                                                }}
+                                            >
+                                                View Recipt
+                                            </button>
+                                        </td>
                                     </tr>
                                 ))}
                                 {activeReport === 'monthly' && reportData.monthly.map((m, i) => (
@@ -1248,12 +1265,13 @@ const Fees: React.FC = () => {
                                     <td colSpan={2} style={{ padding: '1rem 1.5rem', fontWeight: '800', textAlign: 'right' }}>Grand Total:</td>
                                     <td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontWeight: '900', color: '#111827', fontSize: '1.1rem' }}>
                                         ₹{(() => {
-                                            if (activeReport === 'daily') return reportData.daily.reduce((s, d) => s + d.total, 0).toLocaleString();
+                                            if (activeReport === 'daily') return reportData.daily.reduce((s, d) => s + d.paidAmount, 0).toLocaleString();
                                             if (activeReport === 'monthly') return reportData.monthly.reduce((s, m) => s + m.total, 0).toLocaleString();
                                             if (activeReport === 'class') return reportData.classWise.reduce((s, c) => s + c.total, 0).toLocaleString();
                                             return '0';
                                         })()}
                                     </td>
+                                    {activeReport === 'daily' && <td></td>}
                                 </tr>
                             </tfoot>
                         </table>

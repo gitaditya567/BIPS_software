@@ -273,10 +273,12 @@ router.get('/reports', async (req, res) => {
 
         // 1. Detailed Daily Report (Individual transactions)
         const daily = allPayments.map(p => ({
+            ...p,
             date: new Date(p.paymentDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
-            receiptNo: p.receiptNo,
+            paidAmount: p.amountPaid, // Formatting for receipt modal expectations
             studentName: p.student?.user?.name || 'Unknown',
-            total: p.amountPaid
+            className: p.student?.class?.name || 'Unknown',
+            admissionNo: p.student?.admissionNo || 'N/A'
         })).sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
         // 2. Monthly Report

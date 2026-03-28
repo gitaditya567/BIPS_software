@@ -645,43 +645,83 @@ const Students: React.FC = () => {
                         })()}
                     </tbody>
                 </table>
-                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem', marginTop: '1.5rem', padding: '1rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.4rem', marginTop: '2rem', padding: '1rem' }}>
                     {(() => {
-                        const pages = [];
-                        for(let i=1; i<=totalPages; i++) pages.push(i);
+                        const getVisiblePages = () => {
+                            const pages = [];
+                            let start = Math.max(1, currentPage - 1);
+                            let end = Math.min(totalPages, start + 2);
+                            
+                            if (end === totalPages) {
+                                start = Math.max(1, totalPages - 2);
+                            }
+                            
+                            for (let i = start; i <= end; i++) {
+                                pages.push(i);
+                            }
+                            return pages;
+                        };
+                        
+                        const visiblePages = getVisiblePages();
                         
                         return (
                             <>
                                 <button 
+                                    onClick={() => setCurrentPage(1)} 
+                                    disabled={currentPage === 1}
+                                    style={{ padding: '0.4rem 0.7rem', border: '1px solid #e2e8f0', borderRadius: '6px', background: 'white', cursor: currentPage === 1 ? 'not-allowed' : 'pointer', opacity: currentPage === 1 ? 0.5 : 1, fontWeight: 'bold' }}
+                                >
+                                    «
+                                </button>
+                                <button 
                                     onClick={() => setCurrentPage(p => Math.max(1, p - 1))} 
                                     disabled={currentPage === 1}
-                                    style={{ padding: '0.4rem 0.8rem', border: '1px solid #e2e8f0', borderRadius: '6px', background: 'white', cursor: currentPage === 1 ? 'not-allowed' : 'pointer', opacity: currentPage === 1 ? 0.5 : 1 }}
+                                    style={{ padding: '0.4rem 0.7rem', border: '1px solid #e2e8f0', borderRadius: '6px', background: 'white', cursor: currentPage === 1 ? 'not-allowed' : 'pointer', opacity: currentPage === 1 ? 0.5 : 1, fontWeight: 'bold' }}
                                 >
-                                    Previous
+                                    ‹
                                 </button>
-                                {pages.map(p => (
+
+                                {visiblePages[0] > 1 && <span style={{ color: '#94a3b8', padding: '0 0.2rem' }}>...</span>}
+
+                                {visiblePages.map(p => (
                                     <button 
                                         key={p} 
                                         onClick={() => setCurrentPage(p)}
                                         style={{ 
-                                            padding: '0.4rem 0.8rem', 
+                                            minWidth: '38px',
+                                            height: '38px',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
                                             border: '1px solid #e2e8f0', 
                                             borderRadius: '6px', 
                                             backgroundColor: currentPage === p ? '#2563eb' : 'white', 
                                             color: currentPage === p ? 'white' : '#64748b',
                                             fontWeight: 'bold',
-                                            cursor: 'pointer'
+                                            cursor: 'pointer',
+                                            transition: 'all 0.2s',
+                                            boxShadow: currentPage === p ? '0 4px 6px -1px rgba(37, 99, 235, 0.2)' : 'none'
                                         }}
                                     >
                                         {p}
                                     </button>
                                 ))}
+
+                                {visiblePages[visiblePages.length - 1] < totalPages && <span style={{ color: '#94a3b8', padding: '0 0.2rem' }}>...</span>}
+
                                 <button 
                                     onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} 
                                     disabled={currentPage === totalPages}
-                                    style={{ padding: '0.4rem 0.8rem', border: '1px solid #e2e8f0', borderRadius: '6px', background: 'white', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer', opacity: currentPage === totalPages ? 0.5 : 1 }}
+                                    style={{ padding: '0.4rem 0.7rem', border: '1px solid #e2e8f0', borderRadius: '6px', background: 'white', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer', opacity: currentPage === totalPages ? 0.5 : 1, fontWeight: 'bold' }}
                                 >
-                                    Next
+                                    ›
+                                </button>
+                                <button 
+                                    onClick={() => setCurrentPage(totalPages)} 
+                                    disabled={currentPage === totalPages}
+                                    style={{ padding: '0.4rem 0.7rem', border: '1px solid #e2e8f0', borderRadius: '6px', background: 'white', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer', opacity: currentPage === totalPages ? 0.5 : 1, fontWeight: 'bold' }}
+                                >
+                                    »
                                 </button>
                             </>
                         );

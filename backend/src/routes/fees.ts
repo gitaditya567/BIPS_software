@@ -105,7 +105,7 @@ router.post('/:id/approve', async (req, res) => {
 router.post('/:id/reject', async (req, res) => {
     try {
         const { id } = req.params;
-        const { approvedBy } = req.body; // Actually rejectedBy but we use the same field for simplicity or add one
+        const { approvedBy } = req.body; 
 
         const updated = await prisma.feePayment.update({
             where: { id },
@@ -118,6 +118,32 @@ router.post('/:id/reject', async (req, res) => {
         res.json({ success: true, data: updated });
     } catch (error) {
         res.status(500).json({ error: 'Failed to reject fee' });
+    }
+});
+
+// Pay Full (Finalize rejected draft by removing discount)
+router.post('/:id/pay-full', async (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        // Find existing record to set amountPaid back to totalFee
+        const existing = await prisma.feePayment.findUnique({ where: { id } });
+        if (!existing) return res.status(404).json({ error: 'Record not found' });
+
+        const updated = await prisma.feePayment.update({
+            where: { id },
+            data: {
+                status: 'APPROVED',
+                discount: 0,
+                amountPaid: existing.totalFee || 0, // Reset to full amount
+                discountReason: 'Discount Rejected - Full Paid'
+            }
+        });
+
+        res.json({ success: true, data: updated });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Failed to finalize full payment' });
     }
 });
 

@@ -394,6 +394,28 @@ const Fees: React.FC = () => {
     };
 
 
+    const payFullRejectedFee = async (id: string) => {
+        if (!window.confirm('Discount was rejected. Are you sure you want to collect the FULL amount now?')) return;
+        try {
+            const res = await axios.post(`/api/fees/${id}/pay-full`);
+            const data = res.data.data;
+            const updatedRec = {
+                ...data,
+                paidAmount: data.amountPaid,
+                date: new Date(data.paymentDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
+                studentName: feeRecords.find(r => r.id === id)?.studentName || 'Student',
+                className: feeRecords.find(r => r.id === id)?.className || ''
+            };
+            setFeeRecords(prev => prev.map(rec => rec.id === id ? updatedRec : rec));
+            setSelectedReceipt(updatedRec);
+            setShowReceipt(true);
+            addNotification('fee', 'Full Amount Collected', 'Rejected draft has been updated to full amount and paid.');
+        } catch (error) {
+            alert('Failed to process full payment');
+        }
+    };
+
+
     const handleAddFeeHead = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!newHeadName) return alert('Please fill required fields');
@@ -1091,7 +1113,22 @@ const Fees: React.FC = () => {
                                                     Pay & Print Receipt
                                                 </button>
                                             ) : r.status === 'REJECTED' ? (
-                                                <span style={{ color: '#ef4444', fontSize: '0.75rem', fontWeight: 'bold' }}>Request Rejected</span>
+                                                <button 
+                                                    onClick={() => payFullRejectedFee(r.id)}
+                                                    style={{ 
+                                                        backgroundColor: '#ef4444', 
+                                                        color: 'white', 
+                                                        border: 'none', 
+                                                        padding: '0.4rem 0.8rem', 
+                                                        borderRadius: '6px', 
+                                                        cursor: 'pointer', 
+                                                        fontWeight: '700', 
+                                                        fontSize: '0.75rem',
+                                                        boxShadow: '0 2px 4px rgba(239, 68, 68, 0.2)'
+                                                    }}
+                                                >
+                                                    Pay Full Amount
+                                                </button>
                                             ) : (
                                                 <span style={{ color: '#64748b', fontSize: '0.75rem', fontStyle: 'italic' }}>Awaiting Approval</span>
                                             )}

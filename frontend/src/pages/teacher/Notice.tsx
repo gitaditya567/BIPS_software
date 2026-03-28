@@ -30,7 +30,11 @@ const Notice: React.FC = () => {
 
     const fetchNotices = async () => {
         try {
-            const res = await axios.get('/api/general/notices');
+            let url = '/api/general/notices';
+            if (userRole === 'TEACHER' && teacherId) {
+                url += `?authorId=${teacherId}`;
+            }
+            const res = await axios.get(url);
             setNotices(res.data);
         } catch (err) { console.error(err); }
     };
@@ -44,7 +48,8 @@ const Notice: React.FC = () => {
                 message,
                 targetClass: selectedClass,
                 section,
-                postedBy
+                postedBy,
+                authorId: teacherId
             });
             setNotices([res.data, ...notices]);
             setTitle('');

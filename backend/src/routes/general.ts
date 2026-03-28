@@ -67,7 +67,14 @@ router.get('/attendance/:studentId', async (req, res) => {
 // Notices
 router.get('/notices', async (req, res) => {
     try {
-        const notices = await prisma.notice.findMany({ orderBy: { date: 'desc' } });
+        const { authorId } = req.query;
+        const where: any = {};
+        if (authorId) where.authorId = String(authorId);
+
+        const notices = await prisma.notice.findMany({ 
+            where,
+            orderBy: { date: 'desc' } 
+        });
         
         // Fetch classes to map Class IDs to Names
         const classes = await prisma.class.findMany();
@@ -91,7 +98,7 @@ router.get('/notices', async (req, res) => {
 
 router.post('/notices', async (req, res) => {
     try {
-        const { title, message, targetClass, section, postedBy } = req.body;
+        const { title, message, targetClass, section, postedBy, authorId } = req.body;
         const notice = await prisma.notice.create({
             data: { 
                 title, 
@@ -99,6 +106,7 @@ router.post('/notices', async (req, res) => {
                 class: targetClass, 
                 section, 
                 postedBy,
+                authorId,
                 date: new Date()
             }
         });

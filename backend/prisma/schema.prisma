@@ -255,5 +255,6 @@ model Notice {
   class     String?  // Targeting specific class
   section   String?
   date      DateTime @default(now())
-  postedBy  String?
+  postedBy  String?  // Name for display
+  authorId  String?  // ID for filtering history
 }

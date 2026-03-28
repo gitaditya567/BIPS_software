@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNotification } from '../../context/NotificationContext';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 interface FeeRecord {
     id: string;
@@ -69,6 +71,49 @@ const Fees: React.FC = () => {
         } catch (err) {
             console.error("Failed to fetch reports");
         }
+    };
+
+    const exportToPDF = () => {
+        const doc = new jsPDF() as any;
+        doc.setFont("helvetica", "bold");
+        doc.text("BIPS ERP - SCHOOL MANAGEMENT SYSTEM", 14, 15);
+        doc.setFontSize(10);
+        doc.setFont("helvetica", "normal");
+        doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 22);
+
+        let reportName = "";
+        let head: any[] = [];
+        let body: any[] = [];
+
+        if (activeReport === 'daily') {
+            reportName = "Daily Collection Detailed Report";
+            head = [['Date', 'Receipt No', 'Amount (INR)']];
+            body = reportData.daily.map(d => [d.date, d.receiptNo, `Rs. ${d.paidAmount.toLocaleString()}`]);
+        } else if (activeReport === 'monthly') {
+            reportName = "Monthly Collection Summary";
+            head = [['Month', 'Year', 'Total (INR)']];
+            body = reportData.monthly.map(m => [m.month, m.year, `Rs. ${m.total.toLocaleString()}`]);
+        } else if (activeReport === 'class') {
+            reportName = "Class-wise Fee Collection";
+            head = [['Class', 'Students Paid', 'Collected (INR)']];
+            body = reportData.classWise.map(c => [c.className, c.students, `Rs. ${c.total.toLocaleString()}`]);
+        }
+
+        doc.setFontSize(14);
+        doc.setFont("helvetica", "bold");
+        doc.text(reportName, 14, 32);
+
+        autoTable(doc, {
+            startY: 38,
+            head: head,
+            body: body,
+            theme: 'grid',
+            headStyles: { fillColor: [79, 70, 229], textColor: 255 },
+            alternateRowStyles: { fillColor: [248, 250, 252] },
+            margin: { top: 40 }
+        });
+
+        doc.save(`${reportName.replace(/ /g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`);
     };
 
 
@@ -1201,7 +1246,7 @@ const Fees: React.FC = () => {
                                 {activeReport === 'class' && 'Class-wise Fee Collection'}
                                 {activeReport === 'pending' && 'Outstanding Dues Report'}
                             </h2>
-                            <button className="btn-primary" style={{ width: 'auto', padding: '0.5rem 1.5rem', backgroundColor: '#ec4899' }}>Export PDF</button>
+                            <button onClick={exportToPDF} className="btn-primary" style={{ width: 'auto', padding: '0.5rem 1.5rem', backgroundColor: '#ec4899' }}>Export PDF</button>
                         </div>
 
                         <table style={{ width: '100%' }}>

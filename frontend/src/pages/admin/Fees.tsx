@@ -1047,6 +1047,7 @@ const Fees: React.FC = () => {
                                 <th style={{ padding: '1rem' }}>Discount</th>
                                 <th style={{ padding: '1rem' }}>Status</th>
                                 <th style={{ padding: '1rem' }}>Approved By</th>
+                                <th style={{ padding: '1rem', textAlign: 'center' }}>Action</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -1065,16 +1066,41 @@ const Fees: React.FC = () => {
                                                 borderRadius: '12px',
                                                 backgroundColor: r.status === 'APPROVED' ? '#dcfce7' : r.status === 'PENDING' ? '#fef9c3' : '#fee2e2',
                                                 color: r.status === 'APPROVED' ? '#166534' : r.status === 'PENDING' ? '#854d0e' : '#991b1b',
+                                                textTransform: 'uppercase'
                                             }}>
                                                 {r.status}
                                             </span>
                                         </td>
                                         <td style={{ padding: '1rem', fontSize: '0.85rem' }}>{r.approvedBy || '-'}</td>
+                                        <td style={{ padding: '1rem', textAlign: 'center' }}>
+                                            {r.status === 'APPROVED' ? (
+                                                <button 
+                                                    onClick={() => { setSelectedReceipt(r); setShowReceipt(true); }}
+                                                    style={{ 
+                                                        backgroundColor: '#2563eb', 
+                                                        color: 'white', 
+                                                        border: 'none', 
+                                                        padding: '0.4rem 0.8rem', 
+                                                        borderRadius: '6px', 
+                                                        cursor: 'pointer', 
+                                                        fontWeight: '700', 
+                                                        fontSize: '0.75rem',
+                                                        boxShadow: '0 2px 4px rgba(37, 99, 235, 0.2)'
+                                                    }}
+                                                >
+                                                    Pay & Print Receipt
+                                                </button>
+                                            ) : r.status === 'REJECTED' ? (
+                                                <span style={{ color: '#ef4444', fontSize: '0.75rem', fontWeight: 'bold' }}>Request Rejected</span>
+                                            ) : (
+                                                <span style={{ color: '#64748b', fontSize: '0.75rem', fontStyle: 'italic' }}>Awaiting Approval</span>
+                                            )}
+                                        </td>
                                     </tr>
                                 ))
                             ) : (
                                 <tr>
-                                    <td colSpan={6} style={{ padding: '4rem', textAlign: 'center', color: '#94a3b8' }}>
+                                    <td colSpan={7} style={{ padding: '4rem', textAlign: 'center', color: '#94a3b8' }}>
                                         <p>No fee drafts currently.</p>
                                     </td>
                                 </tr>

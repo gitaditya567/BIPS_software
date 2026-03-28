@@ -28,7 +28,7 @@ const ServiceRecord: React.FC = () => {
 
     if (loading) return <div style={{ padding: '2rem' }}>Loading Service Record...</div>;
 
-    const teacher = profile?.teacherProfile;
+    const teacher = profile?.teacherInfo;
     const user = profile;
 
     return (

@@ -560,7 +560,21 @@ const Students: React.FC = () => {
             {/* List */}
             <div className="data-table-container">
                 <div className="table-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
-                    <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0 }}>Student Records</h2>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                        <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0 }}>Student Records</h2>
+                        <span style={{ 
+                            backgroundColor: '#eff6ff', 
+                            color: '#1e40af', 
+                            padding: '0.2rem 0.75rem', 
+                            borderRadius: '999px', 
+                            fontSize: '0.85rem', 
+                            fontWeight: 700, 
+                            border: '1px solid #bfdbfe',
+                            boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                        }}>
+                            {filteredStudents.length} Students
+                        </span>
+                    </div>
                     <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
                         <input 
                             type="text" 

@@ -40,8 +40,13 @@ router.get('/:teacherId/classes', async (req, res) => {
         subjects.forEach(sub => {
             if (sub.class) {
                 const classData = sub.class;
-                // Simplified logic: assume all sections for a class, or detailed logic if section-subject mapping is strict
-                classData.sections.forEach(sec => {
+                
+                // Determine which sections to show
+                const targetSections = sub.sectionId 
+                    ? classData.sections.filter(sec => sec.id === sub.sectionId)
+                    : classData.sections;
+
+                targetSections.forEach(sec => {
                     const uniqueKey = `${classData.id}-${sec.id}-${sub.id}`;
                     if (!classesMap.has(uniqueKey)) {
                         // Count students in this class/section combo
@@ -73,21 +78,15 @@ router.get('/students', async (req, res) => {
     try {
         const { classId, sectionId, date } = req.query;
         
-        if (!classId || !sectionId) {
-            return res.status(400).json({ error: 'classId and sectionId are required' });
+        const whereClause: any = { classId: String(classId) };
+        if (sectionId && sectionId !== 'null' && sectionId !== 'undefined') {
+            whereClause.sectionId = String(sectionId);
         }
 
         const students = await prisma.studentProfile.findMany({
-            where: { 
-                classId: String(classId),
-                sectionId: String(sectionId)
-            },
-            include: {
-                user: true
-            },
-            orderBy: {
-                rollNumber: 'asc'
-            }
+            where: whereClause,
+            include: { user: true },
+            orderBy: { rollNumber: 'asc' }
         });
 
         // If a date is provided, we fetch existing attendances for that day

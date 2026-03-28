@@ -155,9 +155,9 @@ const Teachers: React.FC = () => {
         setPassword('');
         setConfirmPassword('');
         
-        // If teacher has assignments, they could be populated here if the API returned them
-        // For now, we keep them empty or based on mainSubject
-        setAssignSubject(t.subject || '');
+        // Populate assignment details from teacher record
+        setAssignClass(t.assignClass || '');
+        setAssignSubject(t.assignSubject || t.subject || '');
 
         setActiveTab('basic');
         window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -390,17 +390,17 @@ const Teachers: React.FC = () => {
                                         <select className="form-control" value={assignClass} onChange={e => setAssignClass(e.target.value)}>
                                             <option value="">Select Class</option>
                                             {classList.map((c) => (
-                                                <option key={c.id} value={c.name}>{c.name}</option>
+                                                <option key={c.id} value={c.id}>{c.name}</option>
                                             ))}
                                         </select>
                                     </div>
                                     <div className="form-group">
                                         <label>Assign to Section</label>
                                         <select className="form-control" value={assignSection} onChange={e => setAssignSection(e.target.value)}>
-                                            <option value="">Select Section</option>
-                                            <option value="A">Section A</option>
-                                            <option value="B">Section B</option>
-                                            <option value="C">Section C</option>
+                                            <option value="">All Students (Whole Class)</option>
+                                            {classList.find(c => c.id === assignClass)?.sections?.map((s: any) => (
+                                                <option key={s.id} value={s.name}>{s.name}</option>
+                                            ))}
                                         </select>
                                     </div>
                                     <div className="form-group">

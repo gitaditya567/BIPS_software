@@ -65,7 +65,7 @@ router.get('/students', async (req, res) => {
 router.get('/teachers', async (req, res) => {
     try {
         const teachers = await prisma.teacherProfile.findMany({
-            include: { user: true, subjects: true }
+            include: { user: true, subjects: true, classTeacherOf: true }
         });
         
         // Map to UI friendly format
@@ -86,7 +86,9 @@ router.get('/teachers', async (req, res) => {
             experience: t.experience,
             joiningDate: t.joiningDate || new Date(),
             salary: t.salary,
-            address: t.user.address
+            address: t.user.address,
+            assignClass: t.classTeacherOf && t.classTeacherOf.length > 0 ? t.classTeacherOf[0].id : '',
+            assignSubject: t.mainSubject || ((t.subjects && t.subjects.length > 0) ? t.subjects[0].name : '')
         }));
 
         res.json(formatted);
@@ -164,14 +166,13 @@ router.post('/teachers', async (req, res) => {
         // Process Assignment if provided
         if (profileId && assignClass) {
             try {
-                // Find class by name or ID (assuming ID if coming from a select, or name if hardcoded string)
-                // In my frontend I'm using string "1", "2" etc. for classes.
-                // Assuming classes are pre-seeded or exist.
-                let classRecord = await prisma.class.findUnique({
-                    where: { id: assignClass }
-                });
+                let classRecord = null;
+                // Safely handle both ObjectId and Class Name
+                if (assignClass.length === 24) {
+                    classRecord = await prisma.class.findUnique({ where: { id: assignClass } });
+                }
                 
-                if (!classRecord) {
+                if (!classRecord && assignClass.trim() !== '') {
                     classRecord = await prisma.class.findFirst({
                         where: { name: assignClass }
                     });
@@ -186,11 +187,19 @@ router.post('/teachers', async (req, res) => {
 
                     // Create/Assign Subject
                     if (assignSubject) {
+                        let sectionRecord = null;
+                        if (assignSection && assignSection.trim() !== '') {
+                            sectionRecord = await prisma.section.findFirst({
+                                where: { classId: classRecord.id, name: assignSection }
+                            });
+                        }
+
                         await prisma.subject.create({
                             data: {
                                 name: assignSubject,
-                                code: `SUB-${assignClass}-${assignSubject.substring(0,3).toUpperCase()}-${Date.now().toString().slice(-4)}`,
+                                code: `SUB-${classRecord.name}-${assignSection || 'All'}-${assignSubject.substring(0,3).toUpperCase()}-${Date.now().toString().slice(-4)}`,
                                 classId: classRecord.id,
+                                sectionId: sectionRecord ? sectionRecord.id : null,
                                 teacherId: profileId
                             }
                         });
@@ -198,7 +207,6 @@ router.post('/teachers', async (req, res) => {
                 }
             } catch (assignErr) {
                 console.error('Failed to perform assignment during teacher registration:', assignErr);
-                // We don't fail the whole registration if assignment fails
             }
         }
 
@@ -260,10 +268,11 @@ router.put('/teachers/:id', async (req, res) => {
         // Assignment logic (Update class teacher & subject)
         if (assignClass) {
             try {
-                let classRecord = await prisma.class.findUnique({
-                    where: { id: assignClass }
-                });
-                if (!classRecord) {
+                let classRecord = null;
+                if (assignClass.length === 24) {
+                    classRecord = await prisma.class.findUnique({ where: { id: assignClass } });
+                }
+                if (!classRecord && assignClass.trim() !== '') {
                     classRecord = await prisma.class.findFirst({
                         where: { name: assignClass }
                     });
@@ -276,17 +285,29 @@ router.put('/teachers/:id', async (req, res) => {
                     });
 
                     if (assignSubject) {
-                        // Check if subject already exists for this teacher and class
+                        let sectionRecord = null;
+                        if (assignSection && assignSection.trim() !== '') {
+                            sectionRecord = await prisma.section.findFirst({
+                                where: { classId: classRecord.id, name: assignSection }
+                            });
+                        }
+
                         const existingSubject = await prisma.subject.findFirst({
-                            where: { teacherId: profile.id, classId: classRecord.id, name: assignSubject }
+                            where: { 
+                                teacherId: profile.id, 
+                                classId: classRecord.id, 
+                                name: assignSubject,
+                                sectionId: sectionRecord ? sectionRecord.id : null
+                            }
                         });
                         
                         if (!existingSubject) {
                             await prisma.subject.create({
                                 data: {
                                     name: assignSubject,
-                                    code: `SUB-${classRecord.name}-${assignSubject.substring(0,3).toUpperCase()}-${Date.now().toString().slice(-4)}`,
+                                    code: `SUB-${classRecord.name}-${assignSection || 'All'}-${assignSubject.substring(0,3).toUpperCase()}-${Date.now().toString().slice(-4)}`,
                                     classId: classRecord.id,
+                                    sectionId: sectionRecord ? sectionRecord.id : null,
                                     teacherId: profile.id
                                 }
                             });

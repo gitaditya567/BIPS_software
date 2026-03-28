@@ -138,6 +138,7 @@ model Section {
   classId   String          @db.ObjectId
   class     Class           @relation(fields: [classId], references: [id], onDelete: Cascade)
   students  StudentProfile[]
+  subjects  Subject[]
   timetables Timetable[]
 }
 
@@ -149,6 +150,8 @@ model Subject {
   teacher     TeacherProfile? @relation(fields: [teacherId], references: [id])
   classId     String         @db.ObjectId
   class       Class          @relation(fields: [classId], references: [id], onDelete: Cascade)
+  sectionId   String?        @db.ObjectId
+  section     Section?       @relation(fields: [sectionId], references: [id], onDelete: Cascade)
   marks       Mark[]
   timetables  Timetable[]
 }

@@ -44,24 +44,29 @@ router.get('/:teacherId/classes', async (req, res) => {
                 if (sub.sectionId) {
                     const targetSections = classData.sections.filter(sec => sec.id === sub.sectionId);
                     targetSections.forEach(sec => {
-                        const uniqueKey = `${classData.id}-${sec.id}-${sub.id}`;
+                        const uniqueKey = `${classData.id}-${sec.id}`; // Key by Class+Section only to prevent subject duplicates
                         if (!classesMap.has(uniqueKey)) {
                             const studentCount = classData.students.filter(s => s.sectionId === sec.id).length;
                             classesMap.set(uniqueKey, {
                                 id: uniqueKey,
                                 grade: classData.name,
                                 section: sec.name,
-                                subject: sub.name,
+                                subject: sub.name, // Will just show the first subject encountered
                                 studentsCount: studentCount,
                                 classId: classData.id,
                                 sectionId: sec.id,
                                 subjectId: sub.id
                             });
+                        } else {
+                            // Optionally append other subjects to the display name
+                            const existing = classesMap.get(uniqueKey);
+                            if (!existing.subject.includes(sub.name)) {
+                                existing.subject += `, ${sub.name}`;
+                            }
                         }
                     });
                 } else {
-                    // Whole Class assignment (No specific section chosen)
-                    const uniqueKey = `${classData.id}-all-${sub.id}`;
+                    const uniqueKey = `${classData.id}-all`;
                     if (!classesMap.has(uniqueKey)) {
                         classesMap.set(uniqueKey, {
                             id: uniqueKey,
@@ -73,6 +78,11 @@ router.get('/:teacherId/classes', async (req, res) => {
                             sectionId: 'all',
                             subjectId: sub.id
                         });
+                    } else {
+                        const existing = classesMap.get(uniqueKey);
+                        if (!existing.subject.includes(sub.name)) {
+                            existing.subject += `, ${sub.name}`;
+                        }
                     }
                 }
             }

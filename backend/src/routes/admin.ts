@@ -194,15 +194,27 @@ router.post('/teachers', async (req, res) => {
                             });
                         }
 
-                        await prisma.subject.create({
-                            data: {
-                                name: assignSubject,
-                                code: `SUB-${classRecord.name}-${assignSection || 'All'}-${assignSubject.substring(0,3).toUpperCase()}-${Date.now().toString().slice(-4)}`,
+                        // Prevent duplicate assignment check
+                        const existingSub = await prisma.subject.findFirst({
+                            where: {
+                                teacherId: profileId,
                                 classId: classRecord.id,
                                 sectionId: sectionRecord ? sectionRecord.id : null,
-                                teacherId: profileId
+                                name: assignSubject
                             }
                         });
+
+                        if (!existingSub) {
+                            await prisma.subject.create({
+                                data: {
+                                    name: assignSubject,
+                                    code: `SUB-${classRecord.name}-${assignSection || 'All'}-${assignSubject.substring(0,3).toUpperCase()}-${Date.now().toString().slice(-4)}`,
+                                    classId: classRecord.id,
+                                    sectionId: sectionRecord ? sectionRecord.id : null,
+                                    teacherId: profileId
+                                }
+                            });
+                        }
                     }
                 }
             } catch (assignErr) {

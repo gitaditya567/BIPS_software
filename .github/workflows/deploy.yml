@@ -1,0 +1,34 @@
+name: Deploy School ERP
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Executing remote ssh commands using SSH key
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.HOST }}
+          username: ubuntu
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            cd /home/ubuntu/BIPS_software
+            git pull origin main
+            
+            # Update Backend
+            cd backend
+            npm install
+            pm2 restart backend || pm2 start src/index.ts --name backend --interpreter ts-node
+            
+            # Update Frontend & Copy to Webroot
+            cd ../frontend
+            npm install
+            npm run build
+            # Using sudo to ensure permissions for the webroot copy
+            sudo cp -rf dist/* /www/wwwroot/bipslucknow.org/
+            
+            # Restart PM2 processes to finalize
+            pm2 restart all

@@ -5,40 +5,13 @@ const Transport: React.FC = () => {
     const [activeTab, setActiveTab] = useState('bus-timing');
 
     // State for Bus Details
-    const [buses, setBuses] = useState([
-        { busNo: 'Bus 1', vehicleNo: 'UP78 AB1234', driverName: 'Ramesh', mobile: '9876543210', conductorName: 'Amit', seats: '40', status: 'Active' },
-        { busNo: 'Bus 2', vehicleNo: 'UP78 CD5678', driverName: 'Suresh', mobile: '9765432109', conductorName: 'Rahul', seats: '35', status: 'Active' }
-    ]);
+    const [buses, setBuses] = useState<any[]>([]);
 
     // State for Bus Routes
-    const [routes, setRoutes] = useState([
-        {
-            routeName: 'Route A',
-            busNo: 'Bus 1',
-            startLocation: 'Kalyanpur',
-            endLocation: 'School',
-            pickupPoints: [
-                { stop: 'Kalyanpur', time: '7:30 AM' },
-                { stop: 'Panki', time: '7:45 AM' }
-            ]
-        },
-        {
-            routeName: 'Route B',
-            busNo: 'Bus 2',
-            startLocation: 'Rawatpur',
-            endLocation: 'School',
-            pickupPoints: [
-                { stop: 'Rawatpur', time: '7:35 AM' },
-                { stop: 'Gurudev', time: '7:50 AM' }
-            ]
-        }
-    ]);
+    const [routes, setRoutes] = useState<any[]>([]);
 
-    // State for Bus Timing (Updated per requirement)
-    const [timings, setTimings] = useState([
-        { busNo: 'Bus 1', routeName: 'Route A', stopName: 'Kalyanpur', pickupTime: '7:30 AM', dropTime: '2:30 PM' },
-        { busNo: 'Bus 1', routeName: 'Route A', stopName: 'Panki', pickupTime: '7:45 AM', dropTime: '2:15 PM' }
-    ]);
+    // State for Bus Timing (Cleared dummy data)
+    const [timings, setTimings] = useState<any[]>([]);
 
     // Form states
     const [newBus, setNewBus] = useState({ busNo: '', vehicleNo: '', driverName: '', mobile: '', conductorName: '', seats: '', status: 'Active' });

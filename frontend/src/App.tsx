@@ -19,7 +19,6 @@ import MyClasses from './pages/teacher/MyClasses';
 import Attendance from './pages/teacher/Attendance';
 import PendingFee from './pages/teacher/PendingFee';
 import Notice from './pages/teacher/Notice';
-import LeaveApply from './pages/teacher/LeaveApply';
 import ServiceRecord from './pages/teacher/ServiceRecord';
 import MyFees from './pages/student/MyFees';
 import MyAttendance from './pages/student/MyAttendance';
@@ -59,7 +58,6 @@ const App: React.FC = () => {
             <Route path="teacher/attendance" element={<Attendance />} />
             <Route path="teacher/fee" element={<PendingFee />} />
             <Route path="teacher/notice" element={<Notice />} />
-            <Route path="teacher/leave" element={<LeaveApply />} />
             <Route path="teacher/service-record" element={<ServiceRecord />} />
 
             {/* ── Student / Parent Routes ── */}

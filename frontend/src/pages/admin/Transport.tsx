@@ -54,6 +54,18 @@ const Transport: React.FC = () => {
         dropTime: ''
     });
 
+    // Stop Names constants
+    const STOP_NAMES = [
+        "C.R.P.F.", "Kaithi from", "Chandrawal", "Kasim Kheda", "Ganesh Shankar Kheda", 
+        "Laxman Kheda", "Makhdoompur Kaithi", "Mohini Kheda", "Mullahi Kheda", "Natkur", 
+        "Ratauli (Khatola)", "Sariyan", "Shahpur Majhigawan", "Sohawa", "Alakhmanda", 
+        "Bhadeswa", "Kurmi", "Khatola", "S.D.K.T", "Ahmad Kheda", "Bahadur Kheda", 
+        "Balsing Kheda", "Bhadesuwa", "Bhagat Kheda", "Bhawani Kheda", "Bijnour", 
+        "Dhanuwasand", "Himmat Kheda", "Iqbal Kheda", "Jaiti Kheda", "Jalim Kheda", 
+        "Kamlapur", "Mahesh Kheda", "Marui", "Mati", "Newawan", "Nurdi Kheda", 
+        "Pinwat", "Raheem Nagar", "Raja Kheda", "Rani Kheda"
+    ];
+
     const handleAddBus = (e: React.FormEvent) => {
         e.preventDefault();
         setBuses([...buses, newBus]);
@@ -199,14 +211,17 @@ const Transport: React.FC = () => {
                                     </div>
                                     <div className="form-group">
                                         <label>Stop Name</label>
-                                        <input
-                                            type="text"
+                                        <select
                                             className="form-control"
-                                            placeholder="e.g. Kalyanpur"
                                             value={newTiming.stopName}
                                             onChange={(e) => setNewTiming({ ...newTiming, stopName: e.target.value })}
                                             required
-                                        />
+                                        >
+                                            <option value="">Select Stop</option>
+                                            {STOP_NAMES.map((name, idx) => (
+                                                <option key={idx} value={name}>{name}</option>
+                                            ))}
+                                        </select>
                                     </div>
                                     <div className="form-group">
                                         <label>Pickup Time</label>

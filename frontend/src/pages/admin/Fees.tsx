@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNotification } from '../../context/NotificationContext';
+import { IndianRupee, TrendingUp, CalendarDays } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -1212,6 +1213,47 @@ const Fees: React.FC = () => {
 
             {activeTab === 'reports' && (
                 <div style={{ animation: 'fadeIn 0.4s ease' }}>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                        {/* Today's Card */}
+                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-5 hover:shadow-md transition-all">
+                            <div className="w-14 h-14 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center text-2xl">
+                                <TrendingUp size={28} />
+                            </div>
+                            <div>
+                                <p className="text-slate-500 text-sm font-medium">Today's Collection</p>
+                                <h3 className="text-2xl font-bold text-slate-900 mt-1">
+                                    ₹ {reportData.daily.filter(d => d.date === new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })).reduce((s, d) => s + d.paidAmount, 0).toLocaleString()}
+                                </h3>
+                            </div>
+                        </div>
+
+                        {/* Selected Month Card */}
+                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-5 hover:shadow-md transition-all">
+                            <div className="w-14 h-14 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center text-2xl">
+                                <IndianRupee size={28} />
+                            </div>
+                            <div>
+                                <p className="text-slate-500 text-sm font-medium">Selected Month ({reportFilterMonth})</p>
+                                <h3 className="text-2xl font-bold text-slate-900 mt-1">
+                                    ₹ {(reportData.monthly.find(m => m.month === reportFilterMonth)?.total || 0).toLocaleString()}
+                                </h3>
+                            </div>
+                        </div>
+
+                        {/* Annual Card */}
+                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-5 hover:shadow-md transition-all">
+                            <div className="w-14 h-14 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center text-2xl">
+                                <CalendarDays size={28} />
+                            </div>
+                            <div>
+                                <p className="text-slate-500 text-sm font-medium">Total Yearly Collection</p>
+                                <h3 className="text-2xl font-bold text-slate-900 mt-1">
+                                    ₹ {reportData.monthly.reduce((s, m) => s + m.total, 0).toLocaleString()}
+                                </h3>
+                            </div>
+                        </div>
+                    </div>
+
                     <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', background: '#f8fafc', padding: '0.75rem', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                         {[
                             { id: 'daily', label: 'Daily Collection' },

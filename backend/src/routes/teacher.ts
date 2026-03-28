@@ -41,29 +41,40 @@ router.get('/:teacherId/classes', async (req, res) => {
             if (sub.class) {
                 const classData = sub.class;
                 
-                // Determine which sections to show
-                const targetSections = sub.sectionId 
-                    ? classData.sections.filter(sec => sec.id === sub.sectionId)
-                    : classData.sections;
-
-                targetSections.forEach(sec => {
-                    const uniqueKey = `${classData.id}-${sec.id}-${sub.id}`;
+                if (sub.sectionId) {
+                    const targetSections = classData.sections.filter(sec => sec.id === sub.sectionId);
+                    targetSections.forEach(sec => {
+                        const uniqueKey = `${classData.id}-${sec.id}-${sub.id}`;
+                        if (!classesMap.has(uniqueKey)) {
+                            const studentCount = classData.students.filter(s => s.sectionId === sec.id).length;
+                            classesMap.set(uniqueKey, {
+                                id: uniqueKey,
+                                grade: classData.name,
+                                section: sec.name,
+                                subject: sub.name,
+                                studentsCount: studentCount,
+                                classId: classData.id,
+                                sectionId: sec.id,
+                                subjectId: sub.id
+                            });
+                        }
+                    });
+                } else {
+                    // Whole Class assignment (No specific section chosen)
+                    const uniqueKey = `${classData.id}-all-${sub.id}`;
                     if (!classesMap.has(uniqueKey)) {
-                        // Count students in this class/section combo
-                        const studentCount = classData.students.filter(s => s.sectionId === sec.id).length;
-                        
                         classesMap.set(uniqueKey, {
                             id: uniqueKey,
                             grade: classData.name,
-                            section: sec.name,
+                            section: 'All',
                             subject: sub.name,
-                            studentsCount: studentCount,
+                            studentsCount: classData.students.length,
                             classId: classData.id,
-                            sectionId: sec.id,
+                            sectionId: 'all',
                             subjectId: sub.id
                         });
                     }
-                });
+                }
             }
         });
 
@@ -79,7 +90,7 @@ router.get('/students', async (req, res) => {
         const { classId, sectionId, date } = req.query;
         
         const whereClause: any = { classId: String(classId) };
-        if (sectionId && sectionId !== 'null' && sectionId !== 'undefined') {
+        if (sectionId && sectionId !== 'null' && sectionId !== 'undefined' && sectionId !== 'all') {
             whereClause.sectionId = String(sectionId);
         }
 

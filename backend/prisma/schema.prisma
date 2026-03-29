@@ -228,6 +228,7 @@ model FeePayment {
   year           String?        // e.g., "2024"
   submittedBy    String?        // Name or ID of the person who submitted
   approvedBy     String?        // Name or ID of the person who approved
+  approvalDate   DateTime?      // Date and time when approved or rejected
 }
 
 

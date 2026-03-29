@@ -20,6 +20,7 @@ interface FeeRecord {
     status: 'APPROVED' | 'PENDING' | 'REJECTED';
     submittedBy: string;
     approvedBy?: string;
+    approvalDate?: string;
     month?: string;
     year?: string;
 }
@@ -1134,6 +1135,7 @@ const Fees: React.FC = () => {
                                 <th style={{ padding: '1rem' }}>Net Amount</th>
                                 <th style={{ padding: '1rem' }}>Discount</th>
                                 <th style={{ padding: '1rem' }}>Status</th>
+                                <th style={{ padding: '1rem' }}>Action Taken Date</th>
                                 <th style={{ padding: '1rem' }}>Approved By</th>
                                 <th style={{ padding: '1rem', textAlign: 'center' }}>Action</th>
                             </tr>
@@ -1158,6 +1160,9 @@ const Fees: React.FC = () => {
                                             }}>
                                                 {r.status}
                                             </span>
+                                        </td>
+                                        <td style={{ padding: '1rem' }}>
+                                            {r.approvalDate ? new Date(r.approvalDate).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '-'}
                                         </td>
                                         <td style={{ padding: '1rem', fontSize: '0.85rem' }}>{r.approvedBy || '-'}</td>
                                         <td style={{ padding: '1rem', textAlign: 'center' }}>

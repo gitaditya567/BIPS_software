@@ -91,7 +91,8 @@ router.post('/:id/approve', async (req, res) => {
             where: { id },
             data: {
                 status: 'APPROVED',
-                approvedBy
+                approvedBy,
+                approvalDate: new Date()
             }
         });
 
@@ -111,7 +112,8 @@ router.post('/:id/reject', async (req, res) => {
             where: { id },
             data: {
                 status: 'REJECTED',
-                approvedBy
+                approvedBy,
+                approvalDate: new Date()
             }
         });
 

@@ -143,6 +143,7 @@ const Fees: React.FC = () => {
     const [paidAmount, setPaidAmount] = useState('');
     const [paymentMode, setPaymentMode] = useState('Cash');
     const [receiptNo, setReceiptNo] = useState('');
+    const [fatherName, setFatherName] = useState('');
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
     const [selectedFees, setSelectedFees] = useState<string[]>([]);
     const [selectedMonth, setSelectedMonth] = useState('April');
@@ -421,6 +422,7 @@ const Fees: React.FC = () => {
             // Reset form
             setStudentName(''); 
             setAdmissionNo(''); 
+            setFatherName('');
             setSelectedClass('');
             setSelectedFees([]);
             setPaidAmount(''); 
@@ -567,6 +569,7 @@ const Fees: React.FC = () => {
                                          // If value is cleared, reset student details
                                          if (!val) {
                                              setAdmissionNo('');
+                                             setFatherName('');
                                              setSelectedClass('');
                                              setStudentHistory([]);
                                          }
@@ -602,6 +605,7 @@ const Fees: React.FC = () => {
                                                      onClick={() => {
                                                          setStudentName(s.name);
                                                          setAdmissionNo(s.admissionNo);
+                                                         setFatherName(s.fatherName || 'N/A');
                                                          setSelectedClass(s.className);
                                                          fetchStudentHistory(s.id, s.name);
                                                          setShowSearchDropdown(false);
@@ -645,9 +649,10 @@ const Fees: React.FC = () => {
                     {studentName && admissionNo ? (
                         <>
                             {/* 2. Student Details */}
-                            <div className="stat-card" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1.5rem', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                                <div style={{ gridColumn: 'span 4' }}><h3 style={{ color: '#1e293b', fontSize: '1.1rem' }}>2. Student Details</h3></div>
+                            <div className="stat-card" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '1.5rem', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                                <div style={{ gridColumn: 'span 5' }}><h3 style={{ color: '#1e293b', fontSize: '1.1rem' }}>2. Student Details</h3></div>
                                 <div><label style={{ color: '#64748b', fontSize: '0.8rem' }}>Full Name</label><div style={{ fontWeight: '700', fontSize: '1.1rem' }}>{studentName}</div></div>
+                                <div><label style={{ color: '#64748b', fontSize: '0.8rem' }}>Father Name</label><div style={{ fontWeight: '700', fontSize: '1.1rem' }}>{fatherName}</div></div>
                                 <div><label style={{ color: '#64748b', fontSize: '0.8rem' }}>Admission No</label><div style={{ fontWeight: '700', fontSize: '1.1rem' }}>{admissionNo}</div></div>
                                 <div><label style={{ color: '#64748b', fontSize: '0.8rem' }}>Current Class</label><div style={{ fontWeight: '700', fontSize: '1.1rem' }}>{selectedClass}</div></div>
                                 <div><label style={{ color: '#64748b', fontSize: '0.8rem' }}>Status</label><div><span style={{ backgroundColor: '#dcfce7', color: '#166534', padding: '0.2rem 0.6rem', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 'bold' }}>Active</span></div></div>

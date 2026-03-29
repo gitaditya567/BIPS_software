@@ -18,26 +18,50 @@ router.get('/:teacherId/classes', async (req, res) => {
             return res.status(404).json({ error: 'Teacher not found' });
         }
 
-        // Get classes where this teacher is assigned via subjects
-        const subjects = await prisma.subject.findMany({
-            where: { teacherId: teacherProfile.id },
-            include: {
-                class: {
-                    include: {
-                        sections: true,
-                        students: {
-                            where: { // Only active students or current year if needed
-                            }
+        // Get classes where this teacher is assigned via subjects OR as a Class Teacher
+        const [assignedSubjects, classTeacherOf] = await Promise.all([
+            prisma.subject.findMany({
+                where: { teacherId: teacherProfile.id },
+                include: {
+                    class: {
+                        include: {
+                            sections: true,
+                            students: true
                         }
                     }
                 }
-            }
-        });
+            }),
+            prisma.class.findMany({
+                where: { classTeacherId: teacherProfile.id },
+                include: {
+                    sections: true,
+                    students: true
+                }
+            })
+        ]);
 
         // Format the data for the frontend
         const classesMap = new Map();
         
-        subjects.forEach(sub => {
+        // Add Class Teacher assignments first
+        classTeacherOf.forEach(cls => {
+            const uniqueKey = `${cls.id}-all`;
+            if (!classesMap.has(uniqueKey)) {
+                classesMap.set(uniqueKey, {
+                    id: uniqueKey,
+                    grade: cls.name,
+                    section: 'All',
+                    subject: 'Class Teacher',
+                    studentsCount: cls.students.length,
+                    classId: cls.id,
+                    sectionId: 'all',
+                    subjectId: 'class-teacher'
+                });
+            }
+        });
+
+        // Add Subject assignments
+        assignedSubjects.forEach(sub => {
             if (sub.class) {
                 const classData = sub.class;
                 
@@ -217,22 +241,32 @@ router.get('/:teacherId/dashboard-stats', async (req, res) => {
         }
 
         // 1. Classes Assigned & Subjects taught by Teacher
-        const subjects = await prisma.subject.findMany({
-            where: { teacherId: teacherProfile.id },
-            include: {
-                class: {
-                    include: {
-                        sections: true,
-                        students: true
+        const [subjects, classTeacherOf] = await Promise.all([
+            prisma.subject.findMany({
+                where: { teacherId: teacherProfile.id },
+                include: {
+                    class: {
+                        include: {
+                            sections: true,
+                            students: true
+                        }
                     }
                 }
-            }
-        });
+            }),
+            prisma.class.findMany({
+                where: { classTeacherId: teacherProfile.id },
+                include: {
+                    sections: true,
+                    students: true
+                }
+            })
+        ]);
 
         const uniqueClasses = new Set<string>();
         let myStudentsCount = 0;
         const processedClassSections = new Set<string>();
 
+        // Process Subject assignments
         subjects.forEach(sub => {
             if (sub.class) {
                 sub.class.sections.forEach(sec => {
@@ -246,6 +280,19 @@ router.get('/:teacherId/dashboard-stats', async (req, res) => {
                     }
                 });
             }
+        });
+
+        // Process Class Teacher assignments (if not already added by subject)
+        classTeacherOf.forEach(cls => {
+            cls.sections.forEach(sec => {
+                const uniqueSectionKey = `${cls.id}-${sec.id}`;
+                if (!processedClassSections.has(uniqueSectionKey)) {
+                    uniqueClasses.add(cls.id);
+                    processedClassSections.add(uniqueSectionKey);
+                    const studentsCount = cls.students.filter(s => s.sectionId === sec.id).length;
+                    myStudentsCount += studentsCount;
+                }
+            });
         });
 
         // 2. Attendance Marked Today

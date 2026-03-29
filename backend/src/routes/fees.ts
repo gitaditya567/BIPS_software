@@ -166,10 +166,19 @@ router.get('/', async (req, res) => {
     try {
         const history = await prisma.feePayment.findMany({
             orderBy: { paymentDate: 'desc' },
+            include: {
+                student: {
+                    include: {
+                        user: true,
+                        class: true
+                    }
+                }
+            },
             take: 100 // Limit for performance
         });
         res.json(history);
     } catch (error) {
+        console.error('Error fetching fee history:', error);
         res.status(500).json({ error: 'Failed' });
     }
 });

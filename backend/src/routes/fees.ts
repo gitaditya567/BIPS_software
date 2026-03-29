@@ -176,7 +176,15 @@ router.get('/', async (req, res) => {
             },
             take: 100 // Limit for performance
         });
-        res.json(history);
+
+        // Explicitly map student name at the top level
+        const formatted = history.map(p => ({
+            ...p,
+            studentName: p.student?.user?.name || 'N/A',
+            className: p.student?.class?.name || 'N/A'
+        }));
+
+        res.json(formatted);
     } catch (error) {
         console.error('Error fetching fee history:', error);
         res.status(500).json({ error: 'Failed' });

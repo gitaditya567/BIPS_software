@@ -258,7 +258,9 @@ const Fees: React.FC = () => {
             // Map backend amountPaid to frontend paidAmount
             const mappedData = res.data.map((r: any) => ({
                 ...r,
-                paidAmount: r.amountPaid || r.paidAmount || 0
+                paidAmount: r.amountPaid || r.paidAmount || 0,
+                studentName: r.studentName || 'Unknown Student',
+                className: r.className || 'Unknown Class'
             }));
             setFeeRecords(prev => {
                 const nonPending = prev.filter(r => r.status !== 'PENDING');
@@ -311,8 +313,8 @@ const Fees: React.FC = () => {
                 ...r,
                 paidAmount: r.amountPaid || r.paidAmount || 0,
                 date: new Date(r.paymentDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
-                studentName: r.student?.user?.name || 'Student'
-                // This might need more mapping if we want teacher's info too
+                studentName: r.studentName || 'Unknown Student',
+                className: r.className || 'Unknown Class'
             })));
         } catch (err) {
             console.error('Failed to fetch full history:', err);

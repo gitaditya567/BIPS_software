@@ -691,4 +691,39 @@ router.get('/dashboard/stats', async (req, res) => {
     }
 });
 
+// Get Transport Stops
+router.get('/transport/stops', async (req, res) => {
+    try {
+        const stops = await prisma.transportStop.findMany();
+        res.json(stops);
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch transport stops' });
+    }
+});
+
+// Add Transport Stop
+router.post('/transport/stops', async (req, res) => {
+    try {
+        const { name, km, ratePerKm, busFare } = req.body;
+        const newStop = await prisma.transportStop.create({
+            data: { name, km, ratePerKm, busFare: Number(busFare) }
+        });
+        res.json(newStop);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Failed to create transport stop' });
+    }
+});
+
+// Delete Transport Stop
+router.delete('/transport/stops/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        await prisma.transportStop.delete({ where: { id } });
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to delete transport stop' });
+    }
+});
+
 export default router;

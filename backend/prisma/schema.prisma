@@ -259,3 +259,11 @@ model Notice {
   postedBy  String?  // Name for display
   authorId  String?  // ID for filtering history
 }
+
+model TransportStop {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  name      String   @unique
+  km        String
+  ratePerKm String?
+  busFare   Float
+}

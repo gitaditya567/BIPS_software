@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNotification } from '../../context/NotificationContext';
-import { IndianRupee, TrendingUp, CalendarDays } from 'lucide-react';
+import { IndianRupee, TrendingUp, CalendarDays, Plus, Trash2 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -53,11 +53,12 @@ const Fees: React.FC = () => {
     // Fee Records State
     const [feeRecords, setFeeRecords] = useState<FeeRecord[]>([]);
     const [studentHistory, setStudentHistory] = useState<FeeRecord[]>([]);
+    const [pendingDues, setPendingDues] = useState<number>(0);
     const [feeHeads, setFeeHeads] = useState<FeeHead[]>([]);
 
 
     // Due Fees State
-    const [dueFees] = useState<DueFee[]>([]);
+    const [dueFees, setDueFees] = useState<DueFee[]>([]);
 
     // Reports State
     const [reportData, setReportData] = useState<{ daily: any[], monthly: any[], classWise: any[] }>({
@@ -148,6 +149,25 @@ const Fees: React.FC = () => {
     const [selectedFees, setSelectedFees] = useState<string[]>([]);
     const [selectedMonth, setSelectedMonth] = useState('April');
     const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+    const [requiresApproval, setRequiresApproval] = useState(false);
+
+    // Transport state
+    const [isTransportEnabled, setIsTransportEnabled] = useState(false);
+    const [transportRows, setTransportRows] = useState([{ name: '', km: '', price: '', showDropdown: false }]);
+    const [transportStops, setTransportStops] = useState<{ id: string; name: string; km: string; ratePerKm?: string, busFare: number }[]>([]);
+
+    useEffect(() => {
+        fetchTransportStops();
+    }, []);
+
+    const fetchTransportStops = async () => {
+        try {
+            const res = await axios.get('/api/admin/transport/stops');
+            setTransportStops(res.data);
+        } catch (error) {
+            console.error('Failed to fetch transport stops');
+        }
+    };
 
     const isFeePaid = (headName: string) => {
         const headObj = feeHeads.find(h => h.name === headName);
@@ -199,6 +219,7 @@ const Fees: React.FC = () => {
             if (parsedUser.role === 'ACCOUNTS') {
                 fetchAllHistory();
                 fetchReports();
+                fetchDueFees();
             }
 
             // Click outside listener for search dropdown
@@ -217,6 +238,7 @@ const Fees: React.FC = () => {
                 }
                 if (parsedUser.role === 'ACCOUNTS') {
                     fetchAllHistory();
+                    fetchDueFees();
                 }
                 // Refresh reports if active
                 if (activeTab === 'reports') {
@@ -283,6 +305,9 @@ const Fees: React.FC = () => {
                 date: new Date(r.paymentDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
                 studentName: studentNameVal
             })));
+            
+            const balRes = await axios.get(`/api/fees/student/${studentId}/balance`);
+            setPendingDues(balRes.data.outstandingBalance || 0);
         } catch (err) {
             console.error('Failed to fetch history:', err);
         }
@@ -323,6 +348,15 @@ const Fees: React.FC = () => {
         }
     };
 
+    const fetchDueFees = async () => {
+        try {
+            const res = await axios.get('/api/fees/due-list');
+            setDueFees(res.data);
+        } catch (err) {
+            console.error('Failed to fetch due fees:', err);
+        }
+    };
+
 
 
     const fetchStudents = async () => {
@@ -359,9 +393,11 @@ const Fees: React.FC = () => {
             const struct = feeStructure.find(s => s.className === selectedClass);
             if (struct && struct.fees) {
                 const subtotal = selectedFees.reduce((sum, feeName) => sum + (struct.fees[feeName] || 0), 0);
+                const transportTotal = isTransportEnabled ? transportRows.reduce((sum, row) => sum + (Number(row.price) || 0), 0) : 0;
+                const total = subtotal + transportTotal;
                 const discVal = Number(discount) || 0;
-                const netPayable = (subtotal - discVal).toString();
-                setTotalFee(subtotal.toString());
+                const netPayable = (total + pendingDues - discVal).toString();
+                setTotalFee(total.toString());
                 setFinalAmount(netPayable);
                 setPaidAmount(netPayable); // Auto-fill amount being paid
             }
@@ -370,17 +406,28 @@ const Fees: React.FC = () => {
             setFinalAmount('0');
             setPaidAmount('');
         }
-    }, [selectedClass, selectedFees, discount, feeStructure]);
+    }, [selectedClass, selectedFees, discount, feeStructure, isTransportEnabled, transportRows]);
 
     const handleCollectFee = async (e: React.FormEvent) => {
         e.preventDefault();
         const student = students.find(s => s.name === studentName || s.admissionNo === admissionNo);
-        if (!student || !paidAmount || !receiptNo || selectedFees.length === 0) 
-            return alert('Please search student and select at least one fee head');
+        if (!student || !paidAmount || !receiptNo || (selectedFees.length === 0 && pendingDues === 0 && !isTransportEnabled)) 
+            return alert('Please search student and select at least one fee head or clear previous dues');
             
-        const isPending = Number(discount) > 0;
+        const isPending = Number(discount) > 0 && requiresApproval;
         
         try {
+            const struct = feeStructure.find(s => s.className === student.className);
+            const breakdownParts = selectedFees.map(f => `${f}: ${struct?.fees?.[f] || 0}`);
+            if (isTransportEnabled) {
+                transportRows.forEach(r => {
+                    if (r.name && r.price) breakdownParts.push(`Transport (${r.name}): ${r.price}`);
+                });
+            }
+            if (pendingDues > 0) {
+                breakdownParts.push(`Previous Dues: ${pendingDues}`);
+            }
+
             const payload = {
                 studentId: student.id,
                 admissionNo: student.admissionNo,
@@ -388,7 +435,7 @@ const Fees: React.FC = () => {
                 totalFee: Number(totalFee),
                 discount: Number(discount),
                 discountReason: isPending ? 'Requested Discount' : '',
-                feeHead: `${selectedMonth}: ${selectedFees.join(', ')}`,
+                feeHead: `${selectedMonth} ==> ${breakdownParts.join(' || ')}`,
                 paymentMode,
                 month: selectedMonth,
                 year: new Date().getFullYear().toString(),
@@ -428,7 +475,11 @@ const Fees: React.FC = () => {
             setPaidAmount(''); 
             setTotalFee('0'); 
             setDiscount('0'); 
+            setRequiresApproval(false);
             setFinalAmount('0');
+            setIsTransportEnabled(false);
+            setTransportRows([{ name: '', km: '', price: '', showDropdown: false }]);
+            setPendingDues(0);
             fetchNextReceiptNo();
         } catch (error: any) {
             console.error(error);
@@ -572,6 +623,7 @@ const Fees: React.FC = () => {
                                              setFatherName('');
                                              setSelectedClass('');
                                              setStudentHistory([]);
+                                             setPendingDues(0);
                                          }
                                      }} 
                                  />
@@ -666,18 +718,36 @@ const Fees: React.FC = () => {
                                         <thead>
                                             <tr style={{ backgroundColor: '#f1f5f9' }}>
                                                 <th style={{ padding: '0.75rem', textAlign: 'center', border: '1px solid #e2e8f0', width: '100px' }}>
-                                                    <button onClick={selectAllFees} style={{ fontSize: '0.7rem', border: '1px solid #cbd5e1', background: 'white', cursor: 'pointer', padding: '0.2rem 0.4rem', borderRadius: '4px' }}>
-                                                        {selectedFees.length === feeHeads.length ? 'Unselect All' : 'Select All'}
+                                                    <button onClick={() => {
+                                                        const struct = feeStructure.find(s => s.className === selectedClass);
+                                                        const validHeads = feeHeads.filter(h => (struct?.fees?.[h.name] || 0) > 0);
+                                                        if (selectedFees.length === validHeads.length) {
+                                                            setSelectedFees([]);
+                                                        } else {
+                                                            setSelectedFees(validHeads.map(h => h.name));
+                                                        }
+                                                    }} style={{ fontSize: '0.7rem', border: '1px solid #cbd5e1', background: 'white', cursor: 'pointer', padding: '0.2rem 0.4rem', borderRadius: '4px' }}>
+                                                        {(() => {
+                                                            const struct = feeStructure.find(s => s.className === selectedClass);
+                                                            const validHeads = feeHeads.filter(h => (struct?.fees?.[h.name] || 0) > 0);
+                                                            return selectedFees.length === validHeads.length ? 'Unselect All' : 'Select All';
+                                                        })()}
                                                     </button>
                                                 </th>
-                                                {feeHeads.map(h => <th key={h.id} style={{ padding: '0.75rem', textAlign: 'right', border: '1px solid #e2e8f0', fontSize: '0.8rem' }}>{h.name}</th>)}
+                                                {feeHeads.filter(h => {
+                                                    const struct = feeStructure.find(s => s.className === selectedClass);
+                                                    return (struct?.fees?.[h.name] || 0) > 0;
+                                                }).map(h => <th key={h.id} style={{ padding: '0.75rem', textAlign: 'right', border: '1px solid #e2e8f0', fontSize: '0.8rem' }}>{h.name}</th>)}
                                                 <th style={{ padding: '0.75rem', textAlign: 'right', border: '1px solid #e2e8f0', background: '#e0f2fe' }}>Total Annual</th>
                                             </tr>
                                         </thead>
                                         <tbody>
                                             <tr>
                                                 <td style={{ textAlign: 'center', border: '1px solid #e2e8f0' }}>-</td>
-                                                {feeHeads.map(h => {
+                                                {feeHeads.filter(h => {
+                                                    const struct = feeStructure.find(s => s.className === selectedClass);
+                                                    return (struct?.fees?.[h.name] || 0) > 0;
+                                                }).map(h => {
                                                     const struct = feeStructure.find(s => s.className === selectedClass);
                                                     const amount = struct?.fees?.[h.name] || 0;
                                                     const isSelected = selectedFees.includes(h.name);
@@ -717,6 +787,107 @@ const Fees: React.FC = () => {
                                 </div>
                             </div>
 
+                            {/* 3.5 Transport Section */}
+                            <div className="stat-card" style={{ display: 'block', backgroundColor: '#fdfcfe', border: '1px solid #f3e8ff' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                        <div style={{ backgroundColor: '#f3e8ff', color: '#9333ea', padding: '0.4rem', borderRadius: '8px' }}>
+                                            <input 
+                                                type="checkbox" 
+                                                id="transport-toggle"
+                                                checked={isTransportEnabled} 
+                                                onChange={e => setIsTransportEnabled(e.target.checked)} 
+                                                style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                                            />
+                                        </div>
+                                        <label htmlFor="transport-toggle" style={{ fontWeight: '700', fontSize: '1.1rem', color: '#6b21a8', cursor: 'pointer' }}>
+                                            Enable Transport Facility
+                                        </label>
+                                    </div>
+                                    {isTransportEnabled && (
+                                        <div style={{ fontSize: '0.85rem', color: '#9333ea', fontWeight: '600' }}>
+                                            Transport Fee will be added to the total amount
+                                        </div>
+                                    )}
+                                </div>
+
+                                {isTransportEnabled && (
+                                    <div style={{ animation: 'fadeIn 0.3s ease-out' }}>
+                                        <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: '0 0.75rem' }}>
+                                            <thead>
+                                                <tr>
+                                                    <th style={{ textAlign: 'left', padding: '0 0.5rem', color: '#6d28d9', fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Route Name</th>
+                                                    <th style={{ textAlign: 'left', padding: '0 0.5rem', color: '#6d28d9', fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Transport Fee (₹)</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {transportRows.map((row, idx) => (
+                                                    <tr key={idx}>
+                                                        <td style={{ padding: '0 0.5rem', position: 'relative' }}>
+                                                            <div style={{ position: 'relative' }}>
+                                                                <input 
+                                                                    type="text" 
+                                                                    className="form-control" 
+                                                                    placeholder="Search Route..." 
+                                                                    value={row.name} 
+                                                                    onChange={e => {
+                                                                        const newRows = [...transportRows];
+                                                                        newRows[idx].name = e.target.value;
+                                                                        newRows[idx].showDropdown = true;
+                                                                        setTransportRows(newRows);
+                                                                    }} 
+                                                                    onFocus={() => {
+                                                                        const newRows = [...transportRows];
+                                                                        newRows[idx].showDropdown = true;
+                                                                        setTransportRows(newRows);
+                                                                    }}
+                                                                    style={{ border: '1px solid #ddd6fe', borderRadius: '12px', background: '#fdfbff', padding: '0.8rem 1rem' }}
+                                                                />
+                                                                {row.showDropdown && (
+                                                                    <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100, backgroundColor: 'white', border: '1px solid #ddd6fe', borderRadius: '12px', marginTop: '4px', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', maxHeight: '250px', overflowY: 'auto' }}>
+                                                                        {transportStops
+                                                                            .filter(s => s.name.toLowerCase().includes(row.name.toLowerCase()))
+                                                                            .map((stop) => (
+                                                                                <div 
+                                                                                    key={stop.id} 
+                                                                                    style={{ padding: '0.75rem 1rem', cursor: 'pointer', borderBottom: '1px solid #f5f3ff', transition: 'background 0.2s' }}
+                                                                                    onClick={() => {
+                                                                                        const newRows = [...transportRows];
+                                                                                        newRows[idx].name = stop.name;
+                                                                                        newRows[idx].km = stop.km;
+                                                                                        newRows[idx].price = (stop.busFare || 0).toString();
+                                                                                        newRows[idx].showDropdown = false;
+                                                                                        setTransportRows(newRows);
+                                                                                    }}
+                                                                                    onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f5f3ff'}
+                                                                                    onMouseLeave={e => e.currentTarget.style.backgroundColor = 'white'}
+                                                                                >
+                                                                                    <div style={{ fontWeight: '600' }}>{stop.name}</div>
+                                                                                    <div style={{ fontSize: '0.75rem', color: '#64748b' }}>₹{stop.busFare || 0}</div>
+                                                                                </div>
+                                                                            ))}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </td>
+                                                        <td style={{ padding: '0 0.5rem' }}>
+                                                            <input 
+                                                                type="text" 
+                                                                className="form-control" 
+                                                                placeholder="0" 
+                                                                readOnly
+                                                                value={row.price} 
+                                                                style={{ border: '1px solid #ddd6fe', borderRadius: '12px', background: '#f3f4f6', padding: '0.8rem 1rem', fontWeight: '700', color: '#4f46e5' }}
+                                                            />
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                            </div>
+
                             {/* 4. Previous Payment History */}
                             <div className="stat-card" style={{ display: 'block' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
@@ -724,14 +895,21 @@ const Fees: React.FC = () => {
                                     {user?.role === 'ACCOUNTS' && <span style={{ fontSize: '0.8rem', color: '#64748b' }}>* Collections with discounts require Principal approval</span>}
                                 </div>
                                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                                    <thead><tr style={{ textAlign: 'left', borderBottom: '2px solid #e2e8f0', color: '#64748b', fontSize: '0.85rem' }}><th style={{ padding: '0.75rem' }}>Receipt</th><th style={{ padding: '0.75rem' }}>Fee Head</th><th style={{ padding: '0.75rem' }}>Amount</th><th style={{ padding: '0.75rem' }}>Discount</th><th style={{ padding: '0.75rem' }}>Date</th><th style={{ padding: '0.75rem' }}>Status</th></tr></thead>
+                                    <thead><tr style={{ textAlign: 'left', borderBottom: '2px solid #e2e8f0', color: '#64748b', fontSize: '0.85rem' }}><th style={{ padding: '0.75rem' }}>Receipt</th><th style={{ padding: '0.75rem' }}>Fee Head</th><th style={{ padding: '0.75rem' }}>Amount</th><th style={{ padding: '0.75rem' }}>Due</th><th style={{ padding: '0.75rem' }}>Discount</th><th style={{ padding: '0.75rem' }}>Date</th><th style={{ padding: '0.75rem' }}>Status</th></tr></thead>
                                     <tbody>
                                         {studentHistory.length > 0 ? (
-                                            studentHistory.map(r => (
+                                            studentHistory.map(r => {
+                                                const rawDue = (r.totalFee || 0) - (r.paidAmount || 0) - (r.discount || 0);
+                                                const isAdvance = rawDue < 0;
+                                                const dueAmt = Math.abs(rawDue);
+                                                return (
                                                 <tr key={r.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                                                     <td style={{ padding: '0.75rem', color: '#2563eb', fontWeight: '700' }}>{r.receiptNo}</td>
                                                     <td style={{ padding: '0.75rem', fontSize: '0.9rem' }}>{r.feeHead}</td>
                                                     <td style={{ padding: '0.75rem', fontWeight: '800' }}>₹{r.paidAmount.toLocaleString()}</td>
+                                                    <td style={{ padding: '0.75rem', fontWeight: '600', color: rawDue > 0 ? '#ef4444' : isAdvance ? '#22c55e' : '#64748b' }}>
+                                                        {rawDue === 0 ? '-' : isAdvance ? `+₹${dueAmt.toLocaleString()} (Adv)` : `₹${dueAmt.toLocaleString()}`}
+                                                    </td>
                                                     <td style={{ padding: '0.75rem', color: r.discount > 0 ? '#ef4444' : '#64748b', fontWeight: '600' }}>{r.discount > 0 ? `₹${r.discount}` : '-'}</td>
                                                     <td style={{ padding: '0.75rem', fontSize: '0.85rem' }}>{r.date}</td>
                                                     <td style={{ padding: '0.75rem' }}>
@@ -752,9 +930,10 @@ const Fees: React.FC = () => {
                                                         )}
                                                     </td>
                                                 </tr>
-                                            ))
+                                                );
+                                            })
                                         ) : (
-                                            <tr><td colSpan={6} style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>No previous payments found for this student.</td></tr>
+                                            <tr><td colSpan={7} style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>No previous payments found for this student.</td></tr>
                                         )}
                                     </tbody>
                                 </table>
@@ -778,9 +957,17 @@ const Fees: React.FC = () => {
                                                         </div>
                                                     );
                                                 })
-                                            ) : (
+                                            ) : !isTransportEnabled && (
                                                 <div style={{ textAlign: 'center', color: '#9a3412', fontSize: '0.875rem' }}>No fees selected. Click on amounts above.</div>
                                             )}
+                                            {isTransportEnabled && transportRows.map((row, idx) => (
+                                                row.price && (
+                                                    <div key={`trans-${idx}`} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.4rem 0', borderBottom: '1px dashed #fed7aa', fontSize: '0.9rem', color: '#9333ea' }}>
+                                                        <span style={{ fontWeight: '500' }}>Transport: {row.name || `Route ${idx+1}`}</span>
+                                                        <span style={{ fontWeight: 'bold' }}>₹{Number(row.price).toLocaleString()}</span>
+                                                    </div>
+                                                )
+                                            ))}
                                         </div>
                                         <div style={{ marginTop: '0.5rem', borderTop: '2px solid #fdba74', paddingTop: '1rem' }}>
                                             <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '1rem' }}>
@@ -793,6 +980,41 @@ const Fees: React.FC = () => {
                                                 <div style={{ textAlign: 'right', fontSize: '1.1rem', fontWeight: '800', color: '#c2410c' }}>Net Payable:</div>
                                                 <div style={{ textAlign: 'right', fontSize: '1.1rem', fontWeight: '800', color: '#c2410c' }}>₹{Number(finalAmount).toLocaleString()}</div>
                                             </div>
+
+                                            {Number(discount) > 0 && (
+                                                <div style={{ 
+                                                    marginTop: '1.25rem', 
+                                                    padding: '0.75rem', 
+                                                    backgroundColor: '#fffbeb', 
+                                                    border: '1px solid #fde68a', 
+                                                    borderRadius: '10px',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '1rem',
+                                                    animation: 'fadeIn 0.3s ease-out'
+                                                }}>
+                                                    <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                                                        <input 
+                                                            type="checkbox" 
+                                                            id="approval-check"
+                                                            checked={requiresApproval}
+                                                            onChange={e => setRequiresApproval(e.target.checked)}
+                                                            style={{ 
+                                                                width: '20px', 
+                                                                height: '20px', 
+                                                                cursor: 'pointer',
+                                                                accentColor: '#d97706'
+                                                            }}
+                                                        />
+                                                    </div>
+                                                    <label htmlFor="approval-check" style={{ color: '#92400e', fontSize: '0.85rem', fontWeight: '700', cursor: 'pointer', flex: 1 }}>
+                                                        Send for Principal Approval? 
+                                                        <span style={{ display: 'block', fontSize: '0.75rem', fontWeight: '500', color: '#b45309', marginTop: '2px' }}>
+                                                            {requiresApproval ? 'Request will be sent to Principal' : 'Pay now with discount (Immediate)'}
+                                                        </span>
+                                                    </label>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
@@ -815,8 +1037,8 @@ const Fees: React.FC = () => {
                                                 ))}
                                             </div>
                                         </div>
-                                        <button type="submit" className="btn-primary" style={{ width: '100%', marginTop: '1.5rem', padding: '1rem', backgroundColor: Number(discount) > 0 ? '#ea580c' : '#166534', fontSize: '1.1rem' }}>
-                                            {Number(discount) > 0 ? 'Submit for Principal Approval' : 'Confirm & Print Receipt'}
+                                        <button type="submit" className="btn-primary" style={{ width: '100%', marginTop: '1.5rem', padding: '1rem', backgroundColor: (Number(discount) > 0 && requiresApproval) ? '#ea580c' : '#166534', fontSize: '1.1rem' }}>
+                                            {(Number(discount) > 0 && requiresApproval) ? 'Submit for Principal Approval' : 'Confirm & Print Receipt'}
                                         </button>
                                     </form>
                                 </div>
@@ -1409,61 +1631,126 @@ const Fees: React.FC = () => {
                     </div>
                 </div>
             )}
-            {/* Receipt Modal */}
-            {showReceipt && selectedReceipt && (
-                <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
-                    <div style={{ backgroundColor: 'white', padding: '2.5rem', borderRadius: '16px', width: '450px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }}>
-                        <div style={{ textAlign: 'center', borderBottom: '2px dashed #e2e8f0', paddingBottom: '1.5rem', marginBottom: '1.5rem' }}>
-                            <h2 style={{ color: '#1e293b', margin: 0, fontSize: '1.5rem', fontWeight: 800 }}>SCHOOL ERP</h2>
-                            <p style={{ color: '#64748b', margin: '0.5rem 0 0 0', fontSize: '0.875rem' }}>Official Fee Receipt</p>
-                        </div>
+            {/* Receipt Modal (Monospace / Thermal Printer Style) */}
+            {showReceipt && selectedReceipt && (() => {
+                const headContent = selectedReceipt.feeHead || '';
+                let items = [];
+                let monthLabel = '';
+                if (headContent.includes('==>')) {
+                    const [month, listPart] = headContent.split(' ==> ');
+                    monthLabel = month;
+                    items = listPart.split(' || ').map(item => {
+                        const [desc, price] = item.split(': ');
+                        return { desc: desc.trim(), price: Number(price) };
+                    });
+                } else {
+                    items = [{ desc: selectedReceipt.feeHead, price: selectedReceipt.totalFee || (selectedReceipt.paidAmount + (selectedReceipt.discount || 0)) }];
+                }
 
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '2rem', fontSize: '0.9rem' }}>
-                            <div>
-                                <label style={{ color: '#94a3b8', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Receipt No</label>
-                                <p style={{ fontWeight: '700', color: '#1e293b', margin: 0 }}>{selectedReceipt.receiptNo}</p>
-                            </div>
-                            <div style={{ textAlign: 'right' }}>
-                                <label style={{ color: '#94a3b8', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Date</label>
-                                <p style={{ fontWeight: '700', color: '#1e293b', margin: 0 }}>{selectedReceipt.date}</p>
-                            </div>
-                        </div>
+                const subtotal = items.reduce((sum, item) => sum + item.price, 0);
+                const discount = selectedReceipt.discount || 0;
+                const totalPayable = subtotal - discount;
+                const paidAmt = selectedReceipt.paidAmount || 0;
+                const remainingDue = Math.max(0, totalPayable - paidAmt);
+                const dateStr = selectedReceipt.date || new Date().toLocaleDateString('en-GB');
 
-                        <div style={{ backgroundColor: '#f8fafc', padding: '1.5rem', borderRadius: '12px', marginBottom: '1.5rem' }}>
-                            <div style={{ marginBottom: '1rem' }}>
-                                <label style={{ color: '#64748b', fontSize: '0.8rem' }}>Student Name</label>
-                                <p style={{ fontWeight: '700', fontSize: '1.1rem', margin: 0 }}>{selectedReceipt.studentName}</p>
-                            </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #e2e8f0', paddingTop: '1rem' }}>
-                                <div>
-                                    <label style={{ color: '#64748b', fontSize: '0.8rem' }}>Admission No</label>
-                                    <p style={{ fontWeight: '600', margin: 0 }}>{selectedReceipt.admissionNo}</p>
+                const padRight = (str, length) => {
+                    const s = String(str).substring(0, length);
+                    return s + ' '.repeat(Math.max(0, length - s.length));
+                };
+                const padLeft = (str, length) => {
+                    const s = String(str).substring(0, length);
+                    return ' '.repeat(Math.max(0, length - s.length)) + s;
+                };
+
+                const dashedLine = '-'.repeat(48);
+
+                return (
+                    <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '1rem', overflowY: 'auto' }}>
+                        <div style={{ position: 'relative', margin: 'auto' }}>
+                            <div id="printable-receipt" style={{ backgroundColor: '#fdebc8', padding: '2rem', width: '450px', display: 'flex', justifyContent: 'center', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }}>
+                                <div style={{ fontFamily: '"Courier New", Courier, monospace', fontSize: '14px', lineHeight: '1.5', color: '#000', width: '100%', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                                    <div style={{ textAlign: 'center' }}>
+                                        [School Logo]<br/><br/>
+                                        BIPS ERP<br/>
+                                        Official Fee Receipt<br/>
+                                    </div>
+                                    <br/>
+                                    {dashedLine}<br/>
+                                    {`Receipt No : ${padRight(selectedReceipt.receiptNo || 'N/A', 14)} Date : ${dateStr}`}<br/>
+                                    {dashedLine}<br/>
+                                    <br/>
+                                    Student Details:<br/>
+                                    {dashedLine}<br/>
+                                    {`Student Name    : ${selectedReceipt.studentName}`}<br/>
+                                    {`Admission No    : ${selectedReceipt.admissionNo}`}<br/>
+                                    {`Class & Section : ${selectedReceipt.className}`}<br/>
+                                    {dashedLine}<br/>
+                                    <br/>
+                                    Fee Details {monthLabel ? `(${monthLabel})` : ''}:<br/>
+                                    {dashedLine}<br/>
+                                    | {padRight('Description', 30)} | {padLeft('Amount (₹)', 10)} |<br/>
+                                    {dashedLine}<br/>
+                                    {items.map((item, i) => (
+                                        <React.Fragment key={i}>
+                                            | {padRight(item.desc, 30)} | {padLeft(item.price.toLocaleString(), 10)} |<br/>
+                                        </React.Fragment>
+                                    ))}
+                                    {dashedLine}<br/>
+                                    | {padRight('Subtotal', 30)} | {padLeft(subtotal.toLocaleString(), 10)} |<br/>
+                                    | {padRight('Discount', 30)} | {padLeft('-' + discount.toLocaleString(), 10)} |<br/>
+                                    {dashedLine}<br/>
+                                    | {padRight('TOTAL PAYABLE', 30)} | {padLeft(totalPayable.toLocaleString(), 10)} |<br/>
+                                    {dashedLine}<br/>
+                                    <br/>
+                                    Payment Details:<br/>
+                                    {dashedLine}<br/>
+                                    Amount Paid     : ₹{paidAmt.toLocaleString()}<br/>
+                                    Remaining Due   : ₹{remainingDue.toLocaleString()}<br/>
+                                    Payment Status  : {remainingDue > 0 ? 'Partial Payment' : 'Full Paid'}<br/>
+                                    Payment Mode    : {selectedReceipt.paymentMode || 'Cash'}<br/>
+                                    {dashedLine}<br/>
+                                    <br/>
+                                    Remark:<br/>
+                                    {dashedLine}<br/>
+                                    ₹{paidAmt.toLocaleString()} received. {remainingDue > 0 ? `₹${remainingDue.toLocaleString()} left as pending.` : 'All dues cleared.'}<br/>
+                                    {dashedLine}<br/>
+                                    <br/>
+                                    This is a computer-generated receipt.<br/>
+                                    <br/><br/>
+                                    {padLeft('Authorized Signature', 48)}<br/>
+                                    {dashedLine}
                                 </div>
-                                <div style={{ textAlign: 'right' }}>
-                                    <label style={{ color: '#64748b', fontSize: '0.8rem' }}>Class</label>
-                                    <p style={{ fontWeight: '600', margin: 0 }}>{selectedReceipt.className}</p>
-                                </div>
                             </div>
-                        </div>
 
-                        <div style={{ marginBottom: '1.5rem' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0' }}>
-                                <span style={{ color: '#64748b' }}>{selectedReceipt.feeHead}</span>
-                                <span style={{ fontWeight: '700' }}>₹{selectedReceipt.paidAmount}</span>
-                            </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0', borderTop: '2px solid #1e293b', marginTop: '0.5rem' }}>
-                                <span style={{ fontWeight: '800', color: '#1e293b' }}>Total Paid</span>
-                                <span style={{ fontWeight: '900', color: '#2563eb', fontSize: '1.25rem' }}>₹{selectedReceipt.paidAmount}</span>
+                            {/* Print Controls (Hidden on print) */}
+                            <div className="no-print" style={{ marginTop: '1rem', display: 'flex', justifyContent: 'center', gap: '1rem' }}>
+                                <button 
+                                    onClick={() => window.print()} 
+                                    style={{ backgroundColor: '#1e293b', color: 'white', border: 'none', padding: '0.8rem 1.5rem', borderRadius: '8px', cursor: 'pointer', fontWeight: '700', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.5rem', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}
+                                >
+                                    🖨️ Print Receipt
+                                </button>
+                                <button 
+                                    onClick={() => setShowReceipt(false)} 
+                                    style={{ backgroundColor: 'white', color: '#475569', border: '1px solid #cbd5e1', padding: '0.8rem 1.5rem', borderRadius: '8px', cursor: 'pointer', fontWeight: '700', fontSize: '0.9rem' }}
+                                >
+                                    Close
+                                </button>
                             </div>
                         </div>
-
-                        <div style={{ display: 'flex', gap: '1rem' }}>
-                            <button onClick={() => window.print()} style={{ flex: 1, backgroundColor: '#1e293b', color: 'white', border: 'none', padding: '0.75rem', borderRadius: '8px', cursor: 'pointer', fontWeight: '600' }}>Print Receipt</button>
-                            <button onClick={() => setShowReceipt(false)} style={{ flex: 1, backgroundColor: '#f1f5f9', color: '#475569', border: 'none', padding: '0.75rem', borderRadius: '8px', cursor: 'pointer', fontWeight: '600' }}>Close</button>
-                        </div>
+                        <style>{`
+                            @media print {
+                                .no-print { display: none !important; }
+                                body * { visibility: hidden; }
+                                #printable-receipt, #printable-receipt * { visibility: visible; }
+                                #printable-receipt { position: absolute; left: 0; top: 0; width: 100%; box-shadow: none !important; margin: 0 !important; }
+                                @page { size: auto; margin: 10mm; }
+                            }
+                        `}</style>
                     </div>
-                </div>
-            )}
+                );
+            })()}
         </div>
     );
 };

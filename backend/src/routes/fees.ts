@@ -330,6 +330,81 @@ router.get('/reports', async (req, res) => {
     }
 });
 
+// Get single student outstanding balance
+router.get('/student/:id/balance', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const payments = await prisma.feePayment.findMany({
+            where: { studentId: id, status: 'APPROVED' }
+        });
+
+        let totalBilled = 0;
+        let totalPaid = 0;
+        let totalDiscount = 0;
+
+        payments.forEach(p => {
+            totalBilled += p.totalFee || 0;
+            totalPaid += p.amountPaid || 0;
+            totalDiscount += p.discount || 0;
+        });
+
+        const outstandingBalance = totalBilled - totalPaid - totalDiscount;
+
+        res.json({ outstandingBalance: Math.max(0, outstandingBalance) });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Failed to calculate balance' });
+    }
+});
+
+// Get global list of pending fees
+router.get('/due-list', async (req, res) => {
+    try {
+        const payments = await prisma.feePayment.findMany({
+            where: { status: 'APPROVED' },
+            include: { student: { include: { user: true, class: true } } }
+        });
+
+        const studentMap: any = {};
+
+        payments.forEach(p => {
+            if (!p.student || !p.student.user) return;
+            const sid = p.studentId;
+            if (!studentMap[sid]) {
+                studentMap[sid] = {
+                    id: sid,
+                    studentName: p.student.user.name,
+                    className: p.student.class?.name || 'Unknown',
+                    admissionNo: p.student.admissionNo,
+                    totalBilled: 0,
+                    totalPaid: 0,
+                    totalDiscount: 0
+                };
+            }
+            studentMap[sid].totalBilled += p.totalFee || 0;
+            studentMap[sid].totalPaid += p.amountPaid || 0;
+            studentMap[sid].totalDiscount += p.discount || 0;
+        });
+
+        const dueList = Object.values(studentMap)
+            .map((s: any) => ({
+                id: s.id,
+                studentName: s.studentName,
+                className: s.className,
+                admissionNo: s.admissionNo,
+                total: s.totalBilled,
+                paid: s.totalPaid + s.totalDiscount,
+                pending: s.totalBilled - s.totalPaid - s.totalDiscount
+            }))
+            .filter((s: any) => s.pending > 0);
+
+        res.json(dueList);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Failed to fetch due list' });
+    }
+});
+
 export default router;
 
 

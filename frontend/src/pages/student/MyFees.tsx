@@ -46,9 +46,7 @@ const MyFees: React.FC = () => {
     const totalPaid = feeHistory.filter(h => h.status === 'APPROVED').reduce((sum, h) => sum + (h.amountPaid || 0), 0);
     const pendingRequests = feeHistory.filter(h => h.status === 'PENDING').reduce((sum, h) => sum + (h.totalFee || 0), 0);
 
-    const handlePrintReceipt = () => {
-        window.print();
-    };
+
 
     if (!studentInfo) return <div style={{ padding: '2rem' }}>Loading or User not found...</div>;
 
@@ -186,7 +184,7 @@ const MyFees: React.FC = () => {
                 if (headContent.includes('==>')) {
                     const [month, listPart] = headContent.split(' ==> ');
                     monthLabel = month;
-                    items = listPart.split(' || ').map(item => {
+                    items = listPart.split(' || ').map((item: string) => {
                         const [desc, price] = item.split(': ');
                         return { desc: desc.trim(), price: Number(price) };
                     });
@@ -194,7 +192,7 @@ const MyFees: React.FC = () => {
                     items = [{ desc: selectedReceipt.feeHead, price: selectedReceipt.totalFee || (selectedReceipt.paidAmount + (selectedReceipt.discount || 0)) }];
                 }
 
-                const subtotal = items.reduce((sum, item) => sum + item.price, 0);
+                const subtotal = items.reduce((sum: number, item: any) => sum + item.price, 0);
                 const discount = selectedReceipt.discount || 0;
                 const totalPayable = subtotal - discount;
                 const dateStr = selectedReceipt.date || new Date(selectedReceipt.paymentDate).toLocaleDateString('en-GB');
@@ -204,30 +202,30 @@ const MyFees: React.FC = () => {
                 const admissionNo = selectedReceipt.admissionNo || studentInfo?.admissionNo || '-';
                 const className = selectedReceipt.className || `${studentInfo?.class?.name || ''} - ${studentInfo?.section?.name || ''}`;
 
-                const padRight = (str, length) => {
+                const padRight = (str: any, length: number) => {
                     const s = String(str).substring(0, length);
                     return s + ' '.repeat(Math.max(0, length - s.length));
                 };
-                const padLeft = (str, length) => {
+                const padLeft = (str: any, length: number) => {
                     const s = String(str).substring(0, length);
                     return ' '.repeat(Math.max(0, length - s.length)) + s;
                 };
 
-                const dashedLine = '-'.repeat(48);
+                const dashedLine = '-'.repeat(55);
 
                 return (
-                    <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '1rem', overflowY: 'auto' }}>
-                        <div style={{ position: 'relative', margin: 'auto' }}>
-                            <div id="printable-receipt" style={{ backgroundColor: '#fdebc8', padding: '2rem', width: '450px', display: 'flex', justifyContent: 'center', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }}>
-                                <div style={{ fontFamily: '"Courier New", Courier, monospace', fontSize: '14px', lineHeight: '1.5', color: '#000', width: '100%', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                    <div id="receipt-modal-overlay" style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '1rem', overflowY: 'auto' }}>
+                        <div id="printable-receipt-wrapper" style={{ position: 'relative', margin: 'auto' }}>
+                            <div id="printable-receipt" style={{ backgroundColor: '#fff', padding: '2rem', width: '148mm', minHeight: '210mm', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }}>
+                                <div style={{ fontFamily: '"Courier New", Courier, monospace', fontSize: '15px', fontWeight: 'bold', lineHeight: '1.6', color: '#000', width: '100%', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
                                     <div style={{ textAlign: 'center' }}>
-                                        [School Logo]<br/><br/>
+                                        <img src="/bips-logo.png" alt="School Logo" style={{ width: '80px', height: '80px', objectFit: 'contain', display: 'block', margin: '0 auto 8px auto' }} /><br/>
                                         BIPS ERP<br/>
                                         Official Fee Receipt<br/>
                                     </div>
                                     <br/>
                                     {dashedLine}<br/>
-                                    {`Receipt No : ${padRight(selectedReceipt.receiptNo || 'N/A', 14)} Date : ${dateStr}`}<br/>
+                                    {`Receipt No : ${padRight(selectedReceipt.receiptNo || 'N/A', 15)} Date : ${dateStr}`}<br/>
                                     {dashedLine}<br/>
                                     <br/>
                                     Student Details:<br/>
@@ -239,37 +237,37 @@ const MyFees: React.FC = () => {
                                     <br/>
                                     Fee Details {monthLabel ? `(${monthLabel})` : ''}:<br/>
                                     {dashedLine}<br/>
-                                    | {padRight('Description', 30)} | {padLeft('Amount (₹)', 10)} |<br/>
+                                    | {padRight('Description', 35)} | {padLeft('Amount (₹)', 13)} |<br/>
                                     {dashedLine}<br/>
-                                    {items.map((item, i) => (
+                                    {items.map((item: any, i: number) => (
                                         <React.Fragment key={i}>
-                                            | {padRight(item.desc, 30)} | {padLeft(item.price.toLocaleString(), 10)} |<br/>
+                                            | {padRight(item.desc, 35)} | {padLeft(item.price.toLocaleString(), 13)} |<br/>
                                         </React.Fragment>
                                     ))}
                                     {dashedLine}<br/>
-                                    | {padRight('Subtotal', 30)} | {padLeft(subtotal.toLocaleString(), 10)} |<br/>
-                                    | {padRight('Discount', 30)} | {padLeft('-' + discount.toLocaleString(), 10)} |<br/>
+                                    | {padRight('Subtotal', 35)} | {padLeft(subtotal.toLocaleString(), 13)} |<br/>
+                                    | {padRight('Discount', 35)} | {padLeft('-' + discount.toLocaleString(), 13)} |<br/>
                                     {dashedLine}<br/>
-                                    | {padRight('TOTAL PAYABLE', 30)} | {padLeft(totalPayable.toLocaleString(), 10)} |<br/>
+                                    | {padRight('TOTAL PAYABLE', 35)} | {padLeft(totalPayable.toLocaleString(), 13)} |<br/>
                                     {dashedLine}<br/>
+                                    <br/>
                                     <br/>
                                     Payment Details:<br/>
                                     {dashedLine}<br/>
-                                    Amount Paid     : ₹{(selectedReceipt.paidAmount || selectedReceipt.amountPaid).toLocaleString()}<br/>
-                                    Previous Due    : ₹0<br/>
-                                    Remaining Due   : ₹0<br/>
-                                    Payment Status  : Full Paid<br/>
+                                    Amount Paid     : ₹{(selectedReceipt.paidAmount || selectedReceipt.amountPaid || 0).toLocaleString()}<br/>
+                                    Remaining Due   : ₹{Math.max(0, totalPayable - (selectedReceipt.paidAmount || selectedReceipt.amountPaid || 0)).toLocaleString()}<br/>
+                                    Payment Status  : {Math.max(0, totalPayable - (selectedReceipt.paidAmount || selectedReceipt.amountPaid || 0)) > 0 ? 'Partial Payment' : 'Full Paid'}<br/>
                                     Payment Mode    : {selectedReceipt.paymentMode || 'Cash'}<br/>
                                     {dashedLine}<br/>
                                     <br/>
                                     Remark:<br/>
                                     {dashedLine}<br/>
-                                    ₹{(selectedReceipt.paidAmount || selectedReceipt.amountPaid).toLocaleString()} received. All dues cleared.<br/>
+                                    ₹{(selectedReceipt.paidAmount || selectedReceipt.amountPaid || 0).toLocaleString()} received. {Math.max(0, totalPayable - (selectedReceipt.paidAmount || selectedReceipt.amountPaid || 0)) > 0 ? `₹${Math.max(0, totalPayable - (selectedReceipt.paidAmount || selectedReceipt.amountPaid || 0)).toLocaleString()} left as pending.` : 'All dues cleared.'}<br/>
                                     {dashedLine}<br/>
                                     <br/>
                                     This is a computer-generated receipt.<br/>
-                                    <br/><br/>
-                                    {padLeft('Authorized Signature', 48)}<br/>
+                                    <br/><br/><br/>
+                                    {padLeft('Authorized Signature', 55)}<br/>
                                     {dashedLine}
                                 </div>
                             </div>
@@ -293,10 +291,33 @@ const MyFees: React.FC = () => {
                         <style>{`
                             @media print {
                                 .no-print { display: none !important; }
+                                body, html { background: white; margin: 0; padding: 0; }
                                 body * { visibility: hidden; }
-                                #printable-receipt, #printable-receipt * { visibility: visible; }
-                                #printable-receipt { position: absolute; left: 0; top: 0; width: 100%; box-shadow: none !important; margin: 0 !important; }
-                                @page { size: auto; margin: 10mm; }
+                                #receipt-modal-overlay {
+                                    position: absolute !important;
+                                    top: 0 !important; left: 0 !important;
+                                    margin: 0 !important; padding: 0 !important;
+                                    display: block !important;
+                                    visibility: visible !important;
+                                    background: transparent !important;
+                                }
+                                #receipt-modal-overlay * {
+                                    visibility: visible;
+                                }
+                                #printable-receipt-wrapper {
+                                    position: relative !important;
+                                    margin: 0 !important;
+                                    padding: 0 !important;
+                                }
+                                #printable-receipt { 
+                                    position: relative !important; 
+                                    width: 100% !important; 
+                                    min-height: auto !important;
+                                    padding: 5mm !important;
+                                    margin: 0 !important; 
+                                    box-shadow: none !important; 
+                                }
+                                @page { size: A5 portrait; margin: 5mm; }
                             }
                         `}</style>
                     </div>

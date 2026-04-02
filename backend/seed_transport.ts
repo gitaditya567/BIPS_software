@@ -4,7 +4,7 @@ const prisma = new PrismaClient();
 
 const transportStopsData = [
   { name: "C.R.P.F.", km: "5", ratePerKm: "0-05", busFare: 600 },
-  { name: "Kaithi from", km: "5", ratePerKm: "0-05", busFare: 580 },
+  { name: "Kaithi", km: "5", ratePerKm: "0-05", busFare: 580 },
   { name: "Chandrawal", km: "3", ratePerKm: "0-05", busFare: 600 },
   { name: "Kasim Kheda", km: "5", ratePerKm: "0-05", busFare: 670 },
   { name: "Ganesh Shankar Kheda", km: "5", ratePerKm: "0-05", busFare: 670 },
@@ -63,13 +63,14 @@ const transportStopsData = [
 ];
 
 async function main() {
+  console.log('Cleaning existing transport stops...');
+  await prisma.transportStop.deleteMany();
+  
   console.log('Seeding transport stops...');
   
   for (const stop of transportStopsData) {
-    await prisma.transportStop.upsert({
-      where: { name: stop.name },
-      update: stop,
-      create: stop,
+    await prisma.transportStop.create({
+      data: stop,
     });
   }
   

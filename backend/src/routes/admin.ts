@@ -705,13 +705,33 @@ router.get('/transport/stops', async (req, res) => {
 router.post('/transport/stops', async (req, res) => {
     try {
         const { name, km, ratePerKm, busFare } = req.body;
+        
+        if (!name) {
+            return res.status(400).json({ error: 'Stop name is required' });
+        }
+
+        const fareNum = Number(busFare);
+        if (isNaN(fareNum)) {
+            return res.status(400).json({ error: 'Invalid bus fare amount' });
+        }
+
         const newStop = await prisma.transportStop.create({
-            data: { name, km, ratePerKm, busFare: Number(busFare) }
+            data: { 
+                name, 
+                km: km ? km.toString() : "", 
+                ratePerKm: ratePerKm ? ratePerKm.toString() : "", 
+                busFare: fareNum 
+            }
         });
         res.json(newStop);
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: 'Failed to create transport stop' });
+    } catch (error: any) {
+        console.error('Transport Stop Creation Error:', error);
+        
+        if (error.code === 'P2002') {
+            return res.status(400).json({ error: 'Stop with this name already exists' });
+        }
+        
+        res.status(500).json({ error: error.message || 'Failed to create transport stop' });
     }
 });
 

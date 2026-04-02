@@ -43,7 +43,7 @@ const Transport: React.FC = () => {
             setNewStop({ name: '', km: '', fee: '', ratePerKm: '' });
             alert('Transport Fee Added Successfully!');
         } catch (error) {
-            alert('Failed to add transport stop');
+            alert((error as any).response?.data?.error || 'Failed to add transport stop');
         }
     };
 

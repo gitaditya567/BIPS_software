@@ -135,8 +135,8 @@ const Transport: React.FC = () => {
                     )}
 
                     {activeTab === 'transport-fees' && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '2.5rem', animation: 'fadeIn 0.4s ease-out' }}>
-                            <div className="stat-card" style={{ display: 'block', height: 'fit-content', border: '1px solid #e0e7ff', background: '#f8faff', padding: '2rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'center', animation: 'fadeIn 0.4s ease-out' }}>
+                            <div className="stat-card" style={{ width: '100%', maxWidth: '500px', display: 'block', height: 'fit-content', border: '1px solid #e0e7ff', background: '#f8faff', padding: '2rem' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
                                     <div style={{ backgroundColor: '#4f46e5', color: 'white', padding: '0.5rem', borderRadius: '8px' }}><Plus size={20} /></div>
                                     <h3 style={{ fontWeight: '800', color: '#1e293b' }}>{editStopId ? 'Update Stop Fee' : 'Add Stop Fee'}</h3>
@@ -185,7 +185,7 @@ const Transport: React.FC = () => {
                                             <thead>
                                                 <tr style={{ backgroundColor: '#f8fafc' }}>
                                                     <th style={{ padding: '1.25rem', color: '#64748b', fontSize: '0.85rem' }}>STOP NAME</th>
-
+                                                    
                                                     <th style={{ padding: '1.25rem', color: '#64748b', fontSize: '0.85rem', textAlign: 'right' }}>BUS FARE (₹)</th>
                                                     <th style={{ padding: '1.25rem', color: '#64748b', fontSize: '0.85rem', textAlign: 'center' }}>ACTION</th>
                                                 </tr>
@@ -195,7 +195,7 @@ const Transport: React.FC = () => {
                                                     transportStops.slice().reverse().map((stop) => (
                                                         <tr key={stop.id} style={{ borderBottom: '1px solid #f1f5f9', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f8fafc'} onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}>
                                                             <td style={{ padding: '1.25rem', fontWeight: '700', color: '#1e293b' }}>{stop.name}</td>
-
+                                                            
                                                             <td style={{ padding: '1.25rem', textAlign: 'right', fontWeight: '800', color: '#059669', fontSize: '1.1rem' }}>₹{Number(stop.busFare || stop.fee).toLocaleString()}</td>
                                                             <td style={{ padding: '1.25rem', textAlign: 'center' }}>
                                                                 <button 
@@ -230,3 +230,4 @@ const Transport: React.FC = () => {
 };
 
 export default Transport;
+

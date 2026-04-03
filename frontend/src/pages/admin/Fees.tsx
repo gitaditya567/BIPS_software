@@ -56,6 +56,23 @@ const Fees: React.FC = () => {
     const [pendingDues, setPendingDues] = useState<number>(0);
     const [feeHeads, setFeeHeads] = useState<FeeHead[]>([]);
 
+    // State for Editing Fee Structure
+    const [editingClassId, setEditingClassId] = useState<string | null>(null);
+
+    const handleEditFeeStructure = (item: any) => {
+        setEditingClassId(item.id);
+        const form = document.getElementById('fee-structure-form') as HTMLFormElement;
+        if (form) {
+            const classSelect = form.querySelector('select[name="classId"]') as HTMLSelectElement;
+            if (classSelect) classSelect.value = item.id;
+            
+            feeHeads.forEach(head => {
+                const input = form.querySelector(`input[name="${head.name}"]`) as HTMLInputElement;
+                if (input) input.value = (item.fees?.[head.name] || 0).toString();
+            });
+        }
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
 
     // Due Fees State
     const [dueFees, setDueFees] = useState<DueFee[]>([]);
@@ -1169,19 +1186,18 @@ const Fees: React.FC = () => {
                         </tbody>
                     </table>
                 </div>
-            )}
-
-
+            )} 
 
             {activeTab === 'structure' && (
                 <div>
                     <div className="stat-card" style={{ display: 'block', marginBottom: '2rem' }}>
-                        <h3 style={{ marginBottom: '1.5rem', fontWeight: 'bold' }}>Define Class Fee Structure</h3>
-                        <form onSubmit={async (e) => {
+                        <h3 style={{ marginBottom: '1.5rem', fontWeight: 'bold' }}>{editingClassId ? 'Edit' : 'Define'} Class Fee Structure</h3>
+                        <form id="fee-structure-form" onSubmit={async (e) => {
                             e.preventDefault();
                             const form = e.target as HTMLFormElement;
                             const formData = new FormData(form);
-                            const selectedClassId = formData.get('classId') as string;
+                            // Important: disabled fields are not in FormData, so we use editingClassId if available
+                            const selectedClassId = editingClassId || (formData.get('classId') as string);
                             const fees: any = {};
                             feeHeads.forEach(head => {
                                 fees[head.name] = Number(formData.get(head.name) || 0);
@@ -1191,7 +1207,8 @@ const Fees: React.FC = () => {
                                 await axios.post('/api/fees/structure', { classId: selectedClassId, fees });
                                 fetchFeeStructure();
                                 form.reset();
-                                alert('Fee Structure defined and saved successfully!');
+                                setEditingClassId(null);
+                                alert(editingClassId ? 'Fee Structure updated successfully!' : 'Fee Structure defined and saved successfully!');
                             } catch (err) {
                                 console.error(err);
                                 alert('Failed to save fee structure');
@@ -1200,7 +1217,7 @@ const Fees: React.FC = () => {
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem' }}>
                                 <div className="form-group">
                                     <label>Class</label>
-                                    <select name="classId" className="form-control" required>
+                                    <select name="classId" className="form-control" required disabled={!!editingClassId}>
                                         <option value="">Select Class</option>
                                         {[...classes].sort((a,b) => {
                                             const order = ['Nursery', 'LKG', 'UKG', 'Class 1', 'Class 2', 'Class 3', 'Class 4', 'Class 5', 'Class 6', 'Class 7', 'Class 8', 'Class 9', 'Class 10', 'Class 11 Bio', 'Class 11 Maths', 'Class 11 Commerce', 'Class 12 Bio', 'Class 12 Maths', 'Class 12 Commerce'];
@@ -1221,7 +1238,20 @@ const Fees: React.FC = () => {
                                     <div key={head.id} className="form-group"><label style={{ fontSize: '0.8rem' }}>{head.name} (₹)</label><input name={head.name} type="number" className="form-control" placeholder="0" style={{ height: '35px' }} /></div>
                                 ))}
                             </div>
-                            <button type="submit" className="btn-primary" style={{ width: 'auto', padding: '0.6rem 1.5rem', marginTop: '1rem' }}>Save Structure</button>
+                            <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
+                                <button type="submit" className="btn-primary" style={{ width: 'auto', padding: '0.6rem 1.5rem', backgroundColor: editingClassId ? '#059669' : '#4f46e5' }}>
+                                    {editingClassId ? 'Update Structure' : 'Save Structure'}
+                                </button>
+                                {editingClassId && (
+                                    <button 
+                                        type="button" 
+                                        onClick={() => { setEditingClassId(null); (document.getElementById('fee-structure-form') as HTMLFormElement).reset(); }} 
+                                        style={{ width: 'auto', padding: '0.6rem 1.5rem', backgroundColor: '#94a3b8', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}
+                                    >
+                                        Cancel
+                                    </button>
+                                )}
+                            </div>
                         </form>
                     </div>
 
@@ -1269,7 +1299,10 @@ const Fees: React.FC = () => {
                                             ₹{(Object.values(item.fees || {}) as number[]).reduce((a: number, b: number) => a + b, 0).toLocaleString()}
                                         </td>
                                         <td style={{ padding: '0.8rem', textAlign: 'center', border: '1px solid #e2e8f0' }}>
-                                            <button style={{ background: '#fee2e2', border: 'none', color: '#ef4444', cursor: 'pointer', fontWeight: '700', padding: '0.4rem 0.8rem', borderRadius: '6px', fontSize: '0.75rem' }} onClick={() => handleDeleteFeeStructure(item.id)}>Delete</button>
+                                            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
+                                                <button style={{ background: '#dcfce7', border: 'none', color: '#166534', cursor: 'pointer', fontWeight: '700', padding: '0.4rem 0.8rem', borderRadius: '6px', fontSize: '0.75rem' }} onClick={() => handleEditFeeStructure(item)}>Edit</button>
+                                                <button style={{ background: '#fee2e2', border: 'none', color: '#ef4444', cursor: 'pointer', fontWeight: '700', padding: '0.4rem 0.8rem', borderRadius: '6px', fontSize: '0.75rem' }} onClick={() => handleDeleteFeeStructure(item.id)}>Delete</button>
+                                            </div>
                                         </td>
                                     </tr>
                                 ))}

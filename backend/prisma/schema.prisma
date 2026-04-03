@@ -46,10 +46,11 @@ model StudentProfile {
   academicYear   String?
   medium         String?
   house          String?
-  classId        String       @db.ObjectId
-  sectionId      String       @db.ObjectId
-  class          Class        @relation(fields: [classId], references: [id])
-  section        Section      @relation(fields: [sectionId], references: [id])
+  status         String       @default("Active")
+  classId        String?      @db.ObjectId
+  sectionId      String?      @db.ObjectId
+  class          Class?       @relation(fields: [classId], references: [id])
+  section        Section?     @relation(fields: [sectionId], references: [id])
   parentId       String?      @db.ObjectId
   parent         ParentProfile? @relation(fields: [parentId], references: [id])
   

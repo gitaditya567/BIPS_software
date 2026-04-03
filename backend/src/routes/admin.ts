@@ -53,8 +53,10 @@ router.get('/students', async (req, res) => {
             ...s,
             name: s.user.name,
             email: s.user.email,
-            className: s.class.name,
-            sectionName: s.section.name,
+            className: s.class?.name || 'N/A',
+            sectionName: s.section?.name || 'N/A',
+            // @ts-ignore
+            status: s.status || 'Active'
         })));
     } catch (error) {
         res.status(500).json({ error: 'Failed to fetch students' });
@@ -399,8 +401,10 @@ router.post('/students', async (req, res) => {
                     create: {
                         admissionNo,
                         studentId,
-                        classId,
-                        sectionId,
+                        classId: classId || undefined,
+                        sectionId: sectionId || undefined,
+                        // @ts-ignore
+                        status: req.body.status || "Active",
                         gender,
                         dateOfBirth: dob,
                         bloodGroup,
@@ -512,8 +516,10 @@ router.put('/students/:id', async (req, res) => {
             where: { id },
             data: {
                 admissionNo,
-                classId,
-                sectionId,
+                classId: classId || undefined,
+                sectionId: sectionId || undefined,
+                // @ts-ignore
+                status: req.body.status || "Active",
                 gender,
                 dateOfBirth: dob,
                 bloodGroup,
@@ -743,6 +749,35 @@ router.delete('/transport/stops/:id', async (req, res) => {
         res.json({ success: true });
     } catch (error) {
         res.status(500).json({ error: 'Failed to delete transport stop' });
+    }
+});
+
+// Update Transport Stop
+router.put('/transport/stops/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { name, busFare } = req.body;
+        
+        if (!name) {
+            return res.status(400).json({ error: 'Stop name is required' });
+        }
+
+        const fareNum = Number(busFare);
+        if (isNaN(fareNum)) {
+            return res.status(400).json({ error: 'Invalid bus fare amount' });
+        }
+
+        const updatedStop = await prisma.transportStop.update({
+            where: { id },
+            data: { name, busFare: fareNum }
+        });
+        res.json(updatedStop);
+    } catch (error: any) {
+        console.error('Transport Stop Update Error:', error);
+        if (error.code === 'P2002') {
+            return res.status(400).json({ error: 'Stop with this name already exists' });
+        }
+        res.status(500).json({ error: 'Failed to update transport stop' });
     }
 });
 

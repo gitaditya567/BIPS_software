@@ -56,6 +56,7 @@ const Students: React.FC = () => {
     const [admissionNo, setAdmissionNo] = useState('');
     const [classId, setClassId] = useState('');
     const [sectionId, setSectionId] = useState('');
+    const [status, setStatus] = useState('Active');
 
     const [gender, setGender] = useState('');
     const [dob, setDob] = useState('');
@@ -134,7 +135,7 @@ const Students: React.FC = () => {
     const resetForm = () => {
         setEditingId(null);
         setFirstName(''); setLastName(''); setEmail(''); setPhone(''); setPassword(generateRandomPassword()); setAdmissionNo('');
-        setClassId(''); setSectionId('');
+        setClassId(''); setSectionId(''); setStatus('Active');
         setGender(''); setDob(''); setAddress(''); setBloodGroup(''); setCategory('');
         setReligion(''); setNationality(''); setAadhaar(''); setPhoto('');
         setPrevSchoolName(''); setPrevClass(''); setPrevSchoolAddress(''); setPrevMarks(''); setLeavingReason(''); setSiblingInfo('');
@@ -159,6 +160,7 @@ const Students: React.FC = () => {
         
         setClassId(student.classId || '');
         setTimeout(() => setSectionId(student.sectionId || ''), 100);
+        setStatus(student.status || 'Active');
         
         setGender(student.gender || '');
         setDob(student.dateOfBirth || '');
@@ -200,7 +202,7 @@ const Students: React.FC = () => {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!firstName || !classId || !sectionId) return alert('Please fill required fields');
+        if (!firstName) return alert('Please enter the First Name, it is required.');
 
         setLoading(true);
         
@@ -219,7 +221,7 @@ const Students: React.FC = () => {
                     gender, dob, address, bloodGroup, category, religion, nationality, aadhaar, photo,
                     prevSchoolName, prevClass, prevSchoolAddress, prevMarks, leavingReason, siblingInfo,
                     admissionDate, rollNumber, medium, academicYear, house,
-                    fatherName, fatherMobile, fatherOccupation, fatherQualification, fatherEmail,
+                    fatherName, fatherMobile, fatherOccupation, fatherQualification, fatherEmail, status,
                     motherName, motherMobile, motherOccupation, motherQualification
                 });
                 addNotification('admission', 'Student Updated', `${firstName} ${lastName} has been updated successfully!`);
@@ -232,7 +234,7 @@ const Students: React.FC = () => {
                     gender, dob, address, bloodGroup, category, religion, nationality, aadhaar, photo,
                     prevSchoolName, prevClass, prevSchoolAddress, prevMarks, leavingReason, siblingInfo,
                     admissionDate, rollNumber, medium, academicYear, house,
-                    fatherName, fatherMobile, fatherOccupation, fatherQualification, fatherEmail,
+                    fatherName, fatherMobile, fatherOccupation, fatherQualification, fatherEmail, status,
                     motherName, motherMobile, motherOccupation, motherQualification
                 });
                 addNotification('admission', 'New Admission', `${firstName} ${lastName} has been admitted successfully!`);
@@ -302,9 +304,17 @@ const Students: React.FC = () => {
                                 <input type="text" className="form-control" value="Auto Generated" disabled style={{ backgroundColor: '#f0f0f0' }} />
                             </div>
 
+                            <div className="form-group">
+                                <label>Status</label>
+                                <select className="form-control" value={status} onChange={e => setStatus(e.target.value)}>
+                                    <option value="Active">Active</option>
+                                    <option value="Inactive">Inactive</option>
+                                </select>
+                            </div>
+
                              <div className="form-group">
                                 <label>Class of Admission</label>
-                                <select className="form-control" value={classId} onChange={e => setClassId(e.target.value)} required>
+                                <select className="form-control" value={classId} onChange={e => setClassId(e.target.value)}>
                                     <option value="">Select Class</option>
                                     {classes.map(cls => <option key={cls.id} value={cls.id}>{cls.name}</option>)}
                                 </select>
@@ -432,7 +442,7 @@ const Students: React.FC = () => {
 
                             <div className="form-group">
                                 <label>Section</label>
-                                <select className="form-control" value={sectionId} onChange={e => setSectionId(e.target.value)} required disabled={!classId}>
+                                <select className="form-control" value={sectionId} onChange={e => setSectionId(e.target.value)} disabled={!classId}>
                                     <option value="">Select Section</option>
                                     {sections.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                                 </select>
@@ -623,7 +633,11 @@ const Students: React.FC = () => {
                                     <td>{s.email}</td>
                                     <td>{s.className}</td>
                                     <td>{s.sectionName}</td>
-                                    <td><span className="badge badge-success">Active</span></td>
+                                    <td>
+                                        <span className={`badge ${s.status === 'Inactive' ? 'badge-danger' : 'badge-success'}`}>
+                                            {s.status === 'Inactive' ? 'Inactive' : 'Active'}
+                                        </span>
+                                    </td>
                                     <td style={{ display: 'flex', gap: '0.5rem' }}>
                                         <button 
                                             className="btn-primary" 

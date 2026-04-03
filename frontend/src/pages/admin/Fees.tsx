@@ -416,7 +416,7 @@ const Fees: React.FC = () => {
             setFinalAmount('0');
             setPaidAmount('');
         }
-    }, [selectedClass, selectedFees, discount, feeStructure, isTransportEnabled, transportRows]);
+    }, [selectedClass, selectedFees, discount, feeStructure, isTransportEnabled, transportRows, pendingDues]);
 
     const handleCollectFee = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -978,6 +978,12 @@ const Fees: React.FC = () => {
                                                     </div>
                                                 )
                                             ))}
+                                            {pendingDues > 0 && (
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.4rem 0', borderBottom: '1px dashed #fed7aa', fontSize: '0.9rem', color: '#dc2626' }}>
+                                                    <span style={{ fontWeight: '500' }}>Previous Dues</span>
+                                                    <span style={{ fontWeight: 'bold' }}>₹{pendingDues.toLocaleString()}</span>
+                                                </div>
+                                            )}
                                         </div>
                                         <div style={{ marginTop: '0.5rem', borderTop: '2px solid #fdba74', paddingTop: '1rem' }}>
                                             <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '1rem' }}>

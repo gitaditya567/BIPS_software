@@ -73,8 +73,8 @@ router.get('/pending', async (req, res) => {
         });
         res.json(pending.map(p => ({
             ...p,
-            studentName: p.student.user.name,
-            className: p.student.class.name
+            studentName: p.student?.user?.name || 'Unknown',
+            className: p.student?.class?.name || 'Unknown'
         })));
     } catch (error) {
         res.status(500).json({ error: 'Failed to fetch pending approvals' });

@@ -21,6 +21,7 @@ jobs:
             # Update Backend
             cd backend
             npm install
+            npx prisma generate
             pm2 restart backend || pm2 start src/index.ts --name backend --interpreter ts-node
             
             # Update Frontend & Copy to Webroot

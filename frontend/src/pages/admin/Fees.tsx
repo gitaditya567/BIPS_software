@@ -1646,7 +1646,7 @@ const Fees: React.FC = () => {
                                      {activeReport === 'daily' && (<><th style={{ padding: '1rem 1.5rem' }}>Date</th><th style={{ padding: '1rem 1.5rem' }}>Receipt No</th><th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Amount (₹)</th><th style={{ padding: '1rem 1.5rem', textAlign: 'center' }}>Action</th></>)}
                                      {activeReport === 'monthly' && (<><th style={{ padding: '1rem 1.5rem' }}>Month</th><th style={{ padding: '1rem 1.5rem' }}>Year</th><th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Total Collection (₹)</th></>)}
                                      {activeReport === 'class' && (<><th style={{ padding: '1rem 1.5rem' }}>Class</th><th style={{ padding: '1rem 1.5rem' }}>Students</th><th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Collected Amount (₹)</th></>)}
-                                     {activeReport === 'pending' && (<><th style={{ padding: '1rem 1.5rem' }}>Student Name</th><th style={{ padding: '1rem 1.5rem' }}>Class</th><th style={{ padding: '1rem 1.5rem' }}>Total Dues (₹)</th><th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Pending Amount (₹)</th></>)}
+                                     {activeReport === 'pending' && (<><th style={{ padding: '1rem 1.5rem' }}>Student Name</th><th style={{ padding: '1rem 1.5rem' }}>Adm No</th><th style={{ padding: '1rem 1.5rem' }}>Class</th><th style={{ padding: '1rem 1.5rem' }}>Total Dues (₹)</th><th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Pending Amount (₹)</th></>)}
                                  </tr>
                              </thead>
                              <tbody>
@@ -1708,6 +1708,7 @@ const Fees: React.FC = () => {
                                      return filteredDues.map((fee: any) => (
                                          <tr key={fee.id}>
                                              <td style={{ padding: '1rem 1.5rem', fontWeight: 'bold' }}>{fee.studentName}</td>
+                                             <td style={{ padding: '1rem 1.5rem' }}>{fee.admissionNo}</td>
                                              <td style={{ padding: '1rem 1.5rem' }}>{fee.className}</td>
                                              <td style={{ padding: '1rem 1.5rem', fontWeight: '600' }}>₹{fee.total.toLocaleString()}</td>
                                              <td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontWeight: '800', color: '#ef4444' }}>₹{fee.pending.toLocaleString()}</td>
@@ -1717,7 +1718,7 @@ const Fees: React.FC = () => {
                              </tbody>
                              <tfoot>
                                  <tr style={{ backgroundColor: '#f8fafc', borderTop: '2px solid #e2e8f0' }}>
-                                     <td colSpan={activeReport === 'pending' ? 3 : 2} style={{ padding: '1rem 1.5rem', fontWeight: '800', textAlign: 'right' }}>Grand Total:</td>
+                                     <td colSpan={activeReport === 'pending' ? 4 : 2} style={{ padding: '1rem 1.5rem', fontWeight: '800', textAlign: 'right' }}>Grand Total:</td>
                                      <td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontWeight: '900', color: '#111827', fontSize: '1.1rem' }}>
                                          ₹{(() => {
                                              if (activeReport === 'daily') return reportData.daily.filter(d => d.date === new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })).reduce((s, d) => s + d.paidAmount, 0).toLocaleString();

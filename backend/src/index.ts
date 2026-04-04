@@ -128,6 +128,15 @@ app.post('/api/login', loginHandler);
 app.post('/login', loginHandler);
 app.post('//login', loginHandler);
 
+// 404 Catch-all for /api
+app.use('/api', (req, res) => {
+    console.warn(`404 Not Found in API: ${req.method} ${req.originalUrl}`);
+    res.status(404).json({ 
+        error: `API route not found: ${req.method} ${req.originalUrl}`,
+        availableRoutes: ['/api/admin', '/api/fees', '/api/general', '/api/teacher', '/api/login', '/api/health']
+    });
+});
+
 app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
 });

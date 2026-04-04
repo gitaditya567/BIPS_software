@@ -84,6 +84,7 @@ const Fees: React.FC = () => {
         classWise: []
     });
     const [reportFilterMonth, setReportFilterMonth] = useState(new Date().toLocaleString('en-GB', { month: 'long' }));
+    const [classReportFilter, setClassReportFilter] = useState('All');
 
     const fetchReports = async () => {
         try {
@@ -1584,7 +1585,31 @@ const Fees: React.FC = () => {
                                         </select>
                                     </div>
                                 )}
-                                {activeReport === 'class' && 'Class-wise Fee Collection'}
+                                {activeReport === 'class' && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                        Class-wise Fee Collection
+                                        <select 
+                                            value={classReportFilter} 
+                                            onChange={(e) => setClassReportFilter(e.target.value)}
+                                            style={{ 
+                                                marginLeft: '1rem', 
+                                                padding: '0.4rem 0.8rem', 
+                                                borderRadius: '8px', 
+                                                border: '1px solid #e2e8f0', 
+                                                fontSize: '0.85rem', 
+                                                fontWeight: '600', 
+                                                color: '#475569',
+                                                backgroundColor: '#f8fafc',
+                                                cursor: 'pointer'
+                                            }}
+                                        >
+                                            <option value="All">All Classes</option>
+                                            {[...new Set(reportData.classWise.map(c => c.className))].sort().map(cls => (
+                                                <option key={cls} value={cls}>{cls}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
                                 {activeReport === 'pending' && 'Outstanding Dues Report'}
                             </h2>
                             <button onClick={exportToPDF} className="btn-primary" style={{ width: 'auto', padding: '0.5rem 1.5rem', backgroundColor: '#ec4899' }}>Export PDF</button>
@@ -1643,13 +1668,15 @@ const Fees: React.FC = () => {
                                         </tr>
                                     )
                                  )}
-                                 {activeReport === 'class' && reportData.classWise.map((c, idx) => (
-                                     <tr key={idx}>
-                                         <td style={{ padding: '1rem 1.5rem' }}>{c.className}</td>
-                                         <td style={{ padding: '1rem 1.5rem' }}>{c.students}</td>
-                                         <td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontWeight: '700' }}>₹{c.total.toLocaleString()}</td>
-                                     </tr>
-                                 ))}
+                                 {activeReport === 'class' && reportData.classWise
+                                     .filter(c => classReportFilter === 'All' || c.className === classReportFilter)
+                                     .map((c, idx) => (
+                                         <tr key={idx}>
+                                             <td style={{ padding: '1rem 1.5rem' }}>{c.className}</td>
+                                             <td style={{ padding: '1rem 1.5rem' }}>{c.students}</td>
+                                             <td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontWeight: '700' }}>₹{c.total.toLocaleString()}</td>
+                                         </tr>
+                                     ))}
                                  {activeReport === 'pending' && (() => {
                                      const classDues: any = {};
                                      dueFees.forEach((fee: any) => {
@@ -1675,7 +1702,9 @@ const Fees: React.FC = () => {
                                          ₹{(() => {
                                              if (activeReport === 'daily') return reportData.daily.filter(d => d.date === new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })).reduce((s, d) => s + d.paidAmount, 0).toLocaleString();
                                              if (activeReport === 'monthly') return reportData.monthly.filter(m => m.month === reportFilterMonth).reduce((s, m) => s + m.total, 0).toLocaleString();
-                                             if (activeReport === 'class') return reportData.classWise.reduce((s, c) => s + c.total, 0).toLocaleString();
+                                             if (activeReport === 'class') return reportData.classWise
+                                                 .filter(c => classReportFilter === 'All' || c.className === classReportFilter)
+                                                 .reduce((s, c) => s + c.total, 0).toLocaleString();
                                              if (activeReport === 'pending') return dueFees.reduce((s: any, d: any) => s + d.pending, 0).toLocaleString();
                                              return '0';
                                          })()}

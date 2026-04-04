@@ -418,6 +418,18 @@ router.get('/due-list', async (req, res) => {
     }
 });
 
+// Delete Fee Payment
+router.delete('/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        await prisma.feePayment.delete({ where: { id } });
+        res.json({ success: true, message: 'Fee record deleted successfully' });
+    } catch (error) {
+        console.error('Delete Error:', error);
+        res.status(500).json({ error: 'Failed to delete fee record. It might not exist.' });
+    }
+});
+
 export default router;
 
 

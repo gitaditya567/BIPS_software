@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNotification } from '../../context/NotificationContext';
-import { IndianRupee, TrendingUp, CalendarDays } from 'lucide-react';
+import { IndianRupee, TrendingUp, CalendarDays, Trash2 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -93,6 +93,20 @@ const Fees: React.FC = () => {
             setReportData(res.data);
         } catch (err) {
             console.error("Failed to fetch reports");
+        }
+    };
+
+    const handleDeleteReceipt = async (id: string, receiptNo: string) => {
+        if (!window.confirm(`Are you sure you want to delete receipt ${receiptNo}? This action cannot be undone.`)) return;
+        try {
+            await axios.delete(`/api/fees/${id}`);
+            alert('Receipt deleted successfully!');
+            fetchReports(); // Refresh collection data
+            // Also refresh dueFees if needed
+            const dueListRes = await axios.get('/api/fees/due-list');
+            setDueFees(dueListRes.data);
+        } catch (err) {
+            alert('Failed to delete receipt');
         }
     };
 
@@ -1643,7 +1657,7 @@ const Fees: React.FC = () => {
                          <table style={{ width: '100%' }}>
                              <thead>
                                  <tr style={{ backgroundColor: '#f1f5f9' }}>
-                                     {activeReport === 'daily' && (<><th style={{ padding: '1rem 1.5rem' }}>Date</th><th style={{ padding: '1rem 1.5rem' }}>Receipt No</th><th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Amount (₹)</th><th style={{ padding: '1rem 1.5rem', textAlign: 'center' }}>Action</th></>)}
+                                     {activeReport === 'daily' && (<><th style={{ padding: '1rem 1.5rem' }}>Date</th><th style={{ padding: '1rem 1.5rem' }}>Receipt No</th><th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Amount (₹)</th><th style={{ padding: '1rem 1.5rem', textAlign: 'center' }}>Actions</th></>)}
                                      {activeReport === 'monthly' && (<><th style={{ padding: '1rem 1.5rem' }}>Month</th><th style={{ padding: '1rem 1.5rem' }}>Year</th><th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Total Collection (₹)</th></>)}
                                      {activeReport === 'class' && (<><th style={{ padding: '1rem 1.5rem' }}>Class</th><th style={{ padding: '1rem 1.5rem' }}>Students</th><th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Collected Amount (₹)</th></>)}
                                      {activeReport === 'pending' && (<><th style={{ padding: '1rem 1.5rem' }}>Student Name</th><th style={{ padding: '1rem 1.5rem' }}>Adm No</th><th style={{ padding: '1rem 1.5rem' }}>Class</th><th style={{ padding: '1rem 1.5rem' }}>Total Dues (₹)</th><th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Pending Amount (₹)</th></>)}
@@ -1659,21 +1673,40 @@ const Fees: React.FC = () => {
                                              <td style={{ padding: '1rem 1.5rem', fontWeight: '900', color: '#2563eb' }}>{d.receiptNo}</td>
                                              <td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontWeight: '800', color: '#059669' }}>₹{d.paidAmount.toLocaleString()}</td>
                                              <td style={{ padding: '1rem 1.5rem', textAlign: 'center' }}>
-                                                 <button 
-                                                     onClick={() => { setSelectedReceipt(d); setShowReceipt(true); }}
-                                                     style={{ 
-                                                         padding: '0.4rem 0.8rem', 
-                                                         backgroundColor: '#eff6ff', 
-                                                         border: '1px solid #bfdbfe', 
-                                                         color: '#2563eb', 
-                                                         borderRadius: '6px', 
-                                                         cursor: 'pointer', 
-                                                         fontSize: '0.75rem', 
-                                                         fontWeight: '800' 
-                                                     }}
-                                                 >
-                                                     View Recipt
-                                                 </button>
+                                                 <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
+                                                     <button 
+                                                         onClick={() => { setSelectedReceipt(d); setShowReceipt(true); }}
+                                                         style={{ 
+                                                             padding: '0.4rem 0.8rem', 
+                                                             backgroundColor: '#eff6ff', 
+                                                             border: '1px solid #bfdbfe', 
+                                                             color: '#2563eb', 
+                                                             borderRadius: '6px', 
+                                                             cursor: 'pointer', 
+                                                             fontSize: '0.75rem', 
+                                                             fontWeight: '800' 
+                                                         }}
+                                                     >
+                                                         View Recipt
+                                                     </button>
+                                                     <button 
+                                                         onClick={() => handleDeleteReceipt(d.id, d.receiptNo)}
+                                                         style={{ 
+                                                             padding: '0.4rem', 
+                                                             backgroundColor: '#fee2e2', 
+                                                             border: '1px solid #fecaca', 
+                                                             color: '#ef4444', 
+                                                             borderRadius: '6px', 
+                                                             cursor: 'pointer',
+                                                             display: 'flex',
+                                                             alignItems: 'center',
+                                                             justifyContent: 'center'
+                                                         }}
+                                                         title="Delete Receipt"
+                                                     >
+                                                         <Trash2 size={16} />
+                                                     </button>
+                                                 </div>
                                              </td>
                                          </tr>
                                      ));

@@ -110,6 +110,27 @@ const Fees: React.FC = () => {
         }
     };
 
+    const handleClearAllReceipts = async () => {
+        const confirm1 = window.confirm("WARNING: This will PERMANENTLY DELETE ALL fee receipts and reset numbering to RCP001. Are you absolutely sure?");
+        if (!confirm1) return;
+        
+        const confirm2 = window.prompt("To confirm, please type 'DELETE ALL' exactly:");
+        if (confirm2 !== 'DELETE ALL') {
+            alert('Incorrect confirmation. Action cancelled.');
+            return;
+        }
+
+        try {
+            await axios.delete('/api/fees/all');
+            alert('All collection records have been cleared. System reset to RCP001.');
+            fetchReports();
+            const dueListRes = await axios.get('/api/fees/due-list');
+            setDueFees(dueListRes.data);
+        } catch (err) {
+            alert('Failed to reset records');
+        }
+    };
+
     const exportToPDF = () => {
         const doc = new jsPDF() as any;
         doc.setFont("helvetica", "bold");
@@ -1651,7 +1672,10 @@ const Fees: React.FC = () => {
                                     </div>
                                 )}
                             </h2>
-                            <button onClick={exportToPDF} className="btn-primary" style={{ width: 'auto', padding: '0.5rem 1.5rem', backgroundColor: '#ec4899' }}>Export PDF</button>
+                            <div style={{ display: 'flex', gap: '1rem' }}>
+                                <button onClick={handleClearAllReceipts} className="btn-secondary" style={{ width: 'auto', padding: '0.5rem 1.5rem', backgroundColor: '#ef4444', color: 'white', border: 'none', fontWeight: 'bold' }}>Clear Collection History</button>
+                                <button onClick={exportToPDF} className="btn-primary" style={{ width: 'auto', padding: '0.5rem 1.5rem', backgroundColor: '#ec4899' }}>Export PDF</button>
+                            </div>
                         </div>
  
                          <table style={{ width: '100%' }}>

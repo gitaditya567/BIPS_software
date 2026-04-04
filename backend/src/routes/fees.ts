@@ -435,6 +435,17 @@ router.get('/due-list', async (req, res) => {
     }
 });
 
+// Delete All Fee Payments (Reset History)
+router.delete('/all', async (req, res) => {
+    try {
+        await prisma.feePayment.deleteMany();
+        res.json({ success: true, message: 'All fee records deleted. System reset to RCP001.' });
+    } catch (error) {
+        console.error('Reset Error:', error);
+        res.status(500).json({ error: 'Failed to reset fee records' });
+    }
+});
+
 // Delete Fee Payment
 router.delete('/:id', async (req, res) => {
     try {

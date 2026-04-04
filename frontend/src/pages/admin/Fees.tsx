@@ -85,6 +85,7 @@ const Fees: React.FC = () => {
     });
     const [reportFilterMonth, setReportFilterMonth] = useState(new Date().toLocaleString('en-GB', { month: 'long' }));
     const [classReportFilter, setClassReportFilter] = useState('All');
+    const [pendingClassFilter, setPendingClassFilter] = useState('All');
 
     const fetchReports = async () => {
         try {
@@ -1610,7 +1611,31 @@ const Fees: React.FC = () => {
                                         </select>
                                     </div>
                                 )}
-                                {activeReport === 'pending' && 'Outstanding Dues Report'}
+                                {activeReport === 'pending' && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                        Outstanding Dues Report
+                                        <select 
+                                            value={pendingClassFilter} 
+                                            onChange={(e) => setPendingClassFilter(e.target.value)}
+                                            style={{ 
+                                                marginLeft: '1rem', 
+                                                padding: '0.4rem 0.8rem', 
+                                                borderRadius: '8px', 
+                                                border: '1px solid #e2e8f0', 
+                                                fontSize: '0.85rem', 
+                                                fontWeight: '600', 
+                                                color: '#475569',
+                                                backgroundColor: '#f8fafc',
+                                                cursor: 'pointer'
+                                            }}
+                                        >
+                                            <option value="All">All Classes</option>
+                                            {[...new Set(dueFees.map(f => f.className))].sort().map(cls => (
+                                                <option key={cls} value={cls}>{cls}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
                             </h2>
                             <button onClick={exportToPDF} className="btn-primary" style={{ width: 'auto', padding: '0.5rem 1.5rem', backgroundColor: '#ec4899' }}>Export PDF</button>
                         </div>
@@ -1621,7 +1646,7 @@ const Fees: React.FC = () => {
                                      {activeReport === 'daily' && (<><th style={{ padding: '1rem 1.5rem' }}>Date</th><th style={{ padding: '1rem 1.5rem' }}>Receipt No</th><th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Amount (₹)</th><th style={{ padding: '1rem 1.5rem', textAlign: 'center' }}>Action</th></>)}
                                      {activeReport === 'monthly' && (<><th style={{ padding: '1rem 1.5rem' }}>Month</th><th style={{ padding: '1rem 1.5rem' }}>Year</th><th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Total Collection (₹)</th></>)}
                                      {activeReport === 'class' && (<><th style={{ padding: '1rem 1.5rem' }}>Class</th><th style={{ padding: '1rem 1.5rem' }}>Students</th><th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Collected Amount (₹)</th></>)}
-                                     {activeReport === 'pending' && (<><th style={{ padding: '1rem 1.5rem' }}>Class</th><th style={{ padding: '1rem 1.5rem' }}>Total Dues</th><th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Pending Amount (₹)</th></>)}
+                                     {activeReport === 'pending' && (<><th style={{ padding: '1rem 1.5rem' }}>Student Name</th><th style={{ padding: '1rem 1.5rem' }}>Class</th><th style={{ padding: '1rem 1.5rem' }}>Total Dues (₹)</th><th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Pending Amount (₹)</th></>)}
                                  </tr>
                              </thead>
                              <tbody>
@@ -1678,26 +1703,21 @@ const Fees: React.FC = () => {
                                          </tr>
                                      ))}
                                  {activeReport === 'pending' && (() => {
-                                     const classDues: any = {};
-                                     dueFees.forEach((fee: any) => {
-                                         if (!classDues[fee.className]) classDues[fee.className] = { total: 0, pending: 0 };
-                                         classDues[fee.className].total += fee.total;
-                                         classDues[fee.className].pending += fee.pending;
-                                     });
-                                     const sortedClasses = Object.keys(classDues).sort();
-                                     if(sortedClasses.length === 0) return <tr><td colSpan={3} style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>No pending dues.</td></tr>;
-                                     return sortedClasses.map(c => (
-                                         <tr key={c}>
-                                             <td style={{ padding: '1rem 1.5rem', fontWeight: 'bold' }}>{c}</td>
-                                             <td style={{ padding: '1rem 1.5rem', fontWeight: '600' }}>₹{classDues[c].total.toLocaleString()}</td>
-                                             <td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontWeight: '800', color: '#ef4444' }}>₹{classDues[c].pending.toLocaleString()}</td>
+                                     const filteredDues = dueFees.filter(f => pendingClassFilter === 'All' || f.className === pendingClassFilter);
+                                     if (filteredDues.length === 0) return <tr><td colSpan={4} style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>No pending dues found.</td></tr>;
+                                     return filteredDues.map((fee: any) => (
+                                         <tr key={fee.id}>
+                                             <td style={{ padding: '1rem 1.5rem', fontWeight: 'bold' }}>{fee.studentName}</td>
+                                             <td style={{ padding: '1rem 1.5rem' }}>{fee.className}</td>
+                                             <td style={{ padding: '1rem 1.5rem', fontWeight: '600' }}>₹{fee.total.toLocaleString()}</td>
+                                             <td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontWeight: '800', color: '#ef4444' }}>₹{fee.pending.toLocaleString()}</td>
                                          </tr>
                                      ));
                                  })()}
                              </tbody>
                              <tfoot>
                                  <tr style={{ backgroundColor: '#f8fafc', borderTop: '2px solid #e2e8f0' }}>
-                                     <td colSpan={2} style={{ padding: '1rem 1.5rem', fontWeight: '800', textAlign: 'right' }}>Grand Total:</td>
+                                     <td colSpan={activeReport === 'pending' ? 3 : 2} style={{ padding: '1rem 1.5rem', fontWeight: '800', textAlign: 'right' }}>Grand Total:</td>
                                      <td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontWeight: '900', color: '#111827', fontSize: '1.1rem' }}>
                                          ₹{(() => {
                                              if (activeReport === 'daily') return reportData.daily.filter(d => d.date === new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })).reduce((s, d) => s + d.paidAmount, 0).toLocaleString();
@@ -1705,7 +1725,9 @@ const Fees: React.FC = () => {
                                              if (activeReport === 'class') return reportData.classWise
                                                  .filter(c => classReportFilter === 'All' || c.className === classReportFilter)
                                                  .reduce((s, c) => s + c.total, 0).toLocaleString();
-                                             if (activeReport === 'pending') return dueFees.reduce((s: any, d: any) => s + d.pending, 0).toLocaleString();
+                                             if (activeReport === 'pending') return dueFees
+                                                 .filter(f => pendingClassFilter === 'All' || f.className === pendingClassFilter)
+                                                 .reduce((s: any, d: any) => s + d.pending, 0).toLocaleString();
                                              return '0';
                                          })()}
                                      </td>

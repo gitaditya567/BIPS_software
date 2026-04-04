@@ -13,6 +13,7 @@ const Transport: React.FC = () => {
 
     // Form states
     const [newBus, setNewBus] = useState({ busNo: '', vehicleNo: '', driverName: '', mobile: '', conductorName: '', seats: '', status: 'Active' });
+    const [editBusIndex, setEditBusIndex] = useState<number | null>(null);
 
     const [transportStops, setTransportStops] = useState<any[]>([]);
     const [newStop, setNewStop] = useState({ name: '', fee: '' });
@@ -77,10 +78,32 @@ const Transport: React.FC = () => {
 
     const handleAddBus = (e: React.FormEvent) => {
         e.preventDefault();
-        const updated = [...buses, newBus];
+        let updated;
+        if (editBusIndex !== null) {
+            updated = [...buses];
+            updated[editBusIndex] = newBus;
+            setEditBusIndex(null);
+            alert('Bus Updated Successfully!');
+        } else {
+            updated = [...buses, newBus];
+            alert('Bus Added Successfully!');
+        }
         setBuses(updated);
         localStorage.setItem('buses', JSON.stringify(updated));
         setNewBus({ busNo: '', vehicleNo: '', driverName: '', mobile: '', conductorName: '', seats: '', status: 'Active' });
+    };
+
+    const handleEditBusClick = (bus: any, index: number) => {
+        setEditBusIndex(index);
+        setNewBus(bus);
+    };
+
+    const handleDeleteBus = (index: number) => {
+        if (!window.confirm('Are you sure you want to delete this bus?')) return;
+        const updated = buses.filter((_, i) => i !== index);
+        setBuses(updated);
+        localStorage.setItem('buses', JSON.stringify(updated));
+        alert('Bus Deleted Successfully!');
     };
 
     return (
@@ -119,14 +142,57 @@ const Transport: React.FC = () => {
                                     <div className="form-group"><label>Seats</label><input type="number" className="form-control" value={newBus.seats} onChange={e => setNewBus({ ...newBus, seats: e.target.value })} required /></div>
                                     <div className="form-group"><label>Status</label><select className="form-control" value={newBus.status} onChange={e => setNewBus({ ...newBus, status: e.target.value })}><option value="Active">Active</option><option value="Inactive">Inactive</option></select></div>
                                 </div>
-                                <button type="submit" className="btn-primary" style={{ marginTop: '1rem', width: 'auto' }}>Add Bus</button>
+                                <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
+                                    <button type="submit" className="btn-primary" style={{ width: 'auto' }}>
+                                        {editBusIndex !== null ? 'Update Bus' : 'Add Bus'}
+                                    </button>
+                                    {editBusIndex !== null && (
+                                        <button 
+                                            type="button" 
+                                            className="btn-secondary" 
+                                            style={{ width: 'auto', backgroundColor: '#94a3b8', color: 'white', border: 'none', borderRadius: '8px', padding: '0.6rem 1.2rem', fontWeight: 'bold', cursor: 'pointer' }}
+                                            onClick={() => {
+                                                setEditBusIndex(null);
+                                                setNewBus({ busNo: '', vehicleNo: '', driverName: '', mobile: '', conductorName: '', seats: '', status: 'Active' });
+                                            }}
+                                        >
+                                            Cancel
+                                        </button>
+                                    )}
+                                </div>
                             </form>
                             <div className="data-table-container">
                                 <table>
-                                    <thead><tr><th>Bus No</th><th>Vehicle No</th><th>Driver</th><th>Mobile</th><th>Conductor</th><th>Seats</th><th>Status</th></tr></thead>
+                                    <thead><tr><th>Bus No</th><th>Vehicle No</th><th>Driver</th><th>Mobile</th><th>Conductor</th><th>Seats</th><th>Status</th><th style={{ textAlign: 'center' }}>Actions</th></tr></thead>
                                     <tbody>
                                         {buses.map((bus, idx) => (
-                                            <tr key={idx}><td>{bus.busNo}</td><td>{bus.vehicleNo}</td><td>{bus.driverName}</td><td>{bus.mobile}</td><td>{bus.conductorName}</td><td>{bus.seats}</td><td><span className={`badge ${bus.status === 'Active' ? 'badge-success' : 'badge-danger'}`}>{bus.status}</span></td></tr>
+                                            <tr key={idx}>
+                                                <td>{bus.busNo}</td>
+                                                <td>{bus.vehicleNo}</td>
+                                                <td>{bus.driverName}</td>
+                                                <td>{bus.mobile}</td>
+                                                <td>{bus.conductorName}</td>
+                                                <td>{bus.seats}</td>
+                                                <td><span className={`badge ${bus.status === 'Active' ? 'badge-success' : 'badge-danger'}`}>{bus.status}</span></td>
+                                                <td>
+                                                    <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
+                                                        <button 
+                                                            onClick={() => handleEditBusClick(bus, idx)}
+                                                            className="text-blue-600 hover:text-blue-900"
+                                                            style={{ background: 'none', border: 'none', color: '#3b82f6', cursor: 'pointer', padding: '0.5rem' }}
+                                                        >
+                                                            <Edit2 size={18} />
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => handleDeleteBus(idx)}
+                                                            className="text-red-600 hover:text-red-900"
+                                                            style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '0.5rem' }}
+                                                        >
+                                                            <Trash2 size={18} />
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
                                         ))}
                                     </tbody>
                                 </table>

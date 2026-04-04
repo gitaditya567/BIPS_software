@@ -196,7 +196,7 @@ const Transport: React.FC = () => {
                                                         <tr key={stop.id} style={{ borderBottom: '1px solid #f1f5f9', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f8fafc'} onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}>
                                                             <td style={{ padding: '1.25rem', fontWeight: '700', color: '#1e293b' }}>{stop.name}</td>
 
-                                                            <td style={{ padding: '1.25rem', textAlign: 'right', fontWeight: '800', color: '#059669', fontSize: '1.1rem' }}>₹{Number(stop.busFare || stop.fee).toLocaleString()}</td>
+                                                            <td style={{ padding: '1.25rem', textAlign: 'right', fontWeight: '800', color: '#059669', fontSize: '1.1rem' }}>₹{Number(stop.busFare || stop.fee || 0).toLocaleString()}</td>
                                                             <td style={{ padding: '1.25rem', textAlign: 'center' }}>
                                                                 <button 
                                                                     style={{ background: 'none', border: 'none', color: '#3b82f6', cursor: 'pointer', padding: '0.5rem', marginRight: '0.25rem' }} 

@@ -189,13 +189,21 @@ const Fees: React.FC = () => {
     const isFeePaid = (headName: string) => {
         const headObj = feeHeads.find(h => h.name === headName);
         if (!headObj) return false;
+        
         const isMonthly = headObj.type && headObj.type.toLowerCase().includes('month');
+        
         return studentHistory.some(r => {
-            const feeParts = r.feeHead.split(':');
-            const headsArr = feeParts.length > 1 
-                ? feeParts[1].split(',').map(s => s.trim())
-                : r.feeHead.split(',').map(s => s.trim());
-            return headsArr.includes(headName) && (!isMonthly || r.month === selectedMonth);
+            if (r.status === 'REJECTED') return false;
+            
+            // Format example: "April ==> Fee Card: 400 || Annual Fee: 900"
+            const parts = r.feeHead.split('==>');
+            if (parts.length < 2) return false;
+            
+            const headsPart = parts[1];
+            // Split by " || " and then by ":" to get the head name
+            const headNames = headsPart.split('||').map(h => h.split(':')[0].trim());
+            
+            return headNames.includes(headName) && (!isMonthly || r.month === selectedMonth);
         });
     };
 
@@ -466,6 +474,7 @@ const Fees: React.FC = () => {
 
             
             setFeeRecords([newRecord, ...feeRecords]);
+            setStudentHistory(prev => [newRecord, ...prev]);
             
             if (isPending) {
                 alert('Fee Collection contains a Discount. Request sent to Principal for Approval!');

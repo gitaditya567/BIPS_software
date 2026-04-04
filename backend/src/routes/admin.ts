@@ -516,8 +516,8 @@ router.put('/students/:id', async (req, res) => {
             where: { id },
             data: {
                 admissionNo,
-                classId: classId || undefined,
-                sectionId: sectionId || undefined,
+                classId: (classId && classId.trim() !== '') ? classId : undefined,
+                sectionId: (sectionId && sectionId.trim() !== '') ? sectionId : undefined,
                 // @ts-ignore
                 status: req.body.status || "Active",
                 gender,
@@ -552,8 +552,29 @@ router.put('/students/:id', async (req, res) => {
 
         res.json(updatedStudent);
     } catch (error: any) {
-        console.error('Student Update Error:', error);
-        res.status(500).json({ error: 'Failed to update student' });
+        console.error('Student Update Error Details:', {
+            id: req.params.id,
+            code: error.code,
+            meta: error.meta,
+            message: error.message
+        });
+        
+        if (error.code === 'P2002') {
+            const target = JSON.stringify(error.meta?.target || '');
+            let field = 'Field';
+            if (target.includes('admissionNo')) field = 'Admission Number';
+            else if (target.includes('studentId')) field = 'Student ID';
+            else if (target.includes('email')) field = 'Email';
+            return res.status(400).json({ error: `${field} already exists. Please use a unique value.` });
+        }
+        
+        if (error.message && error.message.includes('valid ObjectId')) {
+            return res.status(400).json({ error: 'Selected Class or Section is invalid. Please refresh the page.' });
+        }
+
+        res.status(500).json({ 
+            error: 'Database Update Error: ' + (error.meta?.cause || error.message || 'Please check all fields.')
+        });
     }
 });
 
@@ -700,9 +721,12 @@ router.get('/dashboard/stats', async (req, res) => {
 // Get Transport Stops
 router.get('/transport/stops', async (req, res) => {
     try {
+        console.log('Fetching all transport stops...');
         const stops = await prisma.transportStop.findMany();
+        console.log(`Fetched ${stops.length} transport stops.`);
         res.json(stops);
-    } catch (error) {
+    } catch (error: any) {
+        console.error('Failed to fetch transport stops:', error.message);
         res.status(500).json({ error: 'Failed to fetch transport stops' });
     }
 });

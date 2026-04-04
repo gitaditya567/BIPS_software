@@ -217,7 +217,7 @@ const Students: React.FC = () => {
                 let finalAdmissionNo = admissionNo || originalStudent?.admissionNo;
 
                 await axios.put(`/api/admin/students/${editingId}`, {
-                    firstName, lastName, email: finalEmail, phone, password, admissionNo: finalAdmissionNo, classId, sectionId,
+                    firstName, lastName, email: finalEmail, phone, password, admissionNo: finalAdmissionNo, classId: classId ? classId.trim() : null, sectionId: sectionId ? sectionId.trim() : null,
                     gender, dob, address, bloodGroup, category, religion, nationality, aadhaar, photo,
                     prevSchoolName, prevClass, prevSchoolAddress, prevMarks, leavingReason, siblingInfo,
                     admissionDate, rollNumber, medium, academicYear, house,

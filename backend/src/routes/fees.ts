@@ -7,8 +7,17 @@ const prisma = new PrismaClient();
 // Get Next Receipt Number
 router.get('/next-receipt', async (req, res) => {
     try {
-        const count = await prisma.feePayment.count();
-        const nextReceiptNo = 'RCP' + String(count + 1).padStart(3, '0');
+        const lastPayment = await prisma.feePayment.findFirst({
+            orderBy: { paymentDate: 'desc' }
+        });
+        
+        let nextNumber = 1;
+        if (lastPayment && lastPayment.receiptNo) {
+            const lastNoStr = lastPayment.receiptNo.replace('RCP', '');
+            nextNumber = parseInt(lastNoStr) + 1;
+        }
+
+        const nextReceiptNo = 'RCP' + String(nextNumber).padStart(3, '0');
         res.json({ receiptNo: nextReceiptNo });
     } catch (error) {
         res.status(500).json({ error: 'Failed to generate receipt number' });
@@ -25,8 +34,16 @@ router.post('/collect', async (req, res) => {
 
         const isPending = Number(discount) > 0;
 
-        const count = await prisma.feePayment.count();
-        const generatedReceiptNo = 'RCP' + String(count + 1).padStart(3, '0');
+        const lastPayment = await prisma.feePayment.findFirst({
+            orderBy: { paymentDate: 'desc' }
+        });
+        
+        let nextNumber = 1;
+        if (lastPayment && lastPayment.receiptNo) {
+            const lastNoStr = lastPayment.receiptNo.replace('RCP', '');
+            nextNumber = parseInt(lastNoStr) + 1;
+        }
+        const generatedReceiptNo = 'RCP' + String(nextNumber).padStart(3, '0');
 
         const feePayment = await prisma.feePayment.create({
             data: {

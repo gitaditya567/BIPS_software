@@ -285,27 +285,40 @@ router.get('/concessions', async (req, res) => {
 // Real-time Reports
 router.get('/reports', async (req, res) => {
     try {
+        console.log('Fetching fee reports...');
         const allPayments = await prisma.feePayment.findMany({
             where: { status: 'APPROVED' },
-            include: { student: { include: { class: true, user: true } } }
+            include: { 
+                student: { 
+                    include: { 
+                        class: true, 
+                        user: true 
+                    } 
+                } 
+            },
+            orderBy: { paymentDate: 'desc' }
         });
+
+        console.log(`Found ${allPayments.length} approved payments for reports.`);
 
         // 1. Detailed Daily Report (Individual transactions)
         const daily = allPayments.map(p => ({
             ...p,
             date: new Date(p.paymentDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
-            paidAmount: p.amountPaid, // Formatting for receipt modal expectations
+            paidAmount: p.amountPaid, 
             studentName: p.student?.user?.name || 'Unknown',
             className: p.student?.class?.name || 'Unknown',
             admissionNo: p.student?.admissionNo || 'N/A'
-        })).sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        }));
 
         // 2. Monthly Report
         const monthlyMap: any = {};
         allPayments.forEach(p => {
-            const key = `${p.month} ${p.year}`;
-            if(!monthlyMap[key]) monthlyMap[key] = { month: p.month, year: p.year, total: 0 };
-            monthlyMap[key].total += p.amountPaid;
+            const m = p.month || 'Other';
+            const y = p.year || 'N/A';
+            const key = `${m} ${y}`;
+            if(!monthlyMap[key]) monthlyMap[key] = { month: m, year: y, total: 0 };
+            monthlyMap[key].total += p.amountPaid || 0;
         });
         const monthly = Object.values(monthlyMap);
 
@@ -315,7 +328,7 @@ router.get('/reports', async (req, res) => {
             const className = p.student?.class?.name || 'Unknown';
             if(!classMap[className]) classMap[className] = { className: className, students: new Set(), total: 0 };
             classMap[className].students.add(p.studentId);
-            classMap[className].total += p.amountPaid;
+            classMap[className].total += p.amountPaid || 0;
         });
         const classWise = Object.values(classMap).map((c: any) => ({
             className: c.className,
@@ -324,9 +337,9 @@ router.get('/reports', async (req, res) => {
         }));
 
         res.json({ daily, monthly, classWise });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: 'Failed to fetch reports' });
+    } catch (error: any) {
+        console.error('Report Generation Error:', error.message);
+        res.status(500).json({ error: 'Failed to fetch reports', details: error.message });
     }
 });
 

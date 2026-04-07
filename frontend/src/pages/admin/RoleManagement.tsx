@@ -9,7 +9,6 @@ import {
     Bus, 
     FileText, 
     GraduationCap, 
-    ArrowUpCircle, 
     Settings,
     Save,
     CheckCircle2
@@ -31,7 +30,6 @@ const AVAILABLE_MODULES: Module[] = [
     { id: 'report-card', name: 'Report Card', icon: <FileText size={18} /> },
     { id: 'transport', name: 'Transport', icon: <Bus size={18} /> },
     { id: 'tc', name: 'Transfer Certificate', icon: <GraduationCap size={18} /> },
-    { id: 'promote', name: 'Promotion', icon: <ArrowUpCircle size={18} /> },
     { id: 'roles', name: 'Role Management', icon: <Shield size={18} /> },
     { id: 'settings', name: 'Settings', icon: <Settings size={18} /> },
     { id: 'notice', name: 'Notice', icon: <FileText size={18} /> },

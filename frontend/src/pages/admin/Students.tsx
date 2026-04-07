@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNotification } from '../../context/NotificationContext';
+import { Printer } from 'lucide-react';
 
 const generateRandomPassword = () => {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -248,6 +249,136 @@ const Students: React.FC = () => {
         } finally {
             setLoading(false);
         }
+    };
+
+    const handlePrint = (student: any) => {
+        const printWindow = window.open('', '_blank');
+        if (!printWindow) return;
+
+        const html = `
+            <html>
+            <head>
+                <title>Admission Form - ${student.name}</title>
+                <style>
+                    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
+                    @page { size: A4; margin: 10mm; }
+                    body { font-family: 'Inter', sans-serif; padding: 0; margin: 0; color: #1e293b; line-height: 1.3; font-size: 12px; }
+                    .header { text-align: center; margin-bottom: 12px; position: relative; padding-top: 5px; }
+                    .school-name { font-size: 24px; font-weight: 800; color: #000; margin: 0; text-transform: uppercase; letter-spacing: 1px; }
+                    .address { font-size: 11px; font-weight: 600; color: #4b5563; margin: 2px 0; }
+                    .tagline-banner { 
+                        background: #ef4444; 
+                        color: white; 
+                        padding: 4px 12px; 
+                        font-weight: 700; 
+                        font-size: 11px; 
+                        border-radius: 4px; 
+                        display: inline-block; 
+                        margin-top: 5px;
+                        text-transform: uppercase;
+                    }
+                    .form-title { font-size: 16px; font-weight: 700; text-align: center; margin: 10px 0; text-decoration: underline; color: #1a202c; text-transform: uppercase; }
+                    
+                    .student-photo { position: absolute; top: 0; right: 0; width: 90px; height: 110px; border: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #94a3b8; background: #fff; }
+                    .student-photo img { width: 100%; height: 100%; object-fit: cover; }
+
+                    .info-section { margin-bottom: 10px; border: 1px solid #e2e8f0; padding: 10px 15px; border-radius: 6px; }
+                    .section-title { font-size: 11px; font-weight: 800; background: #f8fafc; padding: 3px 10px; margin: -10px -15px 8px -15px; border-bottom: 1px solid #e2e8f0; border-radius: 6px 6px 0 0; color: #334155; text-transform: uppercase; }
+                    
+                    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 20px; }
+                    .field { display: flex; gap: 8px; margin-bottom: 2px; }
+                    .label { font-weight: 700; color: #64748b; min-width: 110px; }
+                    .value { border-bottom: 1px dotted #cbd5e1; flex: 1; padding-bottom: 1px; font-weight: 600; color: #1e293b; }
+
+                    .signature-row { display: flex; justify-content: space-between; margin-top: 35px; padding: 0 10px; }
+                    .sig-box { text-align: center; width: 160px; border-top: 1px solid #64748b; padding-top: 5px; font-size: 11px; font-weight: 700; color: #475569; }
+                    
+                    @media print {
+                        body { -webkit-print-color-adjust: exact; }
+                        .no-print { display: none; }
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="header">
+                    <div style="font-size: 30px; margin-bottom: 5px;">🏫</div>
+                    <h1 class="school-name">BIMLA INTERNATIONAL PUBLIC SCHOOL</h1>
+                    <p class="address">Makhdoompur Kaithi, Jaiti Khera, Sarojini Nagar, Lucknow.</p>
+                    <div class="tagline-banner">AN ENGLISH MEDIUM CO-EDUCATIONAL SCHOOL (U.P. BOARD)</div>
+                    
+                    <div class="student-photo">
+                        ${student.photo ? `<img src="${student.photo}" />` : 'Paste Photo Here'}
+                    </div>
+                </div>
+
+                <h2 class="form-title">Student Admission Form</h2>
+
+                <div class="info-section">
+                    <div class="section-title">Academic Details</div>
+                    <div class="grid">
+                        <div class="field"><span class="label">Admission No:</span><span class="value">${student.admissionNo || 'N/A'}</span></div>
+                        <div class="field"><span class="label">Admission Date:</span><span class="value">${student.admissionDate ? new Date(student.admissionDate).toLocaleDateString() : 'N/A'}</span></div>
+                        <div class="field"><span class="label">Academic Year:</span><span class="value">${student.academicYear || '2026-2027'}</span></div>
+                        <div class="field"><span class="label">Class/Section:</span><span class="value">${student.className || 'N/A'} / ${student.sectionName || 'N/A'}</span></div>
+                    </div>
+                </div>
+
+                <div class="info-section" style="margin-bottom: 8px;">
+                    <div class="section-title">Personal Information</div>
+                    <div class="grid">
+                        <div class="field"><span class="label">Student Name:</span><span class="value">${student.name}</span></div>
+                        <div class="field"><span class="label">Gender:</span><span class="value">${student.gender || 'N/A'}</span></div>
+                        <div class="field"><span class="label">Date of Birth:</span><span class="value">${student.dateOfBirth ? new Date(student.dateOfBirth).toLocaleDateString() : 'N/A'}</span></div>
+                        <div class="field"><span class="label">Aadhaar No:</span><span class="value">${student.aadhaarNumber || 'N/A'}</span></div>
+                        <div class="field"><span class="label">Blood Group:</span><span class="value">${student.bloodGroup || 'N/A'}</span></div>
+                        <div class="field"><span class="label">Category:</span><span class="value">${student.category || 'N/A'}</span></div>
+                        <div class="field"><span class="label">Religion:</span><span class="value">${student.religion || 'N/A'}</span></div>
+                        <div class="field"><span class="label">Phone:</span><span class="value">${student.phone || 'N/A'}</span></div>
+                    </div>
+                    <div class="field" style="margin-top: 5px;"><span class="label">Address:</span><span class="value">${student.address || 'N/A'}</span></div>
+                </div>
+
+                <div class="info-section" style="margin-bottom: 8px;">
+                    <div class="section-title">Parent Information</div>
+                    <div class="grid">
+                        <div class="field"><span class="label">Father's Name:</span><span class="value">${student.fatherName || 'N/A'}</span></div>
+                        <div class="field"><span class="label">Mother's Name:</span><span class="value">${student.motherName || 'N/A'}</span></div>
+                        <div class="field"><span class="label">Father Phone:</span><span class="value">${student.fatherMobile || 'N/A'}</span></div>
+                        <div class="field"><span class="label">Mother Phone:</span><span class="value">${student.motherMobile || 'N/A'}</span></div>
+                        <div class="field"><span class="label">Father Occ.:</span><span class="value">${student.fatherOccupation || 'N/A'}</span></div>
+                        <div class="field"><span class="label">Mother Occ.:</span><span class="value">${student.motherOccupation || 'N/A'}</span></div>
+                    </div>
+                </div>
+
+                <div class="info-section" style="margin-bottom: 8px;">
+                    <div class="section-title">Previous Education</div>
+                    <div class="grid">
+                        <div class="field"><span class="label">School Name:</span><span class="value">${student.prevSchoolName || 'N/A'}</span></div>
+                        <div class="field"><span class="label">Last Class:</span><span class="value">${student.prevClass || 'N/A'}</span></div>
+                        <div class="field"><span class="label">Leaving Reason:</span><span class="value">${student.leavingReason || 'N/A'}</span></div>
+                    </div>
+                </div>
+
+                <div class="signature-row">
+                    <div class="sig-box">Student Signature</div>
+                    <div class="sig-box">Parent/Guardian Signature</div>
+                    <div class="sig-box">Principal Signature</div>
+                </div>
+                
+                <script>
+                    window.onload = function() {
+                        setTimeout(() => {
+                            window.print();
+                            window.onafterprint = () => window.close();
+                        }, 500);
+                    };
+                </script>
+            </body>
+            </html>
+        `;
+
+        printWindow.document.write(html);
+        printWindow.document.close();
     };
 
     const handleDelete = async (id: string) => {
@@ -645,6 +776,12 @@ const Students: React.FC = () => {
                                             style={{ padding: '0.3rem 0.6rem', fontSize: '0.875rem', backgroundColor: '#3b82f6', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
                                         >
                                             Edit
+                                        </button>
+                                        <button 
+                                            onClick={() => handlePrint(s)}
+                                            style={{ padding: '0.3rem 0.6rem', fontSize: '0.875rem', backgroundColor: '#10b981', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                        >
+                                            <Printer size={14} /> Print
                                         </button>
                                         <button 
                                             className="btn-danger" 

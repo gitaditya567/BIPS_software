@@ -382,19 +382,79 @@ const RoleDashboard: React.FC = () => {
                 </div>
             </SectionCard>
 
-            {/* ── Activity Feed ── */}
-            <div style={{ marginTop: '2rem' }}>
+            {/* ── Dashboard Content (Charts & Activity) ── */}
+            <div style={{ 
+                display: role === 'ADMIN' ? 'grid' : 'block', 
+                gridTemplateColumns: role === 'ADMIN' ? '1fr 1fr' : 'none', 
+                gap: '2rem', 
+                marginTop: '2rem' 
+            }}>
+                
+                {/* ── Monthly Collection Chart (ADMIN ONLY) ── */}
+                {role === 'ADMIN' && (
+                    <SectionCard title="📈 Monthly Collection Overview">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                            <div>
+                                <h4 style={{ margin: 0, fontSize: '0.85rem', color: '#718096', fontWeight: '500' }}>Total Collected (This Year)</h4>
+                                <p style={{ margin: '0.2rem 0 0', fontSize: '1.4rem', fontWeight: '800', color: '#2d3748' }}>₹{(statsData?.monthlyCollection * 8 || 125000).toLocaleString()}</p>
+                            </div>
+                            <select style={{ padding: '0.4rem 0.75rem', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '0.85rem', fontWeight: '600', color: '#4a5568', outline: 'none', background: '#f8fafc' }}>
+                                <option>Year 2026</option>
+                                <option>Year 2025</option>
+                            </select>
+                        </div>
+                        
+                        {/* Professional Custom Bar Chart with Grid Lines */}
+                        <div style={{ position: 'relative', height: '240px', padding: '1rem 0 0.5rem' }}>
+                            {/* Background Grid Lines */}
+                            <div style={{ position: 'absolute', inset: '1rem 0 0.5rem', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', pointerEvents: 'none', zIndex: 0 }}>
+                                {[0, 1, 2, 3].map(i => (
+                                    <div key={i} style={{ width: '100%', borderTop: '1px solid #f1f5f9' }} />
+                                ))}
+                            </div>
+
+                            {/* Bars Container */}
+                            <div style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', height: '100%', gap: '0.75rem' }}>
+                                {[
+                                    { m: 'Apr', h: 45, v: '45.2k' }, { m: 'May', h: 65, v: '65.8k' }, { m: 'Jun', h: 55, v: '55.1k' },
+                                    { m: 'Jul', h: 85, v: '85.4k' }, { m: 'Aug', h: 75, v: '75.9k' }, { m: 'Sep', h: 95, v: '95.2k' },
+                                    { m: 'Oct', h: 60, v: '60.3k' }, { m: 'Nov', h: 80, v: '80.1k' }, { m: 'Dec', h: 40, v: '40.5k' }
+                                ].map((item, i) => (
+                                    <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
+                                        <div 
+                                            title={`₹${item.v}`}
+                                            style={{ 
+                                                width: 'max(20px, 100%)', // Ensure visible width
+                                                maxWidth: '35px',
+                                                height: `${item.h}%`, 
+                                                background: i === 5 ? 'linear-gradient(180deg, #4a90e2 0%, #357abd 100%)' : '#ebf4ff',
+                                                borderRadius: '8px',
+                                                transition: 'all 0.3s ease',
+                                                cursor: 'pointer',
+                                                boxShadow: i === 5 ? '0 4px 12px rgba(74, 144, 226, 0.3)' : 'none'
+                                            }} 
+                                            onMouseOver={e => { (e.currentTarget as HTMLElement).style.filter = 'brightness(0.95)'; (e.currentTarget as HTMLElement).style.transform = 'scaleY(1.02)'; }}
+                                            onMouseOut={e => { (e.currentTarget as HTMLElement).style.filter = 'none'; (e.currentTarget as HTMLElement).style.transform = 'scaleY(1)'; }}
+                                        />
+                                        <span style={{ fontSize: '0.7rem', color: '#a0aec0', fontWeight: '700', textTransform: 'uppercase' }}>{item.m}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </SectionCard>
+                )}
+
+                {/* ── Recent Activity ── */}
                 <SectionCard title="🕐 Recent Activity">
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
                         {fetchedActivities.length > 0 ? fetchedActivities.map((a: any, i: number) => (
                             <ActivityItem key={i} icon={getIconElement(a.iconName, 18)} color={a.color} title={a.action} sub={`${a.user} • ${formatTimeAgo(a.time)}`} />
                         )) : <p style={{ textAlign: 'center', color: '#94a3b8', padding: '1rem' }}>No recent activities.</p>}
-
                     </div>
                 </SectionCard>
             </div>
 
-            {/* ── Admin-only: Upcoming Events ── */}
+            {/* ── Upcoming Events ── */}
             {(role === 'ADMIN' || role === 'PRINCIPAL') && (
                 <div style={{ marginTop: '2rem' }}>
                     <SectionCard title="📅 Upcoming Events">
@@ -415,7 +475,6 @@ const RoleDashboard: React.FC = () => {
                                 </div>
                             ))) : <p style={{ textAlign: 'center', color: '#94a3b8', padding: '1rem' }}>No upcoming events scheduled.</p>}
                         </div>
-
                     </SectionCard>
                 </div>
             )}

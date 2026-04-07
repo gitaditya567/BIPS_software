@@ -207,6 +207,7 @@ const Fees: React.FC = () => {
 
     // Transport state
     const [isTransportEnabled, setIsTransportEnabled] = useState(false);
+    const [isTransportYearly, setIsTransportYearly] = useState(false);
     const [transportRows, setTransportRows] = useState([{ name: '', km: '', price: '', showDropdown: false }]);
     const [transportStops, setTransportStops] = useState<{ id: string; name: string; km: string; ratePerKm?: string, busFare: number }[]>([]);
 
@@ -448,7 +449,8 @@ const Fees: React.FC = () => {
             const struct = feeStructure.find(s => s.className === selectedClass);
             if (struct && struct.fees) {
                 const subtotal = selectedFees.reduce((sum, feeName) => sum + (struct.fees[feeName] || 0), 0);
-                const transportTotal = isTransportEnabled ? transportRows.reduce((sum, row) => sum + (Number(row.price) || 0), 0) : 0;
+                const transportMonthlyTotal = isTransportEnabled ? transportRows.reduce((sum, row) => sum + (Number(row.price) || 0), 0) : 0;
+                const transportTotal = isTransportYearly ? transportMonthlyTotal * 12 : transportMonthlyTotal;
                 const total = subtotal + transportTotal;
                 const discVal = Number(discount) || 0;
                 const netPayable = (total + pendingDues - discVal).toString();
@@ -461,7 +463,7 @@ const Fees: React.FC = () => {
             setFinalAmount('0');
             setPaidAmount('');
         }
-    }, [selectedClass, selectedFees, discount, feeStructure, isTransportEnabled, transportRows, pendingDues]);
+    }, [selectedClass, selectedFees, discount, feeStructure, isTransportEnabled, isTransportYearly, transportRows, pendingDues]);
 
     const handleCollectFee = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -476,7 +478,10 @@ const Fees: React.FC = () => {
             const breakdownParts = selectedFees.map(f => `${f}: ${struct?.fees?.[f] || 0}`);
             if (isTransportEnabled) {
                 transportRows.forEach(r => {
-                    if (r.name && r.price) breakdownParts.push(`Transport (${r.name}): ${r.price}`);
+                    if (r.name && r.price) {
+                        const amount = isTransportYearly ? Number(r.price) * 12 : Number(r.price);
+                        breakdownParts.push(`Transport (${r.name})${isTransportYearly ? ' (Yearly)' : ''}: ${amount}`);
+                    }
                 });
             }
             if (pendingDues > 0) {
@@ -534,6 +539,7 @@ const Fees: React.FC = () => {
             setRequiresApproval(false);
             setFinalAmount('0');
             setIsTransportEnabled(false);
+            setIsTransportYearly(false);
             setTransportRows([{ name: '', km: '', price: '', showDropdown: false }]);
             setPendingDues(0);
             fetchNextReceiptNo();
@@ -861,8 +867,22 @@ const Fees: React.FC = () => {
                                         </label>
                                     </div>
                                     {isTransportEnabled && (
-                                        <div style={{ fontSize: '0.85rem', color: '#9333ea', fontWeight: '600' }}>
-                                            Transport Fee will be added to the total amount
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: '#f5f3ff', padding: '0.4rem 0.75rem', borderRadius: '10px', border: '1px solid #ddd6fe' }}>
+                                                <input 
+                                                    type="checkbox" 
+                                                    id="transport-yearly"
+                                                    checked={isTransportYearly} 
+                                                    onChange={e => setIsTransportYearly(e.target.checked)} 
+                                                    style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                                                />
+                                                <label htmlFor="transport-yearly" style={{ fontSize: '0.85rem', color: '#6b21a8', fontWeight: '700', cursor: 'pointer' }}>
+                                                    Pay Yearly (12 Months)
+                                                </label>
+                                            </div>
+                                            <div style={{ fontSize: '0.85rem', color: '#9333ea', fontWeight: '600' }}>
+                                                Transport Fee will be added to the total amount
+                                            </div>
                                         </div>
                                     )}
                                 </div>
@@ -1019,8 +1039,8 @@ const Fees: React.FC = () => {
                                             {isTransportEnabled && transportRows.map((row, idx) => (
                                                 row.price && (
                                                     <div key={`trans-${idx}`} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.4rem 0', borderBottom: '1px dashed #fed7aa', fontSize: '0.9rem', color: '#9333ea' }}>
-                                                        <span style={{ fontWeight: '500' }}>Transport: {row.name || `Route ${idx+1}`}</span>
-                                                        <span style={{ fontWeight: 'bold' }}>₹{Number(row.price).toLocaleString()}</span>
+                                                        <span style={{ fontWeight: '500' }}>Transport: {row.name || `Route ${idx+1}`} {isTransportYearly ? '(Yearly)' : '(Monthly)'}</span>
+                                                        <span style={{ fontWeight: 'bold' }}>₹{(isTransportYearly ? Number(row.price) * 12 : Number(row.price)).toLocaleString()}</span>
                                                     </div>
                                                 )
                                             ))}

@@ -10,7 +10,6 @@ import Teachers from './pages/admin/Teachers';
 import Classes from './pages/admin/Classes';
 import Fees from './pages/admin/Fees';
 import TransferCertificate from './pages/admin/TransferCertificate';
-import PromoteStudent from './pages/admin/PromoteStudent';
 import Transport from './pages/admin/Transport';
 import ReportCards from './pages/admin/ReportCards';
 import AdminAttendance from './pages/admin/Attendance';
@@ -45,7 +44,6 @@ const App: React.FC = () => {
             <Route path="admin/classes" element={<Classes />} />
             <Route path="admin/fees" element={<Fees />} />
             <Route path="admin/tc" element={<TransferCertificate />} />
-            <Route path="admin/promote" element={<PromoteStudent />} />
             <Route path="admin/settings" element={<div style={{ padding: '2rem' }}><h2>Settings (Coming Soon)</h2></div>} />
             <Route path="admin/roles" element={<RoleManagement />} />
             <Route path="admin/transport" element={<Transport />} />

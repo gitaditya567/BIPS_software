@@ -63,7 +63,7 @@ const Login: React.FC = () => {
                 {error && <div style={{ color: '#EF4444', backgroundColor: '#FEE2E2', padding: '0.75rem', borderRadius: '8px', marginBottom: '1rem', fontSize: '0.875rem' }}>{error}</div>}
                 <form onSubmit={handleLogin}>
                     <div className="form-group">
-                        <label htmlFor="role">Login As</label>
+                        <label htmlFor="role">Login</label>
                         <select
                             id="role"
                             className="form-control"

@@ -226,20 +226,22 @@ const Students: React.FC = () => {
                     motherName, motherMobile, motherOccupation, motherQualification
                 });
                 addNotification('admission', 'Student Updated', `${firstName} ${lastName} has been updated successfully!`);
-            } else {
+             } else {
                 // Find the highest existing admission number to continue the sequence
                 let nextNumber = 1;
                 if (students.length > 0) {
                     const numbers = students.map(s => {
-                        if (s.admissionNo && s.admissionNo.startsWith('BIPS/26/')) {
-                            const num = parseInt(s.admissionNo.split('/')[2]);
+                        const val = s.admissionNo || '';
+                        if (val.startsWith('BIPS/26/')) {
+                            const num = parseInt(val.split('/')[2]);
                             return isNaN(num) ? 0 : num;
                         }
                         return 0;
                     });
-                    nextNumber = Math.max(...numbers) + 1;
+                    nextNumber = Math.max(...numbers, 0) + 1;
                 }
                 
+                // Final safety check: ensure the number hasn't been used in the current session
                 const finalAdmissionNo = `BIPS/26/${String(nextNumber).padStart(3, '0')}`;
                 
                 await axios.post('/api/admin/students', {
@@ -250,7 +252,7 @@ const Students: React.FC = () => {
                     fatherName, fatherMobile, fatherOccupation, fatherQualification, fatherEmail, status,
                     motherName, motherMobile, motherOccupation, motherQualification
                 });
-                addNotification('admission', 'New Admission', `${firstName} ${lastName} has been admitted successfully!`);
+                addNotification('admission', 'New Admission', `${firstName} ${lastName} has been admitted as ${finalAdmissionNo}!`);
             }
             
             fetchStudents();
@@ -453,6 +455,32 @@ const Students: React.FC = () => {
                                     <option value="Active">Active</option>
                                     <option value="Inactive">Inactive</option>
                                 </select>
+                            </div>
+
+                             <div className="form-group">
+                                <label>S.R / Admission No</label>
+                                {editingId ? (
+                                    <input type="text" className="form-control" value={admissionNo} onChange={e => setAdmissionNo(e.target.value)} />
+                                ) : (
+                                    <input 
+                                        type="text" 
+                                        className="form-control" 
+                                        value={(() => {
+                                            const numbers = students.map(s => {
+                                                const val = s.admissionNo || '';
+                                                if (val.startsWith('BIPS/26/')) {
+                                                    const num = parseInt(val.split('/')[2]);
+                                                    return isNaN(num) ? 0 : num;
+                                                }
+                                                return 0;
+                                            });
+                                            const next = Math.max(...numbers, 0) + 1;
+                                            return `BIPS/26/${String(next).padStart(3, '0')} (Auto)`;
+                                        })()} 
+                                        disabled 
+                                        style={{ backgroundColor: '#f0f0f0', fontWeight: 'bold', color: '#2563eb' }} 
+                                    />
+                                )}
                             </div>
 
                              <div className="form-group">

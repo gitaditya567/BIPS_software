@@ -52,8 +52,17 @@ async function main() {
     for (let i = 0; i < studentsData.length; i++) {
         const s = studentsData[i];
         try {
-            const admissionNo = `SR-8-${Date.now()}-${i}`;
-            const email = (s.name.replace(/\s+/g, '').toLowerCase() + (i + 100) + "@BIPS.com");
+            // Generate Admission No
+            const latestAdm = await prisma.studentProfile.findFirst({
+                orderBy: { admissionNo: 'desc' }
+            });
+            let nextAdmCount = 1;
+            if (latestAdm && latestAdm.admissionNo) {
+                const parts = latestAdm.admissionNo.split('/');
+                if (parts[2]) nextAdmCount = parseInt(parts[2]) + 1;
+            }
+            const admissionNo = `BIPS/26/${String(nextAdmCount).padStart(3, '0')}`;
+            const email = (s.name.replace(/\s+/g, '').toLowerCase() + i + "@BIPS.com");
             
             // Generate STU ID
             const latest = await prisma.studentProfile.findFirst({

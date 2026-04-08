@@ -227,7 +227,19 @@ const Students: React.FC = () => {
                 });
                 addNotification('admission', 'Student Updated', `${firstName} ${lastName} has been updated successfully!`);
             } else {
-                const nextNumber = students.length + 1;
+                // Find the highest existing admission number to continue the sequence
+                let nextNumber = 1;
+                if (students.length > 0) {
+                    const numbers = students.map(s => {
+                        if (s.admissionNo && s.admissionNo.startsWith('BIPS/26/')) {
+                            const num = parseInt(s.admissionNo.split('/')[2]);
+                            return isNaN(num) ? 0 : num;
+                        }
+                        return 0;
+                    });
+                    nextNumber = Math.max(...numbers) + 1;
+                }
+                
                 const finalAdmissionNo = `BIPS/26/${String(nextNumber).padStart(3, '0')}`;
                 
                 await axios.post('/api/admin/students', {

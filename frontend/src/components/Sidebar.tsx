@@ -3,7 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import {
     LayoutDashboard, Users, BookOpen, Wallet, Calendar,
     LogOut, Shield, Bus, FileText, GraduationCap,
-    Bell
+    Bell, IndianRupee
 } from 'lucide-react';
 
 // ─── Role accent colors & labels ────────────────────────────────────────────
@@ -34,11 +34,12 @@ const ALL_LINKS = (role: string) => [
     { id: 'profile',        name: 'Student Details',     icon: <Users size={19} />,           path: role === 'PARENT' ? '/parent/profile' : '/student/profile' },
     { id: 'marks',          name: 'Marks',               icon: <BookOpen size={19} />,        path: '/student/marks' },
     { id: 'my-classes',     name: 'My Classes',          icon: <BookOpen size={19} />,        path: '/teacher/classes' },
+    { id: 'expenses',       name: 'Expenses',            icon: <IndianRupee size={19} />,      path: '/admin/expenses' },
 ];
 
 // ─── Default link IDs per role ────────────────────────────────────────────────
 const ROLE_DEFAULT_IDS: Record<string, string[]> = {
-    ADMIN:     ['dashboard','students','teachers','classes','fees','roles','transport','attendance','report-card','tc'],
+    ADMIN:     ['dashboard','students','teachers','classes','fees','expenses','roles','transport','attendance','report-card','tc'],
     PRINCIPAL: ['dashboard','students','teachers','fees','attendance','report-card'],
     ACCOUNTS:  ['dashboard','fees','tc'],
     TEACHER:   ['dashboard','my-classes','attendance','fees','notice','service-record'],

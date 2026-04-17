@@ -268,3 +268,17 @@ model TransportStop {
   ratePerKm String?
   busFare   Float
 }
+
+model Expense {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  title         String
+  category      String   // e.g., Salary, Maintenance, Stationery, Utilities
+  amount        Float
+  date          DateTime @default(now())
+  payee         String?
+  paymentMethod String?  // e.g., Cash, UPI, Bank
+  description   String?
+  status        String   @default("APPROVED") // APPROVED, PENDING
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}

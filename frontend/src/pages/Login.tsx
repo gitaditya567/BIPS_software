@@ -10,7 +10,20 @@ const Login: React.FC = () => {
     const [role, setRole] = useState('ADMIN');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
+    const [serverStatus, setServerStatus] = useState<'checking' | 'online' | 'offline'>('checking');
     const navigate = useNavigate();
+
+    React.useEffect(() => {
+        const checkServer = async () => {
+            try {
+                await axios.get('/api/health');
+                setServerStatus('online');
+            } catch (err) {
+                setServerStatus('offline');
+            }
+        };
+        checkServer();
+    }, []);
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -58,6 +71,17 @@ const Login: React.FC = () => {
                         }}
                     />
                     <h1>BIPS ERP</h1>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginBottom: '0.5rem' }}>
+                        <div style={{ 
+                            width: '8px', 
+                            height: '8px', 
+                            borderRadius: '50%', 
+                            backgroundColor: serverStatus === 'online' ? '#10B981' : serverStatus === 'offline' ? '#EF4444' : '#6B7280' 
+                        }} />
+                        <span style={{ fontSize: '0.75rem', fontWeight: 600, color: serverStatus === 'online' ? '#10B981' : serverStatus === 'offline' ? '#EF4444' : '#6B7280' }}>
+                            {serverStatus === 'online' ? 'SERVER ONLINE' : serverStatus === 'offline' ? 'SERVER OFFLINE' : 'CHECKING STATUS...'}
+                        </span>
+                    </div>
                     <p>Sign in to your account</p>
                 </div>
                 {error && <div style={{ color: '#EF4444', backgroundColor: '#FEE2E2', padding: '0.75rem', borderRadius: '8px', marginBottom: '1rem', fontSize: '0.875rem' }}>{error}</div>}

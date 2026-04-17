@@ -1,14 +1,13 @@
+import dotenv from 'dotenv';
+dotenv.config();
+
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
-import { PrismaClient } from '@prisma/client';
+import prisma from './lib/prisma';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 
-dotenv.config();
-
 const app = express();
-const prisma = new PrismaClient();
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkey12345';
 
@@ -27,6 +26,47 @@ app.use((req, res, next) => {
     next();
 });
 
+// Health Check (Top Priority)
+app.get('/api/health', async (req, res) => {
+    const timestamp = new Date().toISOString();
+    console.log(`[${timestamp}] Health check from:`, req.ip, 'URL:', req.originalUrl);
+    try {
+        await prisma.user.findFirst();
+        res.json({ 
+            status: 'ok', 
+            database: 'connected',
+            timestamp,
+            pid: process.pid,
+            message: 'School ERP API is running' 
+        });
+    } catch (error) {
+        res.status(503).json({ 
+            status: 'error', 
+            database: 'disconnected',
+            timestamp,
+            pid: process.pid,
+            message: 'API is running but database reachable issue' 
+        });
+    }
+});
+
+app.get('/api/debug-routes', (req, res) => {
+    const routes: any[] = [];
+    app._router.stack.forEach((middleware: any) => {
+        if (middleware.route) { // routes registered directly on the app
+            routes.push(`${Object.keys(middleware.route.methods).join(',').toUpperCase()} ${middleware.route.path}`);
+        } else if (middleware.name === 'router') { // router middleware
+            middleware.handle.stack.forEach((handler: any) => {
+                const route = handler.route;
+                if (route) {
+                    routes.push(`${Object.keys(route.methods).join(',').toUpperCase()} ${middleware.regexp.toString().replace('/^\\', '').replace('\\/i', '')}${route.path}`);
+                }
+            });
+        }
+    });
+    res.json({ pid: process.pid, routes });
+});
+
 // Routes
 app.use('/api/admin', adminRoutes);
 app.use('/api/fees', feeRoutes);
@@ -40,13 +80,11 @@ app.use('/general', generalRoutes);
 app.use('/teacher', teacherRoutes);
 
 
-app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', message: 'School ERP API is running' });
-});
 
 // Admin Login
 const loginHandler = async (req: express.Request, res: express.Response): Promise<any> => {
     try {
+        console.log('Login attempt received:', req.body);
         const { email, password, role } = req.body;
         let user;
 
@@ -119,7 +157,7 @@ const loginHandler = async (req: express.Request, res: express.Response): Promis
         });
 
     } catch (error) {
-        console.error('Login error:', error);
+        console.error('CRITICAL Login error:', error);
         res.status(500).json({ error: 'Internal server error' });
     }
 };
@@ -127,6 +165,61 @@ const loginHandler = async (req: express.Request, res: express.Response): Promis
 app.post('/api/login', loginHandler);
 app.post('/login', loginHandler);
 app.post('//login', loginHandler);
+
+// Expenses Routes
+app.get('/api/admin/expenses', async (req, res) => {
+    try {
+        const expenses = await prisma.expense.findMany({
+            orderBy: { date: 'desc' }
+        });
+        res.json(expenses);
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch expenses' });
+    }
+});
+
+app.post('/api/admin/expenses', async (req, res) => {
+    try {
+        const { title, category, amount, date, payee, paymentMethod, description } = req.body;
+        
+        // Validation
+        const parsedAmount = parseFloat(amount);
+        if (isNaN(parsedAmount)) {
+            return res.status(400).json({ error: 'Invalid amount value' });
+        }
+
+        const parsedDate = new Date(date);
+        if (isNaN(parsedDate.getTime())) {
+            return res.status(400).json({ error: 'Invalid date value' });
+        }
+
+        const expense = await prisma.expense.create({
+            data: {
+                title: title || 'Untitled Expense',
+                category: category || 'General',
+                amount: parsedAmount,
+                date: parsedDate,
+                payee,
+                paymentMethod,
+                description
+            }
+        });
+        res.json(expense);
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to create expense' });
+    }
+});
+
+app.delete('/api/admin/expenses/:id', async (req, res) => {
+    try {
+        await prisma.expense.delete({
+            where: { id: req.params.id }
+        });
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to delete expense' });
+    }
+});
 
 // 404 Catch-all for /api
 app.use('/api', (req, res) => {
@@ -137,6 +230,17 @@ app.use('/api', (req, res) => {
     });
 });
 
-app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+app.listen(Number(PORT), '0.0.0.0', async () => {
+    const timestamp = new Date().toISOString();
+    console.log(`[${timestamp}] Server running on http://127.0.0.1:${PORT} (PID: ${process.pid})`);
+    try {
+        await prisma.$connect();
+        console.log('✅ Connected to MongoDB Atlas successfully');
+        
+        // Quick connection test
+        await prisma.user.findFirst();
+        console.log('✅ Database connection verified');
+    } catch (error) {
+        console.error('❌ Database connection failed:', error);
+    }
 });

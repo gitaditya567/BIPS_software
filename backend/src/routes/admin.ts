@@ -1,10 +1,9 @@
 import express from 'express';
-import { PrismaClient, Role } from '@prisma/client';
+import { Role } from '@prisma/client';
+import prisma from '../lib/prisma';
 import bcrypt from 'bcrypt';
 
-
 const router = express.Router();
-const prisma = new PrismaClient();
 
 // Add Class
 router.post('/classes', async (req, res) => {

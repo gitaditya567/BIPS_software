@@ -17,7 +17,7 @@ const MyAttendance: React.FC = () => {
 
     const fetchAttendance = async () => {
         try {
-            const res = await axios.get(`/api/general/attendance/${studentInfo.id}`);
+            const res = await axios.get(`/erp-api/general/attendance/${studentInfo.id}`);
             setRecords(res.data);
         } catch (error) {
             console.error("Error fetching attendance", error);

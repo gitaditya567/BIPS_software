@@ -56,7 +56,7 @@ const Teachers: React.FC = () => {
 
     const fetchClasses = async () => {
         try {
-            const res = await axios.get('/api/admin/classes');
+            const res = await axios.get('/erp-api/admin/classes');
             setClassList(res.data);
         } catch (err) {
             console.error('Failed to fetch classes:', err);
@@ -65,7 +65,7 @@ const Teachers: React.FC = () => {
 
     const fetchTeachers = async () => {
         try {
-            const res = await axios.get('/api/admin/teachers');
+            const res = await axios.get('/erp-api/admin/teachers');
             setTeachers(res.data);
         } catch (err) {
             console.error('Failed to fetch teachers:', err);
@@ -91,9 +91,9 @@ const Teachers: React.FC = () => {
             };
 
             if (editingId) {
-                await axios.put(`/api/admin/teachers/${editingId}`, payload);
+                await axios.put(`/erp-api/admin/teachers/${editingId}`, payload);
             } else {
-                await axios.post('/api/admin/teachers', payload);
+                await axios.post('/erp-api/admin/teachers', payload);
             }
 
             // Reset Form
@@ -120,7 +120,7 @@ const Teachers: React.FC = () => {
     const handleDelete = async (id: string) => {
         if (window.confirm('Are you sure you want to delete this teacher?')) {
             try {
-                await axios.delete(`/api/admin/teachers/${id}`);
+                await axios.delete(`/erp-api/admin/teachers/${id}`);
                 fetchTeachers();
             } catch (err) {
                 alert('Failed to delete teacher');

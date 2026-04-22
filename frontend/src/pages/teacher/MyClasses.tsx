@@ -15,7 +15,7 @@ const MyClasses: React.FC = () => {
         if (!teacherId) return;
         const fetchClasses = async () => {
             try {
-                const res = await axios.get(`/api/teacher/${teacherId}/classes`);
+                const res = await axios.get(`/erp-api/teacher/${teacherId}/classes`);
                 setClasses(res.data);
                 setLoading(false);
             } catch (err) {
@@ -29,7 +29,7 @@ const MyClasses: React.FC = () => {
     const handleViewClass = async (cls: any) => {
         setViewClass(cls);
         try {
-            const res = await axios.get(`/api/teacher/students?classId=${cls.classId}&sectionId=${cls.sectionId}`);
+            const res = await axios.get(`/erp-api/teacher/students?classId=${cls.classId}&sectionId=${cls.sectionId}`);
             setStudents(res.data);
         } catch (err) {
             console.error("Failed to fetch students", err);

@@ -16,7 +16,7 @@ const Login: React.FC = () => {
     React.useEffect(() => {
         const checkServer = async () => {
             try {
-                await axios.get('/api/health');
+                await axios.get('/erp-api/health');
                 setServerStatus('online');
             } catch (err) {
                 setServerStatus('offline');
@@ -31,7 +31,7 @@ const Login: React.FC = () => {
         setLoading(true);
 
         try {
-            const response = await axios.post('/api/login', {
+            const response = await axios.post('/erp-api/login', {
                 email,
                 password,
                 role
@@ -59,7 +59,7 @@ const Login: React.FC = () => {
             <div className="auth-card">
                 <div className="auth-header">
                     <img
-                        src="/bips-logo.png"
+                        src="/erp/bips-logo.png"
                         alt="BIPS School Logo"
                         style={{
                             width: '110px',
@@ -72,11 +72,11 @@ const Login: React.FC = () => {
                     />
                     <h1>BIPS ERP</h1>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginBottom: '0.5rem' }}>
-                        <div style={{ 
-                            width: '8px', 
-                            height: '8px', 
-                            borderRadius: '50%', 
-                            backgroundColor: serverStatus === 'online' ? '#10B981' : serverStatus === 'offline' ? '#EF4444' : '#6B7280' 
+                        <div style={{
+                            width: '8px',
+                            height: '8px',
+                            borderRadius: '50%',
+                            backgroundColor: serverStatus === 'online' ? '#10B981' : serverStatus === 'offline' ? '#EF4444' : '#6B7280'
                         }} />
                         <span style={{ fontSize: '0.75rem', fontWeight: 600, color: serverStatus === 'online' ? '#10B981' : serverStatus === 'offline' ? '#EF4444' : '#6B7280' }}>
                             {serverStatus === 'online' ? 'SERVER ONLINE' : serverStatus === 'offline' ? 'SERVER OFFLINE' : 'CHECKING STATUS...'}

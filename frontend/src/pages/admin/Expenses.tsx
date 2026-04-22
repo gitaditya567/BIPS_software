@@ -51,7 +51,7 @@ const Expenses: React.FC = () => {
     const fetchExpenses = async () => {
         try {
             setLoading(true);
-            const res = await axios.get('/api/admin/expenses');
+            const res = await axios.get('/erp-api/admin/expenses');
             setExpenses(res.data);
         } catch (err) {
             addNotification('error', 'Expense Load Error', 'Failed to fetch expenses');
@@ -70,7 +70,7 @@ const Expenses: React.FC = () => {
         // ... previous logic remains same but now only Admin can trigger the UI ...
         e.preventDefault();
         try {
-            await axios.post('/api/admin/expenses', newExpense);
+            await axios.post('/erp-api/admin/expenses', newExpense);
             addNotification('success', 'Expense Saved', 'Expense added successfully');
             setNewExpense({
                 title: '',
@@ -90,7 +90,7 @@ const Expenses: React.FC = () => {
     const handleDeleteExpense = async (id: string) => {
         if (!window.confirm('Are you sure you want to delete this expense?')) return;
         try {
-            await axios.delete(`/api/admin/expenses/${id}`);
+            await axios.delete(`/erp-api/admin/expenses/${id}`);
             addNotification('success', 'Deleted', 'Expense deleted');
             fetchExpenses();
         } catch (err) {

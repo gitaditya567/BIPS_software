@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { FileText, Printer, Save } from 'lucide-react';
+import axios from 'axios';
 import './ReportCard.css';
 
 const SUBJECTS = [
@@ -71,13 +72,10 @@ const OVERALL_DEVELOPMENT_TRAITS = [
     'Regularity & Punctuality', 'Honesty', 'Neatness', 'Attitude Value', 'Discipline', 'Attendance', 'P.T.M.'
 ];
 
-const MOCK_STUDENTS = [
-    { id: '1', name: 'Amit Kumar', class: 'VII', sec: 'A', rollNo: '10', srNo: '1234', dob: '2015-05-15', fatherName: 'Mr. Rajesh Kumar', motherName: 'Mrs. Sunita Devi', address: 'Lucknow, UP', mobile: '9876543210' },
-    { id: '2', name: 'Rahul Sharma', class: 'UKG', sec: 'B', rollNo: '12', srNo: '1235', dob: '2019-08-20', fatherName: 'Mr. Arvind Sharma', motherName: 'Mrs. Meena Sharma', address: 'Bijnor, UP', mobile: '9888877777' },
-    { id: '3', name: 'Priya Singh', class: 'LKG', sec: 'A', rollNo: '5', srNo: '1236', dob: '2020-01-10', fatherName: 'Mr. Sanjay Singh', motherName: 'Mrs. Rekha Singh', address: 'Chandrawal, UP', mobile: '9123456789' }
-];
-
 const ReportCards: React.FC = () => {
+    const [students, setStudents] = useState<any[]>([]);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [showDropdown, setShowDropdown] = useState(false);
     // Selection state
     const [selectedStudent, setSelectedStudent] = useState<any>(null);
     const [sessionStart, setSessionStart] = useState('24');
@@ -102,7 +100,7 @@ const ReportCards: React.FC = () => {
     const [position, setPosition] = useState({ term1: '', term2: '' });
 
     // LKG/UKG Special State
-    const [reportType, setReportType] = useState<'standard' | 'lkg-ukg'>('standard');
+    const [reportType, setReportType] = useState<'standard' | 'lkg-ukg' | 'senior'>('standard');
     const [studentProfile, setStudentProfile] = useState({
         name: '', classSec: '', rollNo: '', srNo: '', dob: '', 
         height: '', weight: '', fatherName: '', motherName: '', 
@@ -111,8 +109,18 @@ const ReportCards: React.FC = () => {
     const [lkgMarks, setLkgMarks] = useState<any>({});
     const [overallDev, setOverallDev] = useState<any>({});
 
-    // Mock initial data
+    // Initialize and fetch data
     useEffect(() => {
+        const fetchStudents = async () => {
+            try {
+                const res = await axios.get('/erp-api/admin/students');
+                setStudents(res.data);
+            } catch (err) {
+                console.error('Failed to fetch students:', err);
+            }
+        };
+        fetchStudents();
+
         const initialMarks: any = {};
         SUBJECTS.forEach(sub => {
             initialMarks[sub.id] = { ppt1: '', yearly: '', ppt2: '', annual: '' };
@@ -205,6 +213,7 @@ const ReportCards: React.FC = () => {
                                 onChange={(e) => setReportType(e.target.value as any)}
                             >
                                 <option value="standard">Standard (Grade I-VIII)</option>
+                                <option value="senior">Senior (Class 9 & 11)</option>
                                 <option value="lkg-ukg">Junior (LKG & UKG)</option>
                             </select>
                         </div>
@@ -217,38 +226,87 @@ const ReportCards: React.FC = () => {
                         </div>
                         <div className="form-group">
                             <label>Search Student</label>
-                            <input 
-                                list="student-list" 
-                                className="form-control" 
-                                placeholder="Type student name..."
-                                onChange={(e) => {
-                                    const student = MOCK_STUDENTS.find(s => s.name === e.target.value);
-                                    if (student) {
-                                        setSelectedStudent(student);
-                                        setStudentProfile({
-                                            name: student.name,
-                                            classSec: `${student.class} - ${student.sec}`,
-                                            rollNo: (student as any).rollNo || '',
-                                            srNo: (student as any).srNo || '',
-                                            dob: (student as any).dob || '',
-                                            height: '',
-                                            weight: '',
-                                            fatherName: (student as any).fatherName || '',
-                                            motherName: (student as any).motherName || '',
-                                            address: (student as any).address || '',
-                                            mobile: (student as any).mobile || ''
-                                        });
-                                        if (student.class === 'LKG' || student.class === 'UKG') {
-                                            setReportType('lkg-ukg');
-                                        } else {
-                                            setReportType('standard');
-                                        }
-                                    }
-                                }}
-                            />
-                            <datalist id="student-list">
-                                {MOCK_STUDENTS.map(s => <option key={s.id} value={s.name} />)}
-                            </datalist>
+                            <div style={{ position: 'relative' }}>
+                                <input 
+                                    type="text" 
+                                    className="form-control" 
+                                    placeholder="Type student name or SR No..."
+                                    value={searchQuery}
+                                    onChange={(e) => {
+                                        setSearchQuery(e.target.value);
+                                        setShowDropdown(true);
+                                    }}
+                                    onFocus={() => setShowDropdown(true)}
+                                    onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
+                                    autoComplete="off"
+                                />
+                                {showDropdown && searchQuery && (
+                                    <div style={{
+                                        position: 'absolute',
+                                        top: '100%',
+                                        left: 0,
+                                        right: 0,
+                                        maxHeight: '300px',
+                                        overflowY: 'auto',
+                                        backgroundColor: 'white',
+                                        border: '1px solid #e5e7eb',
+                                        borderRadius: '0.5rem',
+                                        boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
+                                        zIndex: 50,
+                                        marginTop: '0.25rem'
+                                    }}>
+                                        {students.filter(s => 
+                                            (s.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+                                            (s.admissionNo || '').toLowerCase().includes(searchQuery.toLowerCase())
+                                        ).map(student => (
+                                            <div 
+                                                key={student.id} 
+                                                style={{ padding: '0.75rem 1rem', cursor: 'pointer', borderBottom: '1px solid #f3f4f6' }}
+                                                onMouseDown={(e) => {
+                                                    e.preventDefault();
+                                                    setSearchQuery(student.name);
+                                                    setShowDropdown(false);
+                                                    setSelectedStudent(student);
+                                                    setStudentProfile({
+                                                        name: student.name || '',
+                                                        classSec: student.className || '',
+                                                        rollNo: student.rollNo || '',
+                                                        srNo: student.admissionNo || '',
+                                                        dob: student.dateOfBirth || '',
+                                                        height: '',
+                                                        weight: '',
+                                                        fatherName: student.fatherName || '',
+                                                        motherName: student.motherName || '',
+                                                        address: student.address || '',
+                                                        mobile: student.mobile || ''
+                                                    });
+                                                    const cName = (student.className || '').toUpperCase();
+                                                    if (cName.includes('LKG') || cName.includes('UKG') || cName.includes('NURSERY')) {
+                                                        setReportType('lkg-ukg');
+                                                    } else {
+                                                        setReportType('standard');
+                                                    }
+                                                }}
+                                                onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#f9fafb'}
+                                                onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                                            >
+                                                <div style={{ fontWeight: '600', color: '#111827' }}>{student.name}</div>
+                                                <div style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: '0.1rem' }}>
+                                                    SR No: {student.admissionNo} | Class: {student.className} | Father: {student.fatherName}
+                                                </div>
+                                            </div>
+                                        ))}
+                                        {students.filter(s => 
+                                            (s.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+                                            (s.admissionNo || '').toLowerCase().includes(searchQuery.toLowerCase())
+                                        ).length === 0 && (
+                                            <div style={{ padding: '0.75rem 1rem', color: '#6b7280', fontSize: '0.85rem', textAlign: 'center' }}>
+                                                No students found
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
 
@@ -458,8 +516,8 @@ const ReportCards: React.FC = () => {
 
                     <div className="student-info-row">
                         <div>NAME: <span className="dotted-line" style={{ minWidth: '300px' }}>{selectedStudent?.name || '__________________________'}</span></div>
-                        <div>CLASS: <span className="dotted-line" style={{ minWidth: '80px' }}>{selectedStudent?.class || '_________'}</span></div>
-                        <div>SEC.: <span className="dotted-line" style={{ minWidth: '80px' }}>{selectedStudent?.sec || '_________'}</span></div>
+                        <div>CLASS: <span className="dotted-line" style={{ minWidth: '80px' }}>{selectedStudent?.className || '_________'}</span></div>
+                        <div>SR NO.: <span className="dotted-line" style={{ minWidth: '80px' }}>{selectedStudent?.admissionNo || '_________'}</span></div>
                     </div>
 
                     <div className="main-tables-grid">

@@ -60,7 +60,7 @@ const TransferCertificate: React.FC = () => {
 
     const fetchStudents = async () => {
         try {
-            const res = await axios.get('/api/admin/students');
+            const res = await axios.get('/erp-api/admin/students');
             setStudents(res.data);
         } catch (err) {
             console.error(err);
@@ -311,7 +311,7 @@ const TransferCertificate: React.FC = () => {
                             fontFamily: '"Times New Roman", Times, serif'
                         }}>
                             <div style={{ position: 'relative', marginBottom: '1rem', minHeight: '80px', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 80px' }}>
-                                <img src="/bips-logo.png" alt="BIPS Logo" style={{ position: 'absolute', left: '0', top: '50%', transform: 'translateY(-50%)', width: '70px', height: '70px', objectFit: 'contain' }} />
+                                <img src="/erp/bips-logo.png" alt="BIPS Logo" style={{ position: 'absolute', left: '0', top: '50%', transform: 'translateY(-50%)', width: '70px', height: '70px', objectFit: 'contain' }} />
                                 <h2 style={{ textAlign: 'center', margin: '0', textTransform: 'uppercase', fontSize: '22px', fontWeight: 'bold' }}>
                                     Scholar's Register & Transfer Certificate Form
                                 </h2>

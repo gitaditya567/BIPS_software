@@ -25,7 +25,7 @@ const Transport: React.FC = () => {
 
     const fetchStops = async () => {
         try {
-            const res = await axios.get('/api/admin/transport/stops');
+            const res = await axios.get('/erp-api/admin/transport/stops');
             setTransportStops(res.data);
         } catch (error) {
             console.error('Failed to fetch stops');
@@ -36,7 +36,7 @@ const Transport: React.FC = () => {
         e.preventDefault();
         try {
             if (editStopId) {
-                const res = await axios.put(`/api/admin/transport/stops/${editStopId}`, {
+                const res = await axios.put(`/erp-api/admin/transport/stops/${editStopId}`, {
                     name: newStop.name,
                     busFare: newStop.fee
                 });
@@ -45,7 +45,7 @@ const Transport: React.FC = () => {
                 setNewStop({ name: '', fee: '' });
                 alert('Transport Fee Updated Successfully!');
             } else {
-                const res = await axios.post('/api/admin/transport/stops', {
+                const res = await axios.post('/erp-api/admin/transport/stops', {
                     name: newStop.name,
                     km: "",
                     ratePerKm: "",
@@ -69,7 +69,7 @@ const Transport: React.FC = () => {
     const handleDeleteStop = async (id: string) => {
         if (!window.confirm('Delete this stop?')) return;
         try {
-            await axios.delete(`/api/admin/transport/stops/${id}`);
+            await axios.delete(`/erp-api/admin/transport/stops/${id}`);
             setTransportStops(transportStops.filter(s => s.id !== id));
         } catch (error) {
             alert('Failed to delete stop');

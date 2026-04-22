@@ -116,7 +116,7 @@ const Students: React.FC = () => {
 
     const fetchStudents = async () => {
         try {
-            const res = await axios.get('/api/admin/students');
+            const res = await axios.get('/erp-api/admin/students');
             setStudents(res.data);
             setCurrentPage(1);
         } catch (err) {
@@ -126,7 +126,7 @@ const Students: React.FC = () => {
 
     const fetchClasses = async () => {
         try {
-            const res = await axios.get('/api/admin/classes');
+            const res = await axios.get('/erp-api/admin/classes');
             setClasses(res.data);
         } catch (err) {
             console.error(err);
@@ -217,7 +217,7 @@ const Students: React.FC = () => {
                 const originalStudent = students.find(s => s.id === editingId);
                 let finalAdmissionNo = admissionNo || originalStudent?.admissionNo;
 
-                await axios.put(`/api/admin/students/${editingId}`, {
+                await axios.put(`/erp-api/admin/students/${editingId}`, {
                     firstName, lastName, email: finalEmail, phone, password, admissionNo: finalAdmissionNo, classId: classId ? classId.trim() : null, sectionId: sectionId ? sectionId.trim() : null,
                     gender, dob, address, bloodGroup, category, religion, nationality, aadhaar, photo,
                     prevSchoolName, prevClass, prevSchoolAddress, prevMarks, leavingReason, siblingInfo,
@@ -244,7 +244,7 @@ const Students: React.FC = () => {
                 // Final safety check: ensure the number hasn't been used in the current session
                 const finalAdmissionNo = `BIPS/26/${String(nextNumber).padStart(3, '0')}`;
                 
-                await axios.post('/api/admin/students', {
+                await axios.post('/erp-api/admin/students', {
                     firstName, lastName, email: finalEmail, phone, password, admissionNo: finalAdmissionNo, classId, sectionId,
                     gender, dob, address, bloodGroup, category, religion, nationality, aadhaar, photo,
                     prevSchoolName, prevClass, prevSchoolAddress, prevMarks, leavingReason, siblingInfo,
@@ -398,7 +398,7 @@ const Students: React.FC = () => {
     const handleDelete = async (id: string) => {
         if (!window.confirm('Are you sure you want to delete this student?')) return;
         try {
-            await axios.delete(`/api/admin/students/${id}`);
+            await axios.delete(`/erp-api/admin/students/${id}`);
             fetchStudents();
             alert('Student deleted successfully');
         } catch (err) {

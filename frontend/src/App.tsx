@@ -28,7 +28,8 @@ import './index.css';
 const App: React.FC = () => {
   return (
     <NotificationProvider>
-      <BrowserRouter>
+      <BrowserRouter basename="/erp">
+        
         {/* Global Toast popups — always visible */}
         <ToastContainer />
 
@@ -72,6 +73,7 @@ const App: React.FC = () => {
             <Route path="student/notice" element={<Notice />} />
           </Route>
         </Routes>
+
       </BrowserRouter>
     </NotificationProvider>
   );

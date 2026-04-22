@@ -102,7 +102,7 @@ const Sidebar: React.FC = () => {
             }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
                     <img
-                        src="/bips-logo.png"
+                        src="/erp/bips-logo.png"
                         alt="BIPS Logo"
                         style={{
                             width: '48px',

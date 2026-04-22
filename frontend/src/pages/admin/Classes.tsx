@@ -14,7 +14,7 @@ const Classes: React.FC = () => {
 
     const fetchClasses = async () => {
         try {
-            const res = await axios.get('/api/admin/classes');
+            const res = await axios.get('/erp-api/admin/classes');
             setClasses(res.data);
         } catch (err) {
             console.error(err);
@@ -26,7 +26,7 @@ const Classes: React.FC = () => {
         if (!newClassName) return;
         setLoading(true);
         try {
-            await axios.post('/api/admin/classes', { name: newClassName });
+            await axios.post('/erp-api/admin/classes', { name: newClassName });
             setNewClassName('');
             fetchClasses();
         } catch (err) {
@@ -41,7 +41,7 @@ const Classes: React.FC = () => {
         if (!newSectionName || !selectedClassId) return;
         setLoading(true);
         try {
-            await axios.post(`/api/admin/classes/${selectedClassId}/sections`, { name: newSectionName });
+            await axios.post(`/erp-api/admin/classes/${selectedClassId}/sections`, { name: newSectionName });
             setNewSectionName('');
             setSelectedClassId('');
             fetchClasses();

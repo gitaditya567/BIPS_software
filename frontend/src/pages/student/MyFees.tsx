@@ -23,18 +23,18 @@ const MyFees: React.FC = () => {
     const fetchData = async () => {
         try {
             // Fetch History
-            const historyRes = await axios.get(`/api/fees/history/${studentInfo.id}`);
+            const historyRes = await axios.get(`/erp-api/fees/history/${studentInfo.id}`);
             setFeeHistory(historyRes.data);
             
             // Fetch Structure
-            const structRes = await axios.get('/api/fees/structure');
+            const structRes = await axios.get('/erp-api/fees/structure');
             const studentClassStruct = structRes.data.find((s: any) => s.id === studentInfo.class?.id || s.className === studentInfo.class?.name);
             if (studentClassStruct && studentClassStruct.fees) {
                 setFeeStructure(studentClassStruct.fees);
             }
 
             // Fetch Heads (to know type)
-            const headsRes = await axios.get('/api/fees/heads');
+            const headsRes = await axios.get('/erp-api/fees/heads');
             setFeeHeads(headsRes.data);
             
         } catch (error) {
@@ -219,7 +219,7 @@ const MyFees: React.FC = () => {
                             <div id="printable-receipt" style={{ backgroundColor: '#fff', padding: '2rem', width: '148mm', minHeight: '210mm', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }}>
                                 <div style={{ fontFamily: '"Courier New", Courier, monospace', fontSize: '15px', fontWeight: 'bold', lineHeight: '1.6', color: '#000', width: '100%', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
                                     <div style={{ textAlign: 'center' }}>
-                                        <img src="/bips-logo.png" alt="School Logo" style={{ width: '80px', height: '80px', objectFit: 'contain', display: 'block', margin: '0 auto 8px auto' }} /><br/>
+                                        <img src="/erp/bips-logo.png" alt="School Logo" style={{ width: '80px', height: '80px', objectFit: 'contain', display: 'block', margin: '0 auto 8px auto' }} /><br/>
                                         BIPS ERP<br/>
                                         Official Fee Receipt<br/>
                                     </div>

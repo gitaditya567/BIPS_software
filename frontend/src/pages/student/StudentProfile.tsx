@@ -23,7 +23,7 @@ const StudentProfile: React.FC = () => {
         const fetchUserData = async () => {
             if (user?.id) {
                 try {
-                    const res = await axios.get(`/api/general/user/${user.id}`);
+                    const res = await axios.get(`/erp-api/general/user/${user.id}`);
                     if (res.data) {
                         const updatedUser = { ...user, ...res.data, role: user.role }; 
                         setUser(updatedUser);

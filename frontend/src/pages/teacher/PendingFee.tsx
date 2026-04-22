@@ -16,7 +16,7 @@ const PendingFee: React.FC = () => {
         if (!teacherId) return;
         const fetchClasses = async () => {
             try {
-                const res = await axios.get(`/api/teacher/${teacherId}/classes`);
+                const res = await axios.get(`/erp-api/teacher/${teacherId}/classes`);
                 setClasses(res.data);
             } catch (err) {
                 console.error("Failed to fetch classes", err);
@@ -37,7 +37,7 @@ const PendingFee: React.FC = () => {
 
         setLoading(true);
         try {
-            const res = await axios.get(`/api/teacher/students/fees?classId=${cls.classId}&sectionId=${cls.sectionId}`);
+            const res = await axios.get(`/erp-api/teacher/students/fees?classId=${cls.classId}&sectionId=${cls.sectionId}`);
             setFeeData(res.data);
         } catch (err) {
             console.error("Failed to fetch pending fees", err);

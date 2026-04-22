@@ -89,7 +89,7 @@ const Fees: React.FC = () => {
 
     const fetchReports = async () => {
         try {
-            const res = await axios.get('/api/fees/reports');
+            const res = await axios.get('/erp-api/fees/reports');
             setReportData(res.data);
         } catch (err) {
             console.error("Failed to fetch reports");
@@ -99,11 +99,11 @@ const Fees: React.FC = () => {
     const handleDeleteReceipt = async (id: string, receiptNo: string) => {
         if (!window.confirm(`Are you sure you want to delete receipt ${receiptNo}? This action cannot be undone.`)) return;
         try {
-            await axios.delete(`/api/fees/${id}`);
+            await axios.delete(`/erp-api/fees/${id}`);
             alert('Receipt deleted successfully!');
             fetchReports(); // Refresh collection data
             // Also refresh dueFees if needed
-            const dueListRes = await axios.get('/api/fees/due-list');
+            const dueListRes = await axios.get('/erp-api/fees/due-list');
             setDueFees(dueListRes.data);
         } catch (err) {
             alert('Failed to delete receipt');
@@ -121,10 +121,10 @@ const Fees: React.FC = () => {
         }
 
         try {
-            await axios.delete('/api/fees/all');
+            await axios.delete('/erp-api/fees/all');
             alert('All collection records have been cleared. System reset to RCP001.');
             fetchReports();
-            const dueListRes = await axios.get('/api/fees/due-list');
+            const dueListRes = await axios.get('/erp-api/fees/due-list');
             setDueFees(dueListRes.data);
         } catch (err) {
             alert('Failed to reset records');
@@ -217,7 +217,7 @@ const Fees: React.FC = () => {
 
     const fetchTransportStops = async () => {
         try {
-            const res = await axios.get('/api/admin/transport/stops');
+            const res = await axios.get('/erp-api/admin/transport/stops');
             setTransportStops(res.data);
         } catch (error) {
             console.error('Failed to fetch transport stops');
@@ -321,7 +321,7 @@ const Fees: React.FC = () => {
 
     const fetchNextReceiptNo = async () => {
         try {
-            const res = await axios.get('/api/fees/next-receipt');
+            const res = await axios.get('/erp-api/fees/next-receipt');
             if (res.data && res.data.receiptNo) {
                 setReceiptNo(res.data.receiptNo);
             }
@@ -334,7 +334,7 @@ const Fees: React.FC = () => {
 
     const fetchPendingApprovals = async () => {
         try {
-            const res = await axios.get('/api/fees/pending');
+            const res = await axios.get('/erp-api/fees/pending');
             // Map backend amountPaid to frontend paidAmount
             const mappedData = res.data.map((r: any) => ({
                 ...r,
@@ -354,7 +354,7 @@ const Fees: React.FC = () => {
 
     const fetchStudentHistory = async (studentId: string, studentNameVal: string) => {
         try {
-            const res = await axios.get(`/api/fees/history/${studentId}`);
+            const res = await axios.get(`/erp-api/fees/history/${studentId}`);
             setStudentHistory(res.data.map((r: any) => ({
                 ...r,
                 paidAmount: r.amountPaid || r.paidAmount || 0,
@@ -362,7 +362,7 @@ const Fees: React.FC = () => {
                 studentName: studentNameVal
             })));
             
-            const balRes = await axios.get(`/api/fees/student/${studentId}/balance`);
+            const balRes = await axios.get(`/erp-api/fees/student/${studentId}/balance`);
             setPendingDues(balRes.data.outstandingBalance || 0);
         } catch (err) {
             console.error('Failed to fetch history:', err);
@@ -373,7 +373,7 @@ const Fees: React.FC = () => {
 
     const fetchClasses = async () => {
         try {
-            const res = await axios.get('/api/admin/classes');
+            const res = await axios.get('/erp-api/admin/classes');
             setClasses(res.data);
         } catch (err) { console.error('Failed to fetch classes'); }
     };
@@ -381,7 +381,7 @@ const Fees: React.FC = () => {
     const handleDeleteFeeStructure = async (classId: string) => {
         if (!window.confirm('Are you sure you want to permanently delete the fee structure for this class?')) return;
         try {
-            await axios.delete(`/api/fees/structure/${classId}`);
+            await axios.delete(`/erp-api/fees/structure/${classId}`);
             setFeeStructure(prev => prev.filter(f => f.id !== classId));
             alert('Fee structure deleted permanently.');
         } catch (err) {
@@ -391,7 +391,7 @@ const Fees: React.FC = () => {
 
     const fetchAllHistory = async () => {
         try {
-            const res = await axios.get('/api/fees');
+            const res = await axios.get('/erp-api/fees');
             setFeeRecords(res.data.map((r: any) => ({
                 ...r,
                 paidAmount: r.amountPaid || r.paidAmount || 0,
@@ -406,7 +406,7 @@ const Fees: React.FC = () => {
 
     const fetchDueFees = async () => {
         try {
-            const res = await axios.get('/api/fees/due-list');
+            const res = await axios.get('/erp-api/fees/due-list');
             setDueFees(res.data);
         } catch (err) {
             console.error('Failed to fetch due fees:', err);
@@ -417,7 +417,7 @@ const Fees: React.FC = () => {
 
     const fetchStudents = async () => {
         try {
-            const res = await axios.get('/api/admin/students');
+            const res = await axios.get('/erp-api/admin/students');
             if (res.data && res.data.length > 0) {
                 setStudents(res.data);
             }
@@ -428,7 +428,7 @@ const Fees: React.FC = () => {
 
     const fetchFeeHeads = async () => {
         try {
-            const res = await axios.get('/api/fees/heads');
+            const res = await axios.get('/erp-api/fees/heads');
             setFeeHeads(res.data);
         } catch (err) { console.error('Failed to fetch fee heads'); }
     };
@@ -437,7 +437,7 @@ const Fees: React.FC = () => {
 
     const fetchFeeStructure = async () => {
         try {
-            const res = await axios.get('/api/fees/structure');
+            const res = await axios.get('/erp-api/fees/structure');
             setFeeStructure(res.data);
         } catch (err) { console.error('Failed to fetch fee structure'); }
     };
@@ -502,7 +502,7 @@ const Fees: React.FC = () => {
                 submittedBy: user?.name || 'User'
             };
 
-            const res = await axios.post('/api/fees/collect', payload);
+            const res = await axios.post('/erp-api/fees/collect', payload);
             const savedRecord = res.data.data;
             
             const newRecord: FeeRecord = { 
@@ -553,7 +553,7 @@ const Fees: React.FC = () => {
 
     const approveFee = async (id: string) => {
         try {
-            await axios.post(`/api/fees/${id}/approve`, { approvedBy: user?.name });
+            await axios.post(`/erp-api/fees/${id}/approve`, { approvedBy: user?.name });
             setFeeRecords(prev => prev.map(rec => 
                 rec.id === id ? { ...rec, status: 'APPROVED' } : rec
             ));
@@ -565,7 +565,7 @@ const Fees: React.FC = () => {
 
     const rejectFee = async (id: string) => {
         try {
-            await axios.post(`/api/fees/${id}/reject`, { approvedBy: user?.name });
+            await axios.post(`/erp-api/fees/${id}/reject`, { approvedBy: user?.name });
             setFeeRecords(prev => prev.map(rec => 
                 rec.id === id ? { ...rec, status: 'REJECTED' } : rec
             ));
@@ -579,7 +579,7 @@ const Fees: React.FC = () => {
     const payFullRejectedFee = async (id: string) => {
         if (!window.confirm('Discount was rejected. Are you sure you want to collect the FULL amount now?')) return;
         try {
-            const res = await axios.post(`/api/fees/${id}/pay-full`);
+            const res = await axios.post(`/erp-api/fees/${id}/pay-full`);
             const data = res.data.data;
             const updatedRec = {
                 ...data,
@@ -602,7 +602,7 @@ const Fees: React.FC = () => {
         e.preventDefault();
         if (!newHeadName) return alert('Please fill required fields');
         try {
-            const res = await axios.post('/api/fees/heads', { name: newHeadName, type: newHeadType });
+            const res = await axios.post('/erp-api/fees/heads', { name: newHeadName, type: newHeadType });
             setFeeHeads([...feeHeads, res.data]);
             setNewHeadName('');
             setNewHeadType('Monthly');
@@ -615,7 +615,7 @@ const Fees: React.FC = () => {
     const handleDeleteFeeHead = async (id: string, name: string) => {
         if (!window.confirm(`Are you sure you want to permanently delete "${name}"?`)) return;
         try {
-            await axios.delete(`/api/fees/heads/${id}`);
+            await axios.delete(`/erp-api/fees/heads/${id}`);
             setFeeHeads(feeHeads.filter(h => h.id !== id));
         } catch (err: any) {
             alert(err.response?.data?.error || 'Failed to delete fee head');
@@ -1276,7 +1276,7 @@ const Fees: React.FC = () => {
                             });
                             
                             try {
-                                await axios.post('/api/fees/structure', { classId: selectedClassId, fees });
+                                await axios.post('/erp-api/fees/structure', { classId: selectedClassId, fees });
                                 fetchFeeStructure();
                                 form.reset();
                                 setEditingClassId(null);
@@ -1856,7 +1856,7 @@ const Fees: React.FC = () => {
                             <div id="printable-receipt" style={{ backgroundColor: '#fff', padding: '2rem', width: '148mm', minHeight: '210mm', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }}>
                                 <div style={{ fontFamily: '"Courier New", Courier, monospace', fontSize: '15px', fontWeight: 'bold', lineHeight: '1.6', color: '#000', width: '100%', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
                                     <div style={{ textAlign: 'center' }}>
-                                        <img src="/bips-logo.png" alt="School Logo" style={{ width: '80px', height: '80px', objectFit: 'contain', display: 'block', margin: '0 auto 8px auto' }} /><br/>
+                                        <img src="/erp/bips-logo.png" alt="School Logo" style={{ width: '80px', height: '80px', objectFit: 'contain', display: 'block', margin: '0 auto 8px auto' }} /><br/>
                                         BIPS ERP<br/>
                                         Official Fee Receipt<br/>
                                     </div>

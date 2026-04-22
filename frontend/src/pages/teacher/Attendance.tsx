@@ -21,7 +21,7 @@ const Attendance: React.FC = () => {
         if (!teacherId) return;
         const fetchClasses = async () => {
             try {
-                const res = await axios.get(`/api/teacher/${teacherId}/classes`);
+                const res = await axios.get(`/erp-api/teacher/${teacherId}/classes`);
                 setClasses(res.data);
             } catch (err) {
                 console.error("Failed to fetch classes", err);
@@ -34,7 +34,7 @@ const Attendance: React.FC = () => {
         if (!classId || !sectId) return;
         setLoading(true);
         try {
-            const res = await axios.get(`/api/teacher/students?classId=${classId}&sectionId=${sectId}&date=${targetDate}`);
+            const res = await axios.get(`/erp-api/teacher/students?classId=${classId}&sectionId=${sectId}&date=${targetDate}`);
             
             let hasSaved = false;
             const sList = res.data.map((s: any) => {
@@ -98,7 +98,7 @@ const Attendance: React.FC = () => {
                 status: s.attendance
             }));
             
-            await axios.post('/api/general/attendance', {
+            await axios.post('/erp-api/general/attendance', {
                 records,
                 date
             });

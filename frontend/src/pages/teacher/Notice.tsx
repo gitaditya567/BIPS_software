@@ -22,7 +22,7 @@ const Notice: React.FC = () => {
     useEffect(() => {
         fetchNotices();
         if (userRole === 'TEACHER' && teacherId) {
-            axios.get(`/api/teacher/${teacherId}/classes`)
+            axios.get(`/erp-api/teacher/${teacherId}/classes`)
                 .then(res => setClasses(res.data))
                 .catch(err => console.error("Failed to fetch teacher classes", err));
         }
@@ -30,7 +30,7 @@ const Notice: React.FC = () => {
 
     const fetchNotices = async () => {
         try {
-            let url = '/api/general/notices';
+            let url = '/erp-api/general/notices';
             if (userRole === 'TEACHER' && teacherId) {
                 url += `?authorId=${teacherId}`;
             }
@@ -43,7 +43,7 @@ const Notice: React.FC = () => {
         e.preventDefault();
         try {
             const postedBy = user.name || 'Teacher';
-            const res = await axios.post('/api/general/notices', {
+            const res = await axios.post('/erp-api/general/notices', {
                 title,
                 message,
                 targetClass: selectedClass,
@@ -63,7 +63,7 @@ const Notice: React.FC = () => {
     const handleDelete = async (id: string) => {
         if (isParentOrStudent) return;
         try {
-            await axios.delete(`/api/general/notices/${id}`);
+            await axios.delete(`/erp-api/general/notices/${id}`);
             setNotices(notices.filter(n => n.id !== id));
             alert('Notice Deleted Successfully');
         } catch (err) { alert('Failed to delete notice'); }

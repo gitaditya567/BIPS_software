@@ -13,7 +13,7 @@ const ServiceRecord: React.FC = () => {
                 const localUser = userRaw ? JSON.parse(userRaw) : null;
                 
                 if (localUser?.id) {
-                    const response = await axios.get(`/api/general/user/${localUser.id}`);
+                    const response = await axios.get(`/erp-api/general/user/${localUser.id}`);
                     setProfile(response.data);
                 }
             } catch (error) {

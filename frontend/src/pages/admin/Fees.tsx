@@ -340,6 +340,7 @@ const Fees: React.FC = () => {
                 ...r,
                 paidAmount: r.amountPaid || r.paidAmount || 0,
                 studentName: r.studentName || 'Unknown Student',
+                admissionNo: r.admissionNo || 'N/A',
                 className: r.className || 'Unknown Class'
             }));
             setFeeRecords(prev => {
@@ -359,7 +360,9 @@ const Fees: React.FC = () => {
                 ...r,
                 paidAmount: r.amountPaid || r.paidAmount || 0,
                 date: new Date(r.paymentDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
-                studentName: studentNameVal
+                studentName: studentNameVal,
+                admissionNo: r.student?.admissionNo || r.admissionNo || 'N/A',
+                className: r.student?.class?.name || r.className || 'N/A'
             })));
             
             const balRes = await axios.get(`/erp-api/fees/student/${studentId}/balance`);
@@ -467,7 +470,7 @@ const Fees: React.FC = () => {
 
     const handleCollectFee = async (e: React.FormEvent) => {
         e.preventDefault();
-        const student = students.find(s => s.name === studentName || s.admissionNo === admissionNo);
+        const student = students.find(s => s.admissionNo === admissionNo);
         if (!student || !paidAmount || !receiptNo || (selectedFees.length === 0 && pendingDues === 0 && !isTransportEnabled)) 
             return alert('Please search student and select at least one fee head or clear previous dues');
             
@@ -511,6 +514,7 @@ const Fees: React.FC = () => {
                 id: savedRecord.id,
                 date: new Date(savedRecord.paymentDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
                 studentName: student.name,
+                admissionNo: student.admissionNo,
                 className: student.className
             };
 
@@ -1850,62 +1854,71 @@ const Fees: React.FC = () => {
 
                 const dashedLine = '-'.repeat(55);
 
+                const renderReceiptCopy = (copyType: string) => (
+                    <div style={{ backgroundColor: '#fff', padding: '8mm 12mm', width: '148.5mm', height: '100%', display: 'flex', flexDirection: 'column', boxSizing: 'border-box', overflow: 'hidden' }}>
+                        <div style={{ fontFamily: '"Courier New", Courier, monospace', fontSize: '10.5px', fontWeight: 'bold', lineHeight: '1.25', color: '#000', width: '100%', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                            <div style={{ textAlign: 'center' }}>
+                                <img src="/erp/bips-logo.png" alt="School Logo" style={{ width: '55px', height: '55px', objectFit: 'contain', display: 'block', margin: '0 auto 4px auto' }} />
+                                <span style={{ fontSize: '13px' }}>BIPS ERP</span><br/>
+                                Official Fee Receipt<br/>
+                                {copyType}<br/>
+                            </div>
+                            <br/>
+                            {dashedLine}<br/>
+                            {`Receipt No : ${padRight(selectedReceipt.receiptNo || 'N/A', 15)} Date : ${dateStr}`}<br/>
+                            {dashedLine}<br/>
+                            <br/>
+                            Student Details:<br/>
+                            {dashedLine}<br/>
+                            {`Student Name    : ${selectedReceipt.studentName || 'N/A'}`}<br/>
+                            {`Admission No    : ${selectedReceipt.admissionNo || 'N/A'}`}<br/>
+                            {`Class & Section : ${selectedReceipt.className || 'N/A'}`}<br/>
+                            {dashedLine}<br/>
+                            <br/>
+                            Fee Details {monthLabel ? `(${monthLabel})` : ''}:<br/>
+                            {dashedLine}<br/>
+                            | {padRight('Description', 35)} | {padLeft('Amount (₹)', 13)} |<br/>
+                            {dashedLine}<br/>
+                            {items.map((item, i) => (
+                                <React.Fragment key={i}>
+                                    | {padRight(item.desc, 35)} | {padLeft(item.price.toLocaleString(), 13)} |<br/>
+                                </React.Fragment>
+                            ))}
+                            {dashedLine}<br/>
+                            | {padRight('Subtotal', 35)} | {padLeft(subtotal.toLocaleString(), 13)} |<br/>
+                            | {padRight('Discount', 35)} | {padLeft('-' + discount.toLocaleString(), 13)} |<br/>
+                            {dashedLine}<br/>
+                            | {padRight('TOTAL PAYABLE', 35)} | {padLeft(totalPayable.toLocaleString(), 13)} |<br/>
+                            {dashedLine}<br/>
+                            <br/>
+                            Payment Details:<br/>
+                            {dashedLine}<br/>
+                            Amount Paid     : ₹{paidAmt.toLocaleString()}<br/>
+                            Remaining Due   : ₹{remainingDue.toLocaleString()}<br/>
+                            Payment Status  : {remainingDue > 0 ? 'Partial Payment' : 'Full Paid'}<br/>
+                            Payment Mode    : {selectedReceipt.paymentMode || 'Cash'}<br/>
+                            {dashedLine}<br/>
+                            <br/>
+                            Remark:<br/>
+                            {dashedLine}<br/>
+                            ₹{paidAmt.toLocaleString()} received. {remainingDue > 0 ? `₹${remainingDue.toLocaleString()} left as pending.` : 'All dues cleared.'}<br/>
+                            {dashedLine}<br/>
+                            <br/>
+                            This is a computer-generated receipt.<br/>
+                            <br/><br/>
+                            {padLeft('Authorized Signature', 55)}<br/>
+                            {dashedLine}
+                        </div>
+                    </div>
+                );
+
                 return (
                     <div id="receipt-modal-overlay" style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '1rem', overflowY: 'auto' }}>
                         <div id="printable-receipt-wrapper" style={{ position: 'relative', margin: 'auto' }}>
-                            <div id="printable-receipt" style={{ backgroundColor: '#fff', padding: '2rem', width: '148mm', minHeight: '210mm', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }}>
-                                <div style={{ fontFamily: '"Courier New", Courier, monospace', fontSize: '15px', fontWeight: 'bold', lineHeight: '1.6', color: '#000', width: '100%', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-                                    <div style={{ textAlign: 'center' }}>
-                                        <img src="/erp/bips-logo.png" alt="School Logo" style={{ width: '80px', height: '80px', objectFit: 'contain', display: 'block', margin: '0 auto 8px auto' }} /><br/>
-                                        BIPS ERP<br/>
-                                        Official Fee Receipt<br/>
-                                    </div>
-                                    <br/>
-                                    {dashedLine}<br/>
-                                    {`Receipt No : ${padRight(selectedReceipt.receiptNo || 'N/A', 15)} Date : ${dateStr}`}<br/>
-                                    {dashedLine}<br/>
-                                    <br/>
-                                    Student Details:<br/>
-                                    {dashedLine}<br/>
-                                    {`Student Name    : ${selectedReceipt.studentName || 'N/A'}`}<br/>
-                                    {`Admission No    : ${selectedReceipt.admissionNo || 'N/A'}`}<br/>
-                                    {`Class & Section : ${selectedReceipt.className || 'N/A'}`}<br/>
-                                    {dashedLine}<br/>
-                                    <br/>
-                                    Fee Details {monthLabel ? `(${monthLabel})` : ''}:<br/>
-                                    {dashedLine}<br/>
-                                    | {padRight('Description', 35)} | {padLeft('Amount (₹)', 13)} |<br/>
-                                    {dashedLine}<br/>
-                                    {items.map((item, i) => (
-                                        <React.Fragment key={i}>
-                                            | {padRight(item.desc, 35)} | {padLeft(item.price.toLocaleString(), 13)} |<br/>
-                                        </React.Fragment>
-                                    ))}
-                                    {dashedLine}<br/>
-                                    | {padRight('Subtotal', 35)} | {padLeft(subtotal.toLocaleString(), 13)} |<br/>
-                                    | {padRight('Discount', 35)} | {padLeft('-' + discount.toLocaleString(), 13)} |<br/>
-                                    {dashedLine}<br/>
-                                    | {padRight('TOTAL PAYABLE', 35)} | {padLeft(totalPayable.toLocaleString(), 13)} |<br/>
-                                    {dashedLine}<br/>
-                                    <br/>
-                                    Payment Details:<br/>
-                                    {dashedLine}<br/>
-                                    Amount Paid     : ₹{paidAmt.toLocaleString()}<br/>
-                                    Remaining Due   : ₹{remainingDue.toLocaleString()}<br/>
-                                    Payment Status  : {remainingDue > 0 ? 'Partial Payment' : 'Full Paid'}<br/>
-                                    Payment Mode    : {selectedReceipt.paymentMode || 'Cash'}<br/>
-                                    {dashedLine}<br/>
-                                    <br/>
-                                    Remark:<br/>
-                                    {dashedLine}<br/>
-                                    ₹{paidAmt.toLocaleString()} received. {remainingDue > 0 ? `₹${remainingDue.toLocaleString()} left as pending.` : 'All dues cleared.'}<br/>
-                                    {dashedLine}<br/>
-                                    <br/>
-                                    This is a computer-generated receipt.<br/>
-                                    <br/><br/><br/>
-                                    {padLeft('Authorized Signature', 55)}<br/>
-                                    {dashedLine}
-                                </div>
+                            <div id="printable-receipt" style={{ backgroundColor: '#fff', display: 'flex', flexDirection: 'row', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)', width: '297mm', height: '209mm' }}>
+                                {renderReceiptCopy('(School Copy)')}
+                                <div style={{ borderLeft: '1px dashed #ccc', height: '209mm' }}></div>
+                                {renderReceiptCopy('(Parent Copy)')}
                             </div>
 
                             {/* Print Controls (Hidden on print) */}
@@ -1927,15 +1940,22 @@ const Fees: React.FC = () => {
                         <style>{`
                             @media print {
                                 .no-print { display: none !important; }
-                                body, html { background: white; margin: 0; padding: 0; }
+                                body, html { 
+                                    background: white !important; 
+                                    margin: 0 !important; 
+                                    padding: 0 !important; 
+                                    height: 100vh !important;
+                                    overflow: hidden !important;
+                                }
                                 body * { visibility: hidden; }
                                 #receipt-modal-overlay {
                                     position: absolute !important;
                                     top: 0 !important; left: 0 !important;
                                     margin: 0 !important; padding: 0 !important;
-                                    display: block !important;
+                                    display: flex !important;
                                     visibility: visible !important;
                                     background: transparent !important;
+                                    overflow: visible !important;
                                 }
                                 #receipt-modal-overlay * {
                                     visibility: visible;
@@ -1947,13 +1967,17 @@ const Fees: React.FC = () => {
                                 }
                                 #printable-receipt { 
                                     position: relative !important; 
-                                    width: 100% !important; 
-                                    min-height: auto !important;
-                                    padding: 5mm !important;
+                                    width: 297mm !important; 
+                                    height: auto !important;
+                                    max-height: 210mm !important;
+                                    padding: 0 !important;
                                     margin: 0 !important; 
                                     box-shadow: none !important; 
+                                    overflow: hidden !important;
+                                    page-break-after: avoid !important;
+                                    page-break-inside: avoid !important;
                                 }
-                                @page { size: A5 portrait; margin: 5mm; }
+                                @page { size: A4 landscape; margin: 0; }
                             }
                         `}</style>
                     </div>

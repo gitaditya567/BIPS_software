@@ -90,7 +90,8 @@ router.get('/pending', async (req, res) => {
         res.json(pending.map(p => ({
             ...p,
             studentName: p.student?.user?.name || 'Unknown',
-            className: p.student?.class?.name || 'Unknown'
+            className: p.student?.class?.name || 'Unknown',
+            admissionNo: p.student?.admissionNo || 'N/A'
         })));
     } catch (error) {
         res.status(500).json({ error: 'Failed to fetch pending approvals' });
@@ -199,7 +200,8 @@ router.get('/', async (req, res) => {
         const formatted = history.map(p => ({
             ...p,
             studentName: p.student?.user?.name || 'N/A',
-            className: p.student?.class?.name || 'N/A'
+            className: p.student?.class?.name || 'N/A',
+            admissionNo: p.student?.admissionNo || 'N/A'
         }));
 
         res.json(formatted);

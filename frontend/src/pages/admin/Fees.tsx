@@ -100,9 +100,10 @@ const Fees: React.FC = () => {
     const [pendingClassFilter, setPendingClassFilter] = useState('All');
     const [prevDueClassFilter, setPrevDueClassFilter] = useState('All');
 
-    // Temporary Upload State
+    /* Temporary Upload State - Disabled
     const [csvFile, setCsvFile] = useState<File | null>(null);
     const [uploadReport, setUploadReport] = useState<any>(null);
+    */
 
     const fetchReports = async () => {
         try {
@@ -148,7 +149,7 @@ const Fees: React.FC = () => {
         }
     };
 
-    // Temporary Upload Handlers
+    /* Temporary Upload Handlers - Disabled
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
             setCsvFile(e.target.files[0]);
@@ -191,6 +192,7 @@ const Fees: React.FC = () => {
         };
         reader.readAsText(csvFile);
     };
+    */
 
     const exportToPDF = () => {
         const doc = new jsPDF() as any;

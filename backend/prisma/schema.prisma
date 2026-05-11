@@ -44,6 +44,7 @@ model StudentProfile {
   studentId      String?      @unique
   rollNumber     String?
   academicYear   String?
+  previousSessionDue Float @default(0)
   medium         String?
   house          String?
   status         String       @default("Active")
@@ -57,6 +58,7 @@ model StudentProfile {
   gender         String?
   dateOfBirth    String?
   bloodGroup     String?
+  isRT           Boolean      @default(false)
   category       String?
   religion       String?
   nationality    String?

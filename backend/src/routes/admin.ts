@@ -358,7 +358,7 @@ router.post('/students', async (req, res) => {
     try {
         const {
             email, password, firstName, lastName, phone, admissionNo, classId, sectionId,
-            gender, dob, bloodGroup, category, religion, nationality, aadhaar, address, photo,
+            gender, dob, bloodGroup, isRT, category, religion, nationality, aadhaar, address, photo,
             prevSchoolName, prevClass, prevSchoolAddress, prevMarks
         } = req.body;
 
@@ -407,6 +407,7 @@ router.post('/students', async (req, res) => {
                         gender,
                         dateOfBirth: dob,
                         bloodGroup,
+                        isRT: Boolean(isRT),
                         category,
                         religion,
                         nationality,
@@ -474,7 +475,7 @@ router.put('/students/:id', async (req, res) => {
         const { id } = req.params;
         const {
             email, firstName, lastName, phone, admissionNo, classId, sectionId,
-            gender, dob, bloodGroup, category, religion, nationality, aadhaar, address, photo,
+            gender, dob, bloodGroup, isRT, category, religion, nationality, aadhaar, address, photo,
             prevSchoolName, prevClass, prevSchoolAddress, prevMarks, password
         } = req.body;
 
@@ -522,6 +523,7 @@ router.put('/students/:id', async (req, res) => {
                 gender,
                 dateOfBirth: dob,
                 bloodGroup,
+                isRT: Boolean(isRT),
                 category,
                 religion,
                 nationality,
@@ -631,6 +633,33 @@ router.get('/dashboard/stats', async (req, res) => {
             }
         });
         const monthlyCollection = monthlyFees._sum.amountPaid || 0;
+
+        // Fetch daily collections for the current month for chart
+        const allMonthFees = await prisma.feePayment.findMany({
+            where: {
+                paymentDate: { gte: startOfMonth },
+                status: 'APPROVED'
+            },
+            select: { paymentDate: true, amountPaid: true }
+        });
+        
+        // Prepare daily collection array (1 to current day)
+        const currentDay = now.getDate();
+        const dailyCollections = Array.from({ length: currentDay }, (_, i) => {
+            const date = new Date(now.getFullYear(), now.getMonth(), i + 1);
+            return {
+                date: date.toISOString().split('T')[0],
+                day: i + 1,
+                amount: 0
+            };
+        });
+
+        allMonthFees.forEach(fee => {
+            const dayIndex = new Date(fee.paymentDate).getDate() - 1;
+            if (dailyCollections[dayIndex]) {
+                dailyCollections[dayIndex].amount += fee.amountPaid || 0;
+            }
+        });
         
         const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         const attendances = await prisma.attendance.findMany({
@@ -706,7 +735,8 @@ router.get('/dashboard/stats', async (req, res) => {
                 monthlyCollection,
                 attendancePercentage,
                 pendingFees,
-                newAdmissions
+                newAdmissions,
+                dailyCollections
             },
             recentActivities
         });

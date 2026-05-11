@@ -365,6 +365,13 @@ router.get('/reports', async (req, res) => {
 router.get('/student/:id/balance', async (req, res) => {
     try {
         const { id } = req.params;
+        
+        // Fetch student profile to get previous session due
+        const student = await prisma.studentProfile.findUnique({
+            where: { id }
+        });
+        const previousDue = student?.previousSessionDue || 0;
+
         const payments = await prisma.feePayment.findMany({
             where: { studentId: id, status: 'APPROVED' }
         });
@@ -379,9 +386,13 @@ router.get('/student/:id/balance', async (req, res) => {
             totalDiscount += p.discount || 0;
         });
 
-        const outstandingBalance = totalBilled - totalPaid - totalDiscount;
+        const outstandingBalance = (totalBilled - totalPaid - totalDiscount) + previousDue;
 
-        res.json({ outstandingBalance: Math.max(0, outstandingBalance) });
+        res.json({ 
+            outstandingBalance: Math.max(0, outstandingBalance),
+            previousSessionDue: previousDue,
+            currentSessionBalance: outstandingBalance - previousDue
+        });
     } catch (error) {
         console.error(error);
         res.status(500).json({ error: 'Failed to calculate balance' });
@@ -407,6 +418,7 @@ router.get('/due-list', async (req, res) => {
                     studentName: p.student.user.name,
                     className: p.student.class?.name || 'Unknown',
                     admissionNo: p.student.admissionNo,
+                    previousSessionDue: p.student.previousSessionDue || 0,
                     totalBilled: 0,
                     totalPaid: 0,
                     totalDiscount: 0
@@ -417,15 +429,38 @@ router.get('/due-list', async (req, res) => {
             studentMap[sid].totalDiscount += p.discount || 0;
         });
 
+        // Merge students with previous dues who don't have current payments
+        const studentsWithPrevDue = await prisma.studentProfile.findMany({
+            where: { previousSessionDue: { gt: 0 } },
+            include: { user: true, class: true }
+        });
+
+        studentsWithPrevDue.forEach(s => {
+            if (!s.user) return;
+            if (!studentMap[s.id]) {
+                studentMap[s.id] = {
+                    id: s.id,
+                    studentName: s.user.name,
+                    className: s.class?.name || 'Unknown',
+                    admissionNo: s.admissionNo,
+                    previousSessionDue: s.previousSessionDue || 0,
+                    totalBilled: 0,
+                    totalPaid: 0,
+                    totalDiscount: 0
+                };
+            }
+        });
+
         const dueList = Object.values(studentMap)
             .map((s: any) => ({
                 id: s.id,
                 studentName: s.studentName,
                 className: s.className,
                 admissionNo: s.admissionNo,
+                previousSessionDue: s.previousSessionDue,
                 total: s.totalBilled,
                 paid: s.totalPaid + s.totalDiscount,
-                pending: s.totalBilled - s.totalPaid - s.totalDiscount
+                pending: (s.totalBilled - s.totalPaid - s.totalDiscount) + s.previousSessionDue
             }))
             .filter((s: any) => s.pending > 0);
 
@@ -433,6 +468,67 @@ router.get('/due-list', async (req, res) => {
     } catch (error) {
         console.error(error);
         res.status(500).json({ error: 'Failed to fetch due list' });
+    }
+});
+
+// Import Previous Session Dues (Temporary Tool)
+router.post('/import-previous-due', async (req, res) => {
+    try {
+        const { data } = req.body; // Array of { studentName, fatherName, amount }
+        
+        if (!Array.isArray(data)) {
+            return res.status(400).json({ error: 'Invalid data format. Expected an array.' });
+        }
+
+        const report = {
+            total: data.length,
+            matched: 0,
+            unmatched: 0,
+            details: [] as any[]
+        };
+
+        for (const item of data) {
+            const { studentName, fatherName, amount } = item;
+            
+            if (!studentName || !fatherName) {
+                report.unmatched++;
+                report.details.push({ studentName, fatherName, status: 'Invalid Data', amount });
+                continue;
+            }
+
+            // Search for student
+            const students = await prisma.studentProfile.findMany({
+                where: {
+                    fatherName: { equals: fatherName.trim(), mode: 'insensitive' },
+                    user: {
+                        name: { equals: studentName.trim(), mode: 'insensitive' }
+                    }
+                }
+            });
+
+            if (students.length === 1) {
+                // Exact match
+                await prisma.studentProfile.update({
+                    where: { id: students[0].id },
+                    data: { previousSessionDue: parseFloat(amount) }
+                });
+                report.matched++;
+                report.details.push({ studentName, fatherName, status: 'Matched', amount });
+            } else if (students.length > 1) {
+                // Multiple matches (ambiguous)
+                report.unmatched++;
+                report.details.push({ studentName, fatherName, status: 'Ambiguous', amount });
+            } else {
+                // No match
+                report.unmatched++;
+                report.details.push({ studentName, fatherName, status: 'Not Found', amount });
+            }
+        }
+
+        res.json({ success: true, report });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Failed to import data' });
     }
 });
 

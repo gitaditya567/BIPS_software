@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNotification } from '../../context/NotificationContext';
-import { Printer } from 'lucide-react';
+import { Printer, Download, Pencil, Trash2, Search, Users } from 'lucide-react';
 
 const generateRandomPassword = () => {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -25,6 +25,7 @@ const Students: React.FC = () => {
 
     const [filterClassId, setFilterClassId] = useState('');
     const [filterSectionId, setFilterSectionId] = useState('');
+    const [filterRT, setFilterRT] = useState('');
     const [filterSections, setFilterSections] = useState<any[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
 
@@ -63,12 +64,15 @@ const Students: React.FC = () => {
     const [dob, setDob] = useState('');
     const [address, setAddress] = useState('');
     const [bloodGroup, setBloodGroup] = useState('');
+    const [isRT, setIsRT] = useState(false);
     const [category, setCategory] = useState('');
     const [religion, setReligion] = useState('');
     const [nationality, setNationality] = useState('');
     const [aadhaar, setAadhaar] = useState('');
     const [photo, setPhoto] = useState('');
     const [showPhotoModal, setShowPhotoModal] = useState(false);
+    const [showWhatsappModal, setShowWhatsappModal] = useState(false);
+    const [studentToDelete, setStudentToDelete] = useState<{id: string, name: string} | null>(null);
 
     const [activeTab, setActiveTab] = useState('personal');
     // Academic fields
@@ -137,7 +141,7 @@ const Students: React.FC = () => {
         setEditingId(null);
         setFirstName(''); setLastName(''); setEmail(''); setPhone(''); setPassword(generateRandomPassword()); setAdmissionNo('');
         setClassId(''); setSectionId(''); setStatus('Active');
-        setGender(''); setDob(''); setAddress(''); setBloodGroup(''); setCategory('');
+        setGender(''); setDob(''); setAddress(''); setBloodGroup(''); setIsRT(false); setCategory('');
         setReligion(''); setNationality(''); setAadhaar(''); setPhoto('');
         setPrevSchoolName(''); setPrevClass(''); setPrevSchoolAddress(''); setPrevMarks(''); setLeavingReason(''); setSiblingInfo('');
         setAdmissionDate(''); setRollNumber(''); setMedium(''); setAcademicYear(''); setHouse('');
@@ -167,6 +171,7 @@ const Students: React.FC = () => {
         setDob(student.dateOfBirth || '');
         setAddress(student.user?.address || student.address || '');
         setBloodGroup(student.bloodGroup || '');
+        setIsRT(student.isRT || false);
         setCategory(student.category || '');
         setReligion(student.religion || '');
         setNationality(student.nationality || '');
@@ -219,7 +224,7 @@ const Students: React.FC = () => {
 
                 await axios.put(`/erp-api/admin/students/${editingId}`, {
                     firstName, lastName, email: finalEmail, phone, password, admissionNo: finalAdmissionNo, classId: classId ? classId.trim() : null, sectionId: sectionId ? sectionId.trim() : null,
-                    gender, dob, address, bloodGroup, category, religion, nationality, aadhaar, photo,
+                    gender, dob, address, bloodGroup, isRT, category, religion, nationality, aadhaar, photo,
                     prevSchoolName, prevClass, prevSchoolAddress, prevMarks, leavingReason, siblingInfo,
                     admissionDate, rollNumber, medium, academicYear, house,
                     fatherName, fatherMobile, fatherOccupation, fatherQualification, fatherEmail, status,
@@ -246,7 +251,7 @@ const Students: React.FC = () => {
                 
                 await axios.post('/erp-api/admin/students', {
                     firstName, lastName, email: finalEmail, phone, password, admissionNo: finalAdmissionNo, classId, sectionId,
-                    gender, dob, address, bloodGroup, category, religion, nationality, aadhaar, photo,
+                    gender, dob, address, bloodGroup, isRT, category, religion, nationality, aadhaar, photo,
                     prevSchoolName, prevClass, prevSchoolAddress, prevMarks, leavingReason, siblingInfo,
                     admissionDate, rollNumber, medium, academicYear, house,
                     fatherName, fatherMobile, fatherOccupation, fatherQualification, fatherEmail, status,
@@ -395,14 +400,50 @@ const Students: React.FC = () => {
         printWindow.document.close();
     };
 
-    const handleDelete = async (id: string) => {
-        if (!window.confirm('Are you sure you want to delete this student?')) return;
+    const confirmDelete = async () => {
+        if (!studentToDelete) return;
+        setLoading(true);
         try {
-            await axios.delete(`/erp-api/admin/students/${id}`);
+            await axios.delete(`/erp-api/admin/students/${studentToDelete.id}`);
             fetchStudents();
-            alert('Student deleted successfully');
+            addNotification('admission', 'Student Deleted', `${studentToDelete.name} has been removed.`);
+            setStudentToDelete(null);
         } catch (err) {
             alert('Failed to delete student');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleExportExcel = () => {
+        const headers = ['S.R No', 'STUDENT ID', 'CLASS OF ADM.', 'NAME', 'EMAIL', 'CLASS', 'SECTION', 'STATUS'];
+        
+        const csvContent = [
+            headers.join(','),
+            ...filteredStudents.map((s, idx) => {
+                const srNo = s.admissionNo || `BIPS/26/${String(filteredStudents.length - idx).padStart(3, '0')}`;
+                const studentId = s.studentId || 'N/A';
+                const classAdm = `"${s.className || 'N/A'}"`;
+                const name = `"${s.name || ''}"`;
+                const email = `"${s.email || ''}"`;
+                const currentClass = `"${s.className || 'N/A'}"`;
+                const currentSection = `"${s.sectionName || 'N/A'}"`;
+                const status = s.status || 'Active';
+                
+                return [srNo, studentId, classAdm, name, email, currentClass, currentSection, status].join(',');
+            })
+        ].join('\n');
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        if (link.download !== undefined) {
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', 'student_records.csv');
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
         }
     };
 
@@ -412,6 +453,10 @@ const Students: React.FC = () => {
     }
     if (filterSectionId) {
         filteredStudents = filteredStudents.filter(s => s.sectionId === filterSectionId);
+    }
+    if (filterRT) {
+        const isRTBool = filterRT === 'Yes';
+        filteredStudents = filteredStudents.filter(s => s.isRT === isRTBool);
     }
     if (searchQuery) {
         const lowerQ = searchQuery.toLowerCase();
@@ -425,6 +470,14 @@ const Students: React.FC = () => {
 
     return (
         <div>
+            <style>
+                {`
+                @keyframes popIn {
+                    0% { transform: scale(0.9); opacity: 0; }
+                    100% { transform: scale(1); opacity: 1; }
+                }
+                `}
+            </style>
             <h1 style={{ marginBottom: '2rem', fontSize: '1.875rem', fontWeight: 800 }}>Student Management</h1>
 
             {/* Add Student Card */}
@@ -527,17 +580,10 @@ const Students: React.FC = () => {
                             </div>
 
                             <div className="form-group">
-                                <label>Blood Group</label>
-                                <select className="form-control" value={bloodGroup} onChange={e => setBloodGroup(e.target.value)}>
-                                    <option value="">Select Blood Group</option>
-                                    <option value="A+">A+</option>
-                                    <option value="A-">A-</option>
-                                    <option value="B+">B+</option>
-                                    <option value="B-">B-</option>
-                                    <option value="AB+">AB+</option>
-                                    <option value="AB-">AB-</option>
-                                    <option value="O+">O+</option>
-                                    <option value="O-">O-</option>
+                                <label>RT Student</label>
+                                <select className="form-control" value={isRT ? 'Yes' : 'No'} onChange={e => setIsRT(e.target.value === 'Yes')}>
+                                    <option value="No">No</option>
+                                    <option value="Yes">Yes</option>
                                 </select>
                             </div>
 
@@ -739,40 +785,72 @@ const Students: React.FC = () => {
             </div>
 
             {/* List */}
-            <div className="data-table-container">
-                <div className="table-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                        <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0 }}>Student Records</h2>
-                        <span style={{ 
-                            backgroundColor: '#eff6ff', 
-                            color: '#1e40af', 
-                            padding: '0.2rem 0.75rem', 
-                            borderRadius: '999px', 
-                            fontSize: '0.85rem', 
-                            fontWeight: 700, 
-                            border: '1px solid #bfdbfe',
-                            boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
-                        }}>
-                            {filteredStudents.length} Students
-                        </span>
+            <div className="data-table-container" style={{ padding: '1.5rem' }}>
+                <div className="table-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1.5rem', marginBottom: '1.5rem', paddingBottom: '1.5rem', borderBottom: '1px solid #e2e8f0' }}>
+                    <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                        <div style={{ width: '52px', height: '52px', backgroundColor: '#eff6ff', borderRadius: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#3b82f6', border: '1px solid #dbeafe' }}>
+                            <Users size={26} strokeWidth={2.5} />
+                        </div>
+                        <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>Student Database</h2>
+                                <span style={{ 
+                                    backgroundColor: '#dbeafe', 
+                                    color: '#1e40af', 
+                                    padding: '0.2rem 0.6rem', 
+                                    borderRadius: '6px', 
+                                    fontSize: '0.8rem', 
+                                    fontWeight: 700, 
+                                    border: '1px solid #bfdbfe'
+                                }}>
+                                    {filteredStudents.length} Records
+                                </span>
+                            </div>
+                            <p style={{ margin: '0.3rem 0 0 0', fontSize: '0.85rem', color: '#64748b', fontWeight: 500 }}>Manage admissions, update details, and view records.</p>
+                        </div>
                     </div>
-                    <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-                        <input 
-                            type="text" 
-                            className="form-control" 
-                            placeholder="Search Name or SR No..." 
-                            value={searchQuery} 
-                            onChange={e => setSearchQuery(e.target.value)}
-                            style={{ width: '220px', margin: 0, padding: '0.4rem 0.8rem', borderRadius: '6px', border: '1px solid #cbd5e1' }}
-                        />
-                        <select className="form-control" value={filterClassId} onChange={e => setFilterClassId(e.target.value)} style={{ width: '200px', margin: 0, padding: '0.4rem', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+                    
+                    <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                        <div style={{ position: 'relative' }}>
+                            <div style={{ position: 'absolute', left: '0.8rem', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', display: 'flex' }}>
+                                <Search size={16} />
+                            </div>
+                            <input 
+                                type="text" 
+                                placeholder="Search Name or SR No..." 
+                                value={searchQuery} 
+                                onChange={e => setSearchQuery(e.target.value)}
+                                style={{ width: '260px', padding: '0.6rem 1rem 0.6rem 2.4rem', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '0.9rem', backgroundColor: '#f8fafc', transition: 'all 0.2s', color: '#0f172a', fontWeight: 500 }}
+                                onFocus={e => { e.currentTarget.style.borderColor = '#3b82f6'; e.currentTarget.style.backgroundColor = '#ffffff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)'; }}
+                                onBlur={e => { e.currentTarget.style.borderColor = '#cbd5e1'; e.currentTarget.style.backgroundColor = '#f8fafc'; e.currentTarget.style.boxShadow = 'none'; }}
+                            />
+                        </div>
+                        
+                        <select value={filterClassId} onChange={e => setFilterClassId(e.target.value)} style={{ padding: '0.6rem 1rem', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '0.9rem', backgroundColor: '#f8fafc', cursor: 'pointer', color: '#475569', fontWeight: 500, transition: 'all 0.2s' }} onFocus={e => e.currentTarget.style.borderColor = '#3b82f6'} onBlur={e => e.currentTarget.style.borderColor = '#cbd5e1'}>
                             <option value="">All Classes</option>
                             {classes.map(cls => <option key={cls.id} value={cls.id}>{cls.name}</option>)}
                         </select>
-                        <select className="form-control" value={filterSectionId} onChange={e => setFilterSectionId(e.target.value)} disabled={!filterClassId} style={{ width: '200px', margin: 0, padding: '0.4rem', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+                        
+                        <select value={filterSectionId} onChange={e => setFilterSectionId(e.target.value)} disabled={!filterClassId} style={{ padding: '0.6rem 1rem', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '0.9rem', backgroundColor: '#f8fafc', cursor: 'pointer', color: '#475569', fontWeight: 500, opacity: !filterClassId ? 0.6 : 1, transition: 'all 0.2s' }} onFocus={e => e.currentTarget.style.borderColor = '#3b82f6'} onBlur={e => e.currentTarget.style.borderColor = '#cbd5e1'}>
                             <option value="">All Sections</option>
                             {filterSections.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                         </select>
+                        
+                        <select value={filterRT} onChange={e => setFilterRT(e.target.value)} style={{ padding: '0.6rem 1rem', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '0.9rem', backgroundColor: '#f8fafc', cursor: 'pointer', color: '#475569', fontWeight: 500, transition: 'all 0.2s' }} onFocus={e => e.currentTarget.style.borderColor = '#3b82f6'} onBlur={e => e.currentTarget.style.borderColor = '#cbd5e1'}>
+                            <option value="">All RT</option>
+                            <option value="Yes">RTE Yes</option>
+                            <option value="No">RTE No</option>
+                        </select>
+                        
+                        <button 
+                            onClick={handleExportExcel}
+                            style={{ padding: '0.6rem 1.2rem', borderRadius: '8px', border: 'none', backgroundColor: '#10b981', color: 'white', fontSize: '0.9rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', transition: 'all 0.2s', boxShadow: '0 4px 6px -1px rgba(16, 185, 129, 0.2)' }}
+                            onMouseOver={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 8px -1px rgba(16, 185, 129, 0.3)'; }}
+                            onMouseOut={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(16, 185, 129, 0.2)'; }}
+                        >
+                            <Download size={16} />
+                            Export Excel
+                        </button>
                     </div>
                 </div>
                 <table>
@@ -809,26 +887,44 @@ const Students: React.FC = () => {
                                             {s.status === 'Inactive' ? 'Inactive' : 'Active'}
                                         </span>
                                     </td>
-                                    <td style={{ display: 'flex', gap: '0.5rem' }}>
+                                    <td style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                                         <button 
-                                            className="btn-primary" 
+                                            title="Edit"
                                             onClick={() => handleEdit(s)} 
-                                            style={{ padding: '0.3rem 0.6rem', fontSize: '0.875rem', backgroundColor: '#3b82f6', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                                            style={{ padding: '0.4rem', backgroundColor: '#eff6ff', color: '#3b82f6', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background-color 0.2s' }}
+                                            onMouseOver={e => e.currentTarget.style.backgroundColor = '#dbeafe'}
+                                            onMouseOut={e => e.currentTarget.style.backgroundColor = '#eff6ff'}
                                         >
-                                            Edit
+                                            <Pencil size={16} />
                                         </button>
                                         <button 
+                                            title="Print"
                                             onClick={() => handlePrint(s)}
-                                            style={{ padding: '0.3rem 0.6rem', fontSize: '0.875rem', backgroundColor: '#10b981', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                            style={{ padding: '0.4rem', backgroundColor: '#f0fdf4', color: '#10b981', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background-color 0.2s' }}
+                                            onMouseOver={e => e.currentTarget.style.backgroundColor = '#dcfce7'}
+                                            onMouseOut={e => e.currentTarget.style.backgroundColor = '#f0fdf4'}
                                         >
-                                            <Printer size={14} /> Print
+                                            <Printer size={16} />
                                         </button>
                                         <button 
-                                            className="btn-danger" 
-                                            onClick={() => handleDelete(s.id)} 
-                                            style={{ padding: '0.3rem 0.6rem', fontSize: '0.875rem', backgroundColor: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                                            onClick={() => setShowWhatsappModal(true)}
+                                            title="WhatsApp"
+                                            style={{ padding: '0.4rem', backgroundColor: '#f0fdf4', color: '#25D366', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background-color 0.2s' }}
+                                            onMouseOver={e => e.currentTarget.style.backgroundColor = '#dcfce7'}
+                                            onMouseOut={e => e.currentTarget.style.backgroundColor = '#f0fdf4'}
                                         >
-                                            Delete
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                                                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/>
+                                            </svg>
+                                        </button>
+                                        <button 
+                                            title="Delete"
+                                            onClick={() => setStudentToDelete({id: s.id, name: s.name || 'this student'})} 
+                                            style={{ padding: '0.4rem', backgroundColor: '#fef2f2', color: '#ef4444', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background-color 0.2s' }}
+                                            onMouseOver={e => e.currentTarget.style.backgroundColor = '#fee2e2'}
+                                            onMouseOut={e => e.currentTarget.style.backgroundColor = '#fef2f2'}
+                                        >
+                                            <Trash2 size={16} />
                                         </button>
                                     </td>
                                 </tr>
@@ -926,6 +1022,72 @@ const Students: React.FC = () => {
                     style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'zoom-out' }}
                 >
                     <img src={photo} alt="Student Full Preview" style={{ maxHeight: '90vh', maxWidth: '90vw', border: '4px solid white', borderRadius: '12px', objectFit: 'contain', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)' }} />
+                </div>
+            )}
+            {showWhatsappModal && (
+                <div 
+                    onClick={() => setShowWhatsappModal(false)}
+                    style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 10000, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(3px)' }}
+                >
+                    <div 
+                        onClick={e => e.stopPropagation()}
+                        style={{ backgroundColor: 'white', padding: '2.5rem 2rem', borderRadius: '16px', maxWidth: '420px', width: '90%', textAlign: 'center', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', animation: 'popIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)' }}
+                    >
+                        <div style={{ width: '64px', height: '64px', backgroundColor: '#dcfce7', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem', color: '#16a34a' }}>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+                        </div>
+                        <h3 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#0f172a', marginBottom: '0.75rem' }}>Premium Feature Locked</h3>
+                        <p style={{ color: '#475569', fontSize: '0.95rem', lineHeight: 1.6, marginBottom: '2rem' }}>
+                            Direct WhatsApp integration is a premium module. Please contact your software provider to unlock and configure this feature for your school.
+                        </p>
+                        <button 
+                            onClick={() => setShowWhatsappModal(false)}
+                            style={{ width: '100%', padding: '0.85rem', backgroundColor: '#0f172a', color: 'white', border: 'none', borderRadius: '10px', fontSize: '1rem', fontWeight: 600, cursor: 'pointer', transition: 'background-color 0.2s' }}
+                            onMouseOver={e => e.currentTarget.style.backgroundColor = '#334155'}
+                            onMouseOut={e => e.currentTarget.style.backgroundColor = '#0f172a'}
+                        >
+                            Got it, thanks
+                        </button>
+                    </div>
+                </div>
+            )}
+            
+            {studentToDelete && (
+                <div 
+                    onClick={() => setStudentToDelete(null)}
+                    style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 10000, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(3px)' }}
+                >
+                    <div 
+                        onClick={e => e.stopPropagation()}
+                        style={{ backgroundColor: 'white', padding: '2.5rem 2rem', borderRadius: '16px', maxWidth: '420px', width: '90%', textAlign: 'center', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', animation: 'popIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)' }}
+                    >
+                        <div style={{ width: '64px', height: '64px', backgroundColor: '#fee2e2', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem', color: '#ef4444' }}>
+                            <Trash2 size={32} strokeWidth={2.5} />
+                        </div>
+                        <h3 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#0f172a', marginBottom: '0.75rem' }}>Delete Student?</h3>
+                        <p style={{ color: '#475569', fontSize: '0.95rem', lineHeight: 1.6, marginBottom: '2rem' }}>
+                            Are you sure you want to permanently delete <strong>{studentToDelete.name}</strong>? This action cannot be undone and will remove all associated records.
+                        </p>
+                        <div style={{ display: 'flex', gap: '1rem' }}>
+                            <button 
+                                onClick={() => setStudentToDelete(null)}
+                                style={{ flex: 1, padding: '0.85rem', backgroundColor: '#f1f5f9', color: '#475569', border: 'none', borderRadius: '10px', fontSize: '1rem', fontWeight: 600, cursor: 'pointer', transition: 'background-color 0.2s' }}
+                                onMouseOver={e => e.currentTarget.style.backgroundColor = '#e2e8f0'}
+                                onMouseOut={e => e.currentTarget.style.backgroundColor = '#f1f5f9'}
+                            >
+                                Cancel
+                            </button>
+                            <button 
+                                onClick={confirmDelete}
+                                disabled={loading}
+                                style={{ flex: 1, padding: '0.85rem', backgroundColor: '#ef4444', color: 'white', border: 'none', borderRadius: '10px', fontSize: '1rem', fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', transition: 'background-color 0.2s', opacity: loading ? 0.7 : 1 }}
+                                onMouseOver={e => !loading && (e.currentTarget.style.backgroundColor = '#dc2626')}
+                                onMouseOut={e => !loading && (e.currentTarget.style.backgroundColor = '#ef4444')}
+                            >
+                                {loading ? 'Deleting...' : 'Yes, Delete'}
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>

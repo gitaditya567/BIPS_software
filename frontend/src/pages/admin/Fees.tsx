@@ -38,14 +38,26 @@ interface DueFee {
     total: number;
     paid: number;
     pending: number;
+    previousSessionDue?: number;
 }
 
 // Removed Concession interface
 
+const CLASS_ORDER = ['Nursery', 'LKG', 'UKG', 'Class 1', 'Class 2', 'Class 3', 'Class 4', 'Class 5', 'Class 6', 'Class 7', 'Class 8', 'Class 9', 'Class 10', 'Class 11 Bio', 'Class 11 Maths', 'Class 11 Commerce', 'Class 12 Bio', 'Class 12 Maths', 'Class 12 Commerce'];
+
+const sortClassNames = (a: string, b: string) => {
+    let indexA = CLASS_ORDER.indexOf(a);
+    let indexB = CLASS_ORDER.indexOf(b);
+    if (indexA === -1) indexA = 999;
+    if (indexB === -1) indexB = 999;
+    if (indexA !== indexB) return indexA - indexB;
+    return a.localeCompare(b);
+};
+
 const Fees: React.FC = () => {
     const { addNotification } = useNotification();
     const [user, setUser] = useState<{ id: string; role: string; name: string } | null>(null);
-    const [activeTab, setActiveTab] = useState<'collection' | 'heads' | 'due' | 'structure' | 'reports' | 'approvals' | 'drafts'>('collection');
+    const [activeTab, setActiveTab] = useState<'collection' | 'heads' | 'due' | 'structure' | 'reports' | 'approvals' | 'drafts' | 'previous_due'>('collection');
     const [activeReport, setActiveReport] = useState<'daily' | 'monthly' | 'class' | 'pending'>('daily');
     const [showReceipt, setShowReceipt] = useState(false);
     const [selectedReceipt, setSelectedReceipt] = useState<FeeRecord | null>(null);
@@ -86,6 +98,11 @@ const Fees: React.FC = () => {
     const [reportFilterMonth, setReportFilterMonth] = useState(new Date().toLocaleString('en-GB', { month: 'long' }));
     const [classReportFilter, setClassReportFilter] = useState('All');
     const [pendingClassFilter, setPendingClassFilter] = useState('All');
+    const [prevDueClassFilter, setPrevDueClassFilter] = useState('All');
+
+    // Temporary Upload State
+    const [csvFile, setCsvFile] = useState<File | null>(null);
+    const [uploadReport, setUploadReport] = useState<any>(null);
 
     const fetchReports = async () => {
         try {
@@ -129,6 +146,50 @@ const Fees: React.FC = () => {
         } catch (err) {
             alert('Failed to reset records');
         }
+    };
+
+    // Temporary Upload Handlers
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files && e.target.files[0]) {
+            setCsvFile(e.target.files[0]);
+        }
+    };
+
+    const handleUpload = async () => {
+        if (!csvFile) return;
+        
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            const text = e.target?.result as string;
+            const lines = text.split('\n');
+            const data = [];
+            
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i].trim();
+                if (!line) continue;
+                const parts = line.split(',');
+                if (parts.length >= 3) {
+                    data.push({
+                        studentName: parts[0].trim(),
+                        fatherName: parts[1].trim(),
+                        amount: parts[2].trim()
+                    });
+                }
+            }
+            
+            try {
+                const res = await axios.post('/erp-api/fees/import-previous-due', { data });
+                setUploadReport(res.data.report);
+                alert('Upload completed. Check report for details.');
+                // Refresh due list
+                const dueListRes = await axios.get('/erp-api/fees/due-list');
+                setDueFees(dueListRes.data);
+            } catch (error) {
+                console.error(error);
+                alert('Failed to upload data');
+            }
+        };
+        reader.readAsText(csvFile);
     };
 
     const exportToPDF = () => {
@@ -639,6 +700,7 @@ const Fees: React.FC = () => {
                         { id: 'approvals', label: 'Approvals' },
                         { id: 'heads', label: 'Fee Heads' },
                         { id: 'due', label: 'Due Fees' },
+                        { id: 'previous_due', label: 'Previous Dues' },
                         { id: 'structure', label: 'Fee Structure' },
                         { id: 'reports', label: 'Fee Reports' }
                     ].map(tab => {
@@ -979,7 +1041,14 @@ const Fees: React.FC = () => {
                                     <tbody>
                                         {studentHistory.length > 0 ? (
                                             studentHistory.map(r => {
-                                                const rawDue = (r.totalFee || 0) - (r.paidAmount || 0) - (r.discount || 0);
+                                                let parsedPreviousDue = 0;
+                                                if (r.feeHead && r.feeHead.includes('Previous Dues:')) {
+                                                    const match = r.feeHead.match(/Previous Dues:\s*(\d+(\.\d+)?)/);
+                                                    if (match) {
+                                                        parsedPreviousDue = parseFloat(match[1]);
+                                                    }
+                                                }
+                                                const rawDue = ((r.totalFee || 0) + parsedPreviousDue) - (r.paidAmount || 0) - (r.discount || 0);
                                                 const isAdvance = rawDue < 0;
                                                 const dueAmt = Math.abs(rawDue);
                                                 return (
@@ -1123,6 +1192,25 @@ const Fees: React.FC = () => {
                                                 ))}
                                             </div>
                                         </div>
+                                        
+                                        <div 
+                                            title="This feature is currently disabled"
+                                            style={{ marginTop: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.75rem', backgroundColor: '#f1f5f9', borderRadius: '8px', border: '1px dashed #cbd5e1', cursor: 'not-allowed', opacity: 0.6 }} 
+                                        >
+                                            <input 
+                                                type="checkbox" 
+                                                checked={false} 
+                                                disabled
+                                                onChange={() => {}} 
+                                                style={{ width: '18px', height: '18px', cursor: 'not-allowed', accentColor: '#94a3b8' }} 
+                                            />
+                                            <label style={{ cursor: 'not-allowed', color: '#64748b', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0, fontSize: '0.95rem' }}>
+                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="#94a3b8">
+                                                    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/>
+                                                </svg>
+                                                Send Receipt via WhatsApp
+                                            </label>
+                                        </div>
                                         <button type="submit" className="btn-primary" style={{ width: '100%', marginTop: '1.5rem', padding: '1rem', backgroundColor: (Number(discount) > 0 && requiresApproval) ? '#ea580c' : '#166534', fontSize: '1.1rem' }}>
                                             {(Number(discount) > 0 && requiresApproval) ? 'Submit for Principal Approval' : 'Confirm & Print Receipt'}
                                         </button>
@@ -1192,27 +1280,57 @@ const Fees: React.FC = () => {
                             <button className="btn-primary" style={{ padding: '0.5rem 1rem', width: 'auto', backgroundColor: '#10b981' }}>Print List</button>
                         </div>
 
+                        {/* Temporary Upload Section */}
+                        <div style={{ background: '#f8fafc', padding: '1.5rem', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '1.5rem' }}>
+                            <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#1f2937', marginBottom: '0.5rem' }}>Import Previous Session Dues (Temporary)</h3>
+                            <p style={{ fontSize: '0.875rem', color: '#6b7280', marginBottom: '1rem' }}>CSV format: Student Name, Father Name, Pending Amount</p>
+                            <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                                <input 
+                                    type="file" 
+                                    accept=".csv" 
+                                    onChange={handleFileChange}
+                                    style={{ 
+                                        border: '1px solid #cbd5e1', 
+                                        padding: '0.5rem', 
+                                        borderRadius: '8px',
+                                        fontSize: '0.875rem'
+                                    }} 
+                                />
+                                <button 
+                                    onClick={handleUpload}
+                                    className="btn-primary" 
+                                    style={{ padding: '0.5rem 1rem', width: 'auto', backgroundColor: '#4f46e5' }}
+                                    disabled={!csvFile}
+                                >
+                                    Upload & Process
+                                </button>
+                            </div>
+                            {uploadReport && (
+                                <div style={{ marginTop: '1rem', padding: '1rem', background: '#ecfdf5', borderRadius: '8px', border: '1px solid #a7f3d0' }}>
+                                    <p style={{ fontWeight: 700, color: '#065f46' }}>Report:</p>
+                                    <p style={{ fontSize: '0.875rem', color: '#047857' }}>Total: {uploadReport.total} | Matched: {uploadReport.matched} | Unmatched: {uploadReport.unmatched}</p>
+                                </div>
+                            )}
+                        </div>
+
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', background: '#f1f5f9', padding: '1rem', borderRadius: '12px' }}>
                             <div className="form-group" style={{ marginBottom: 0 }}>
                                 <label style={{ fontSize: '0.75rem', fontWeight: '700' }}>Filter by Class</label>
-                                <select className="form-control" style={{ height: '38px' }}>
+                                <select className="form-control" style={{ height: '38px', padding: '0.2rem 0.8rem' }}>
                                     <option value="">All Classes</option>
-                                    {[...classes].sort((a, b) => {
-                                        const order = ['Nursery', 'LKG', 'UKG', 'Class 1', 'Class 2', 'Class 3', 'Class 4', 'Class 5', 'Class 6', 'Class 7', 'Class 8', 'Class 9', 'Class 10', 'Class 11 Bio', 'Class 11 Maths', 'Class 11 Commerce', 'Class 12 Bio', 'Class 12 Maths', 'Class 12 Commerce'];
-                                        return order.indexOf(a.name) - order.indexOf(b.name);
-                                    }).map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                                    {Array.from(new Map(classes.map(c => [c.name, c])).values()).sort((a, b) => sortClassNames(a.name, b.name)).map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
                                 </select>
                             </div>
                             <div className="form-group" style={{ marginBottom: 0 }}>
                                 <label style={{ fontSize: '0.75rem', fontWeight: '700' }}>Filter by Month</label>
-                                <select className="form-control" style={{ height: '38px' }}>
+                                <select className="form-control" style={{ height: '38px', padding: '0.2rem 0.8rem' }}>
                                     <option value="">All Months</option>
                                     {['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'].map(m => <option key={m} value={m}>{m}</option>)}
                                 </select>
                             </div>
                             <div className="form-group" style={{ marginBottom: 0 }}>
                                 <label style={{ fontSize: '0.75rem', fontWeight: '700' }}>Filter by Section</label>
-                                <select className="form-control" style={{ height: '38px' }}>
+                                <select className="form-control" style={{ height: '38px', padding: '0.2rem 0.8rem' }}>
                                     <option value="">All Sections</option>
                                     <option value="A">Section A</option>
                                     <option value="B">Section B</option>
@@ -1221,7 +1339,7 @@ const Fees: React.FC = () => {
                             </div>
                             <div className="form-group" style={{ marginBottom: 0 }}>
                                 <label style={{ fontSize: '0.75rem', fontWeight: '700' }}>Search Student</label>
-                                <input type="text" placeholder="Name or Adm No..." className="form-control" style={{ height: '38px' }} />
+                                <input type="text" placeholder="Name or Adm No..." className="form-control" style={{ height: '38px', padding: '0.2rem 0.8rem' }} />
                             </div>
                         </div>
                     </div>
@@ -1232,7 +1350,8 @@ const Fees: React.FC = () => {
                                 <th style={{ padding: '1rem 1.5rem' }}>Class</th>
                                 <th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Total (₹)</th>
                                 <th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Paid (₹)</th>
-                                <th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Due (₹)</th>
+                                <th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Previous Due (₹)</th>
+                                <th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Total Due (₹)</th>
                                 <th style={{ padding: '1rem 1.5rem', textAlign: 'center' }}>Action</th>
                             </tr>
                         </thead>
@@ -1247,6 +1366,7 @@ const Fees: React.FC = () => {
                                     </td>
                                     <td style={{ padding: '1rem 1.5rem', textAlign: 'right', color: '#64748b' }}>₹{fee.total.toLocaleString()}</td>
                                     <td style={{ padding: '1rem 1.5rem', textAlign: 'right', color: '#059669', fontWeight: '600' }}>₹{fee.paid.toLocaleString()}</td>
+                                    <td style={{ padding: '1rem 1.5rem', textAlign: 'right', color: '#d97706', fontWeight: '600' }}>₹{(fee.previousSessionDue || 0).toLocaleString()}</td>
                                     <td style={{ padding: '1rem 1.5rem', textAlign: 'right', color: '#ef4444', fontWeight: '800' }}>₹{fee.pending.toLocaleString()}</td>
                                     <td style={{ padding: '1rem 1.5rem', textAlign: 'center' }}>
                                         <button
@@ -1263,6 +1383,69 @@ const Fees: React.FC = () => {
                     </table>
                 </div>
             )} 
+
+            {activeTab === 'previous_due' && (
+                <div className="data-table-container shadow-lg">
+                    <div className="table-header" style={{ background: 'linear-gradient(to right, #f8fafc, #ffffff)', padding: '1.5rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                            <div>
+                                <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#111827' }}>Students with Previous Session Dues</h2>
+                                <p style={{ fontSize: '0.875rem', color: '#6b7280', marginTop: '0.25rem' }}>List of students carrying dues from previous year</p>
+                            </div>
+                            <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                                <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#1e293b' }}>
+                                    Total Students: {dueFees.filter(f => (f.previousSessionDue || 0) > 0).filter(f => prevDueClassFilter === 'All' || f.className === prevDueClassFilter).length}
+                                </span>
+                            </div>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', background: '#f1f5f9', padding: '1rem', borderRadius: '12px' }}>
+                            <div className="form-group" style={{ marginBottom: 0 }}>
+                                <label style={{ fontSize: '0.75rem', fontWeight: '700' }}>Filter by Class</label>
+                                <select className="form-control" style={{ height: '38px', padding: '0.2rem 0.8rem' }} onChange={(e) => setPrevDueClassFilter(e.target.value)}>
+                                    <option value="All">All Classes</option>
+                                    {Array.from(new Map(classes.map(c => [c.name, c])).values()).sort((a, b) => sortClassNames(a.name, b.name)).map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <table style={{ width: '100%' }}>
+                        <thead>
+                            <tr style={{ backgroundColor: '#f8fafc' }}>
+                                <th style={{ padding: '1rem 1.5rem' }}>Student Name</th>
+                                <th style={{ padding: '1rem 1.5rem' }}>Class</th>
+                                <th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Previous Due (₹)</th>
+                                <th style={{ padding: '1rem 1.5rem', textAlign: 'center' }}>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {dueFees
+                                .filter(f => (f.previousSessionDue || 0) > 0)
+                                .filter(f => prevDueClassFilter === 'All' || f.className === prevDueClassFilter)
+                                .map((fee) => (
+                                    <tr key={fee.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                        <td style={{ padding: '1rem 1.5rem', fontWeight: '600', color: '#1e293b' }}>{fee.studentName}</td>
+                                        <td style={{ padding: '1rem 1.5rem' }}>
+                                            <span style={{ background: '#e0e7ff', color: '#4338ca', padding: '0.25rem 0.6rem', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '700' }}>
+                                                {fee.className}
+                                            </span>
+                                        </td>
+                                        <td style={{ padding: '1rem 1.5rem', textAlign: 'right', color: '#ef4444', fontWeight: '800' }}>₹{(fee.previousSessionDue || 0).toLocaleString()}</td>
+                                        <td style={{ padding: '1rem 1.5rem', textAlign: 'center' }}>
+                                            <button
+                                                className="btn-primary"
+                                                style={{ width: 'auto', padding: '0.4rem 1rem', fontSize: '0.75rem', backgroundColor: '#4f46e5', borderRadius: '6px' }}
+                                                onClick={() => alert(`Reminder sent to ${fee.studentName}`)}
+                                            >
+                                                Send Reminder
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
 
             {activeTab === 'structure' && (
                 <div>
@@ -1295,10 +1478,7 @@ const Fees: React.FC = () => {
                                     <label>Class</label>
                                     <select name="classId" className="form-control" required disabled={!!editingClassId}>
                                         <option value="">Select Class</option>
-                                        {[...classes].sort((a,b) => {
-                                            const order = ['Nursery', 'LKG', 'UKG', 'Class 1', 'Class 2', 'Class 3', 'Class 4', 'Class 5', 'Class 6', 'Class 7', 'Class 8', 'Class 9', 'Class 10', 'Class 11 Bio', 'Class 11 Maths', 'Class 11 Commerce', 'Class 12 Bio', 'Class 12 Maths', 'Class 12 Commerce'];
-                                            return order.indexOf(a.name) - order.indexOf(b.name);
-                                        }).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                        {Array.from(new Map(classes.map(c => [c.name, c])).values()).sort((a, b) => sortClassNames(a.name, b.name)).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                                     </select>
                                 </div>
                                 <div className="form-group">
@@ -1339,12 +1519,9 @@ const Fees: React.FC = () => {
                             </div>
                             <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
                                 <label style={{ fontWeight: '600', fontSize: '0.9rem' }}>Filter Class:</label>
-                                <select className="form-control" style={{ width: '150px', height: '38px' }} value={structFilterClass} onChange={e => setStructFilterClass(e.target.value)}>
+                                <select className="form-control" style={{ width: '150px', height: '38px', padding: '0.2rem 0.8rem' }} value={structFilterClass} onChange={e => setStructFilterClass(e.target.value)}>
                                     <option value="">All Classes</option>
-                                    {[...classes].sort((a, b) => {
-                                        const order = ['Nursery', 'LKG', 'UKG', 'Class 1', 'Class 2', 'Class 3', 'Class 4', 'Class 5', 'Class 6', 'Class 7', 'Class 8', 'Class 9', 'Class 10', 'Class 11 Bio', 'Class 11 Maths', 'Class 11 Commerce', 'Class 12 Bio', 'Class 12 Maths', 'Class 12 Commerce'];
-                                        return order.indexOf(a.name) - order.indexOf(b.name);
-                                    }).map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                                    {Array.from(new Map(classes.map(c => [c.name, c])).values()).sort((a, b) => sortClassNames(a.name, b.name)).map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
                                 </select>
                             </div>
                         </div>
@@ -1664,7 +1841,7 @@ const Fees: React.FC = () => {
                                             }}
                                         >
                                             <option value="All">All Classes</option>
-                                            {[...new Set(reportData.classWise.map(c => c.className))].sort().map(cls => (
+                                            {[...new Set(reportData.classWise.map(c => c.className))].sort(sortClassNames).map(cls => (
                                                 <option key={cls} value={cls}>{cls}</option>
                                             ))}
                                         </select>
@@ -1689,7 +1866,7 @@ const Fees: React.FC = () => {
                                             }}
                                         >
                                             <option value="All">All Classes</option>
-                                            {[...new Set(dueFees.map(f => f.className))].sort().map(cls => (
+                                            {[...new Set(dueFees.map(f => f.className))].sort(sortClassNames).map(cls => (
                                                 <option key={cls} value={cls}>{cls}</option>
                                             ))}
                                         </select>

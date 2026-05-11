@@ -1280,7 +1280,7 @@ const Fees: React.FC = () => {
                             <button className="btn-primary" style={{ padding: '0.5rem 1rem', width: 'auto', backgroundColor: '#10b981' }}>Print List</button>
                         </div>
 
-                        {/* Temporary Upload Section */}
+                        {/* Temporary Upload Section - Disabled
                         <div style={{ background: '#f8fafc', padding: '1.5rem', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '1.5rem' }}>
                             <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#1f2937', marginBottom: '0.5rem' }}>Import Previous Session Dues (Temporary)</h3>
                             <p style={{ fontSize: '0.875rem', color: '#6b7280', marginBottom: '1rem' }}>CSV format: Student Name, Father Name, Pending Amount</p>
@@ -1312,6 +1312,7 @@ const Fees: React.FC = () => {
                                 </div>
                             )}
                         </div>
+                        */}
 
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', background: '#f1f5f9', padding: '1rem', borderRadius: '12px' }}>
                             <div className="form-group" style={{ marginBottom: 0 }}>

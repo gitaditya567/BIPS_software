@@ -3,6 +3,100 @@ import prisma from '../lib/prisma';
 
 const router = express.Router();
 
+// Get Transport Due List - Top Priority
+router.get('/transport-due-list', async (req, res) => {
+    try {
+        const allPayments = await prisma.feePayment.findMany({
+            where: { 
+                status: 'APPROVED', 
+                OR: [
+                    { feeHead: { contains: 'Transport', mode: 'insensitive' } },
+                    { feeHead: { contains: 'Bus', mode: 'insensitive' } }
+                ]
+            }
+        });
+
+        const transportStudentIdsFromPayments = [...new Set(allPayments.map(p => p.studentId))];
+
+        const students = await prisma.studentProfile.findMany({
+            where: { 
+                OR: [
+                    { transportStopId: { not: null } },
+                    { id: { in: transportStudentIdsFromPayments } }
+                ]
+            },
+            include: { user: true, class: true, transportStop: true }
+        });
+
+        const elapsedMonths = 12;
+
+        const dueList = students.map(student => {
+            const studentPayments = allPayments.filter(p => p.studentId === student.id);
+            
+            let monthlyFare = student.transportStop?.busFare || 0;
+            let stopName = student.transportStop?.name || 'N/A';
+            let totalPaid = 0;
+
+            const paidMonths: string[] = [];
+
+            studentPayments.forEach(p => {
+                let paymentTransportAmount = 0;
+                let isYearly = false;
+                
+                if (p.feeHead) {
+                    const parts = p.feeHead.split('==>');
+                    if (parts.length > 1) {
+                        const mths = parts[0].split(',').map((m: string) => m.trim());
+                        paidMonths.push(...mths);
+                        const heads = parts[1].split('||');
+                        const transportHead = heads.find((h: string) => h.toLowerCase().includes('transport') || h.toLowerCase().includes('bus'));
+                        if (transportHead) {
+                            if (transportHead.toLowerCase().includes('yearly')) isYearly = true;
+                            const match = transportHead.match(/(?:Transport|Bus)\s*(?:\((.*?)\))?(?:\s*\(Yearly\))?:\s*(\d+)/i);
+                            if (match) {
+                                paymentTransportAmount = Number(match[2]);
+                                if (!student.transportStopId) {
+                                    stopName = match[1] ? match[1].trim() : 'Custom Transport';
+                                    monthlyFare = isYearly ? paymentTransportAmount / 12 : (paymentTransportAmount / mths.length);
+                                }
+                            }
+                        }
+                    } else if (p.feeHead.toLowerCase().includes('transport') || p.feeHead.toLowerCase().includes('bus')) {
+                         paymentTransportAmount = p.amountPaid || 0;
+                         if (p.month) paidMonths.push(...p.month.split(',').map((m: string) => m.trim()));
+                    }
+                }
+                totalPaid += paymentTransportAmount;
+            });
+
+            const uniquePaidMonths = [...new Set(paidMonths)];
+            const expectedTotal = monthlyFare * elapsedMonths;
+            const pending = expectedTotal - totalPaid;
+
+            if (monthlyFare === 0 && totalPaid === 0) return null;
+
+            return {
+                id: student.id,
+                studentName: student.user?.name || 'Unknown',
+                fatherName: student.fatherName || 'N/A',
+                className: student.class?.name || 'N/A',
+                stopName,
+                monthlyFare: Math.round(monthlyFare),
+                isRT: student.isRT || false,
+                expectedTotal: Math.round(expectedTotal),
+                totalPaid: Math.round(totalPaid),
+                pending: Math.max(0, Math.round(pending)),
+                paidMonths: uniquePaidMonths
+            };
+        }).filter(Boolean);
+
+        res.json(dueList);
+    } catch (error) {
+        console.error('Transport Due List Error:', error);
+        res.status(500).json({ error: 'Failed to fetch transport dues' });
+    }
+});
+
 // Get Next Receipt Number
 router.get('/next-receipt', async (req, res) => {
     try {
@@ -629,115 +723,6 @@ router.delete('/:id', async (req, res) => {
     }
 });
 
-// Get Transport Due List
-router.get('/transport-due-list', async (req, res) => {
-    try {
-        const allPayments = await prisma.feePayment.findMany({
-            where: { 
-                status: 'APPROVED', 
-                OR: [
-                    { feeHead: { contains: 'Transport', mode: 'insensitive' } },
-                    { feeHead: { contains: 'Bus', mode: 'insensitive' } }
-                ]
-            }
-        });
-
-        const transportStudentIdsFromPayments = [...new Set(allPayments.map(p => p.studentId))];
-
-        const students = await prisma.studentProfile.findMany({
-            where: { 
-                OR: [
-                    { transportStopId: { not: null } },
-                    { id: { in: transportStudentIdsFromPayments } }
-                ]
-            },
-            include: { user: true, class: true, transportStop: true }
-        });
-
-        const sessionStartMonth = 3; // April
-        const currentDate = new Date();
-        const currentMonth = currentDate.getMonth();
-        
-        const elapsedMonths = 12;
-
-        const dueList = students.map(student => {
-            const studentPayments = allPayments.filter(p => p.studentId === student.id);
-            
-            let monthlyFare = student.transportStop?.busFare || 0;
-            let stopName = student.transportStop?.name || 'N/A';
-            let totalPaid = 0;
-
-            const paidMonths: string[] = [];
-
-            studentPayments.forEach(p => {
-                let paymentTransportAmount = 0;
-                let isYearly = false;
-                
-                if (p.feeHead) {
-                    const parts = p.feeHead.split('==>');
-                    
-                    // Extract months from the left side of ==>
-                    if (parts.length > 1) {
-                        const mths = parts[0].split(',').map((m: string) => m.trim());
-                        paidMonths.push(...mths);
-                        
-                        const heads = parts[1].split('||');
-                        const transportHead = heads.find((h: string) => h.toLowerCase().includes('transport') || h.toLowerCase().includes('bus'));
-                        if (transportHead) {
-                            if (transportHead.toLowerCase().includes('yearly')) {
-                                isYearly = true;
-                            }
-                            const match = transportHead.match(/(?:Transport|Bus)\s*(?:\((.*?)\))?(?:\s*\(Yearly\))?:\s*(\d+)/i);
-                            if (match) {
-                                paymentTransportAmount = Number(match[2]);
-                                if (!student.transportStopId) {
-                                    stopName = match[1] ? match[1].trim() : 'Custom Transport';
-                                    monthlyFare = isYearly ? paymentTransportAmount / 12 : (paymentTransportAmount / mths.length);
-                                }
-                            } else {
-                                const fallbackMatch = transportHead.split(':');
-                                if (fallbackMatch.length > 1) {
-                                    paymentTransportAmount = Number(fallbackMatch[1].trim());
-                                    if (!student.transportStopId) monthlyFare = paymentTransportAmount / mths.length;
-                                }
-                            }
-                        }
-                    } else if (p.feeHead.toLowerCase().includes('transport') || p.feeHead.toLowerCase().includes('bus')) {
-                         paymentTransportAmount = p.amountPaid || 0;
-                         if (p.month) paidMonths.push(...p.month.split(',').map((m: string) => m.trim()));
-                    }
-                }
-                
-                totalPaid += paymentTransportAmount;
-            });
-
-            const uniquePaidMonths = [...new Set(paidMonths)];
-            const expectedTotal = monthlyFare * elapsedMonths;
-            const pending = expectedTotal - totalPaid;
-
-            if (monthlyFare === 0 && totalPaid === 0) return null;
-
-            return {
-                id: student.id,
-                studentName: student.user?.name || 'Unknown',
-                fatherName: student.fatherName || 'N/A',
-                className: student.class?.name || 'N/A',
-                stopName,
-                monthlyFare: Math.round(monthlyFare),
-                isRT: student.isRT || false,
-                expectedTotal: Math.round(expectedTotal),
-                totalPaid: Math.round(totalPaid),
-                pending: Math.max(0, Math.round(pending)),
-                paidMonths: uniquePaidMonths
-            };
-        }).filter(Boolean);
-
-        res.json(dueList);
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: 'Failed to fetch transport dues' });
-    }
-});
 
 export default router;
 

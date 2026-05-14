@@ -74,6 +74,7 @@ app.get('/api/debug-routes', (req, res) => {
 // Routes
 app.use('/api/admin', adminRoutes);
 app.use('/api/fees', feeRoutes);
+app.use('/erp-api/fees', feeRoutes);
 app.use('/api/general', generalRoutes);
 app.use('/api/teacher', teacherRoutes);
 

@@ -1827,14 +1827,14 @@ const Fees: React.FC = () => {
                             <thead>
                                 <tr style={{ backgroundColor: '#f1f5f9', textAlign: 'left', position: 'sticky', top: 0, zIndex: 2 }}>
                                     <th style={{ padding: '1rem', color: '#475569', fontSize: '0.8rem', fontWeight: '700' }}>Student Name ({(
-                                        (dueFees as any[])
-                                            .filter((f: any) => dueClassFilter === 'All' || f.className === dueClassFilter)
-                                            .filter((f: any) => {
+                                        dueFees
+                                            .filter(f => dueClassFilter === 'All' || f.className?.trim() === dueClassFilter.trim())
+                                            .filter(f => {
                                                 if (dueRtFilter === 'All') return true;
-                                                if (dueRtFilter === 'RT') return f.isRT;
+                                                if (dueRtFilter === 'RT') return !!f.isRT;
                                                 return !f.isRT;
                                             })
-                                            .filter((f: any) => {
+                                            .filter(f => {
                                                 if (dueMonthFilter === 'All') return true;
                                                 return (f.pendingMonths || []).includes(dueMonthFilter);
                                             })
@@ -1847,14 +1847,14 @@ const Fees: React.FC = () => {
                             </thead>
                             <tbody>
                                 {(() => {
-                                    const filtered = (dueFees as any[])
-                                        .filter((f: any) => dueClassFilter === 'All' || f.className === dueClassFilter)
-                                        .filter((f: any) => {
+                                    const filtered = dueFees
+                                        .filter(f => dueClassFilter === 'All' || f.className?.trim() === dueClassFilter.trim())
+                                        .filter(f => {
                                             if (dueRtFilter === 'All') return true;
-                                            if (dueRtFilter === 'RT') return f.isRT;
+                                            if (dueRtFilter === 'RT') return !!f.isRT;
                                             return !f.isRT;
                                         })
-                                        .filter((f: any) => {
+                                        .filter(f => {
                                             if (dueMonthFilter === 'All') return true;
                                             return (f.pendingMonths || []).includes(dueMonthFilter);
                                         });

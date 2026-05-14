@@ -432,7 +432,6 @@ router.post('/students', async (req, res) => {
                         motherName: req.body.motherName,
                         motherMobile: req.body.motherMobile,
                         motherOccupation: req.body.motherOccupation,
-                        motherOccupation: req.body.motherOccupation,
                         motherQualification: req.body.motherQualification,
                         transportStopId: transportStopId || undefined,
                     }

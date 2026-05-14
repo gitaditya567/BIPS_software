@@ -560,6 +560,13 @@ const Fees: React.FC = () => {
     const fetchDueFees = async () => {
         try {
             const res = await axios.get('/erp-api/fees/due-list');
+            console.log("Due Fees Data Received:", res.data.length, "records");
+            if (res.data.length > 0) {
+                console.log("First Record Sample:", {
+                    name: res.data[0].studentName,
+                    pendingMonths: res.data[0].pendingMonths
+                });
+            }
             setDueFees(res.data);
         } catch (err) {
             console.error('Failed to fetch due fees:', err);
@@ -912,7 +919,7 @@ const Fees: React.FC = () => {
     return (
         <div style={{ padding: '1rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-                <h1 style={{ fontSize: '1.875rem', fontWeight: 800, color: '#111827' }}>Accounts Module</h1>
+                <h1 style={{ fontSize: '1.875rem', fontWeight: 800, color: '#111827' }}>Accounts Module <span style={{fontSize: '0.7rem', color: '#94a3b8', fontWeight: 'normal'}}>v1.2-deploy-check</span></h1>
                 <div style={{ display: 'flex', gap: '0.4rem', background: '#f1f5f9', padding: '0.35rem', borderRadius: '10px', flexWrap: 'wrap', overflowX: 'auto' }}>
                     {[
                         { id: 'collection', label: 'Fee Collection' },

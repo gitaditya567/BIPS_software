@@ -561,13 +561,25 @@ const Fees: React.FC = () => {
         try {
             const res = await axios.get('/erp-api/fees/due-list');
             console.log("Due Fees Data Received:", res.data.length, "records");
-            if (res.data.length > 0) {
-                console.log("First Record Sample:", {
-                    name: res.data[0].studentName,
-                    pendingMonths: res.data[0].pendingMonths
-                });
-            }
-            setDueFees(res.data);
+            const enrichedData = res.data.map((f: any) => {
+                if (!f.pendingMonths) {
+                    const allMonths = ['April','May','June','July','August','September','October','November','December','January','February','March'];
+                    const pMonths: string[] = [];
+                    const monthlyFee = f.monthlyFeeAmount || 0;
+                    const oneTime = f.expectedOneTime || 0;
+                    const totalPaid = f.totalPaid || 0;
+                    // Assume 12 months for calculation fallback
+                    for (let i = 0; i < 12; i++) {
+                        const cumulativeExpected = oneTime + (monthlyFee * (i + 1));
+                        if (totalPaid < cumulativeExpected) {
+                            pMonths.push(allMonths[i]);
+                        }
+                    }
+                    return { ...f, pendingMonths: pMonths };
+                }
+                return f;
+            });
+            setDueFees(enrichedData);
         } catch (err) {
             console.error('Failed to fetch due fees:', err);
         }

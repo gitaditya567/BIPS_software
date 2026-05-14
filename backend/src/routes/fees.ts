@@ -474,11 +474,11 @@ router.get('/due-list', async (req, res) => {
 
             // Pending Months List
             const allMonths = ['April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December', 'January', 'February', 'March'];
-            const pendingMonths: string[] = [];
+            const pMonths: string[] = [];
             for (let i = 0; i < elapsedMonths; i++) {
                 const cumulativeExpected = expectedOneTime + (monthlyFeeAmountValue * (i + 1));
                 if (totalPaid < cumulativeExpected) {
-                    pendingMonths.push(allMonths[i]);
+                    pMonths.push(allMonths[i]);
                 }
             }
 
@@ -511,7 +511,7 @@ router.get('/due-list', async (req, res) => {
                 currentMonthExpected,
                 currentMonthPaid,
                 currentMonthPending,
-                pendingMonths,
+                pendingMonths: pMonths || [],
                 monthlyPending: (expectedMonthly + expectedOneTime > totalPaid) ? (totalExpected - totalPaid) : 0,
                 oneTimePending: (totalPaid < expectedOneTime) ? (expectedOneTime - totalPaid) : 0,
                 expectedOneTime,

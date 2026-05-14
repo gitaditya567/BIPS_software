@@ -16,6 +16,11 @@ const Teachers: React.FC = () => {
     const [showPassword, setShowPassword] = useState(false);
     const [classList, setClassList] = useState<any[]>([]);
 
+    // Filtering & Pagination State
+    const [searchTerm, setSearchTerm] = useState('');
+    const [currentPage, setCurrentPage] = useState(1);
+    const [recordsPerPage] = useState(10);
+
     // Basic Details
     const [teacherName, setTeacherName] = useState('');
     const [gender, setGender] = useState('');
@@ -162,6 +167,23 @@ const Teachers: React.FC = () => {
         setActiveTab('basic');
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
+
+    // Filtering logic
+    const filteredTeachers = teachers.filter(t => 
+        t.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        t.teacherId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        t.mobile?.includes(searchTerm) ||
+        t.subject?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        t.email?.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
+    // Pagination logic
+    const indexOfLastRecord = currentPage * recordsPerPage;
+    const indexOfFirstRecord = indexOfLastRecord - recordsPerPage;
+    const currentRecords = filteredTeachers.slice(indexOfFirstRecord, indexOfLastRecord);
+    const totalPages = Math.ceil(filteredTeachers.length / recordsPerPage);
+
+    const paginate = (pageNumber: number) => setCurrentPage(pageNumber);
 
     return (
         <div style={{ padding: '0.5rem' }}>
@@ -446,8 +468,28 @@ const Teachers: React.FC = () => {
 
             {/* List */}
             <div className="data-table-container">
-                <div className="table-header">
-                    <h2 style={{ fontSize: '1.25rem', fontWeight: 700 }}>Teacher Records</h2>
+                <div className="table-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                        <h2 style={{ fontSize: '1.25rem', fontWeight: 700 }}>Teacher Records</h2>
+                        <span className="badge badge-success" style={{ backgroundColor: '#4F46E5', color: 'white', padding: '0.4rem 1rem' }}>
+                            Total: {teachers.length}
+                        </span>
+                    </div>
+                    
+                    <div style={{ position: 'relative', width: '300px' }}>
+                        <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }}>🔍</span>
+                        <input 
+                            type="text" 
+                            placeholder="Search by name, ID, or phone..." 
+                            className="form-control" 
+                            style={{ paddingLeft: '2.5rem', marginBottom: 0 }}
+                            value={searchTerm}
+                            onChange={(e) => {
+                                setSearchTerm(e.target.value);
+                                setCurrentPage(1); // Reset to first page on search
+                            }}
+                        />
+                    </div>
                 </div>
                 <div style={{ overflowX: 'auto' }}>
                     <table>
@@ -464,9 +506,9 @@ const Teachers: React.FC = () => {
                             </tr>
                         </thead>
                         <tbody>
-                            {teachers.length === 0 ? (
+                            {currentRecords.length === 0 ? (
                                 <tr><td colSpan={8} style={{ textAlign: 'center', padding: '2rem' }}>No teachers found</td></tr>
-                            ) : teachers.map((t) => (
+                            ) : currentRecords.map((t) => (
                                 <tr key={t.id}>
                                     <td style={{ fontWeight: 'bold' }}>{t.teacherId}</td>
                                     <td>{t.name}</td>
@@ -486,6 +528,37 @@ const Teachers: React.FC = () => {
                         </tbody>
                     </table>
                 </div>
+
+                {/* Pagination */}
+                {totalPages > 1 && (
+                    <div className="pagination">
+                        <button 
+                            className="page-btn" 
+                            onClick={() => paginate(currentPage - 1)} 
+                            disabled={currentPage === 1}
+                        >
+                            Previous
+                        </button>
+                        
+                        {[...Array(totalPages)].map((_, i) => (
+                            <button 
+                                key={i + 1} 
+                                className={`page-btn ${currentPage === i + 1 ? 'active' : ''}`}
+                                onClick={() => paginate(i + 1)}
+                            >
+                                {i + 1}
+                            </button>
+                        ))}
+
+                        <button 
+                            className="page-btn" 
+                            onClick={() => paginate(currentPage + 1)} 
+                            disabled={currentPage === totalPages}
+                        >
+                            Next
+                        </button>
+                    </div>
+                )}
             </div>
         </div>
     );

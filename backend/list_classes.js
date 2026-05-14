@@ -1,11 +1,7 @@
-
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
-
-async function listClasses() {
-    const classes = await prisma.class.findMany({ select: { id: true, name: true } });
-    console.log(JSON.stringify(classes, null, 2));
-    await prisma.$disconnect();
+async function main() {
+    const cs = await prisma.class.findMany();
+    cs.forEach(c => console.log(c.name));
 }
-
-listClasses();
+main().catch(console.error).finally(() => prisma.$disconnect());

@@ -28,7 +28,7 @@ router.post('/collect', async (req, res) => {
     try {
         const {
             studentId, admissionNo, amountPaid, totalFee, discount, discountReason,
-            feeHead, paymentMode, month, year, submittedBy
+            feeHead, paymentMode, month, year, submittedBy, remark
         } = req.body;
 
         const isPending = Number(discount) > 0;
@@ -56,6 +56,7 @@ router.post('/collect', async (req, res) => {
                 month,
                 year,
                 submittedBy,
+                remark,
                 status: isPending ? 'PENDING' : 'APPROVED',
                 receiptNo: generatedReceiptNo,
                 paymentDate: new Date()
@@ -325,15 +326,17 @@ router.get('/reports', async (req, res) => {
             date: new Date(p.paymentDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
             paidAmount: p.amountPaid, 
             studentName: p.student?.user?.name || 'Unknown',
+            fatherName: p.student?.fatherName || 'N/A',
             className: p.student?.class?.name || 'Unknown',
             admissionNo: p.student?.admissionNo || 'N/A'
         }));
 
-        // 2. Monthly Report
+        // 2. Monthly Report (Based on actual payment date)
         const monthlyMap: any = {};
         allPayments.forEach(p => {
-            const m = p.month || 'Other';
-            const y = p.year || 'N/A';
+            const pDate = new Date(p.paymentDate);
+            const m = pDate.toLocaleString('en-GB', { month: 'long' });
+            const y = pDate.getFullYear().toString();
             const key = `${m} ${y}`;
             if(!monthlyMap[key]) monthlyMap[key] = { month: m, year: y, total: 0 };
             monthlyMap[key].total += p.amountPaid || 0;
@@ -402,72 +405,152 @@ router.get('/student/:id/balance', async (req, res) => {
 // Get global list of pending fees
 router.get('/due-list', async (req, res) => {
     try {
-        const payments = await prisma.feePayment.findMany({
-            where: { status: 'APPROVED' },
-            include: { student: { include: { user: true, class: true } } }
-        });
-
-        const studentMap: any = {};
-
-        payments.forEach(p => {
-            if (!p.student || !p.student.user) return;
-            const sid = p.studentId;
-            if (!studentMap[sid]) {
-                studentMap[sid] = {
-                    id: sid,
-                    studentName: p.student.user.name,
-                    className: p.student.class?.name || 'Unknown',
-                    admissionNo: p.student.admissionNo,
-                    previousSessionDue: p.student.previousSessionDue || 0,
-                    totalBilled: 0,
-                    totalPaid: 0,
-                    totalDiscount: 0
-                };
-            }
-            studentMap[sid].totalBilled += p.totalFee || 0;
-            studentMap[sid].totalPaid += p.amountPaid || 0;
-            studentMap[sid].totalDiscount += p.discount || 0;
-        });
-
-        // Merge students with previous dues who don't have current payments
-        const studentsWithPrevDue = await prisma.studentProfile.findMany({
-            where: { previousSessionDue: { gt: 0 } },
+        // 1. Get all base data
+        const students = await prisma.studentProfile.findMany({
             include: { user: true, class: true }
         });
-
-        studentsWithPrevDue.forEach(s => {
-            if (!s.user) return;
-            if (!studentMap[s.id]) {
-                studentMap[s.id] = {
-                    id: s.id,
-                    studentName: s.user.name,
-                    className: s.class?.name || 'Unknown',
-                    admissionNo: s.admissionNo,
-                    previousSessionDue: s.previousSessionDue || 0,
-                    totalBilled: 0,
-                    totalPaid: 0,
-                    totalDiscount: 0
-                };
-            }
+        const classes = await prisma.class.findMany();
+        const feeHeads = await prisma.feeHead.findMany();
+        const allPayments = await prisma.feePayment.findMany({
+            where: { status: 'APPROVED' }
         });
 
-        const dueList = Object.values(studentMap)
-            .map((s: any) => ({
-                id: s.id,
-                studentName: s.studentName,
-                className: s.className,
-                admissionNo: s.admissionNo,
-                previousSessionDue: s.previousSessionDue,
-                total: s.totalBilled,
-                paid: s.totalPaid + s.totalDiscount,
-                pending: (s.totalBilled - s.totalPaid - s.totalDiscount) + s.previousSessionDue
-            }))
-            .filter((s: any) => s.pending > 0);
+        // 2. Determine elapsed months (Session starts in April)
+        const sessionStartMonth = 3; // April (0-indexed is 3)
+        const currentDate = new Date();
+        const currentYear = currentDate.getFullYear();
+        const currentMonth = currentDate.getMonth();
+        
+        let elapsedMonths = 0;
+        if (currentMonth >= sessionStartMonth) {
+            elapsedMonths = (currentMonth - sessionStartMonth) + 1;
+        } else {
+            // After December (Jan-Mar)
+            elapsedMonths = (12 - sessionStartMonth) + (currentMonth + 1);
+        }
+
+        // 3. Process each student
+        const dueList = students.map(student => {
+            if (!student.user || !student.class) return null;
+
+            const structure: any = student.class.feeStructure || {};
+            
+            // Calculate Expected Fees for this student
+            let expectedMonthly = 0;
+            let expectedOneTime = 0;
+
+            feeHeads.forEach(head => {
+                const amount = Number(structure[head.name] || 0);
+                if (amount > 0) {
+                    if (head.type === 'Monthly') {
+                        expectedMonthly += (amount * elapsedMonths);
+                    } else {
+                        expectedOneTime += amount;
+                    }
+                }
+            });
+
+            // Calculate Paid Fees
+            const studentPayments = allPayments.filter(p => p.studentId === student.id);
+            const totalPaid = studentPayments.reduce((sum, p) => sum + (p.amountPaid || 0) + (p.discount || 0), 0);
+            
+            // Actual months that have an APPROVED payment
+            const paidMonths: string[] = [...new Set(
+                studentPayments.map(p => p.month).filter((m): m is string => !!m)
+            )];
+
+            // Detailed Pending
+            const totalExpected = expectedMonthly + expectedOneTime;
+            const netPending = (totalExpected - totalPaid) + (student.previousSessionDue || 0);
+
+            // Calculate Monthly Fee Amount
+            let monthlyFeeAmountValue = 0;
+            feeHeads.forEach(head => {
+                if (head.type === 'Monthly') {
+                    monthlyFeeAmountValue += Number(structure[head.name] || 0);
+                }
+            });
+
+            // Current Month Breakdown
+            const currentMonthExpected = monthlyFeeAmountValue;
+            const previousMonthsExpected = (monthlyFeeAmountValue * (elapsedMonths - 1)) + expectedOneTime;
+            const paidTowardsCurrentMonth = Math.max(0, totalPaid - previousMonthsExpected);
+            const currentMonthPaid = Math.min(currentMonthExpected, paidTowardsCurrentMonth);
+            const currentMonthPending = currentMonthExpected - currentMonthPaid;
+
+            // Pending Months List
+            const allMonths = ['April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December', 'January', 'February', 'March'];
+            const pendingMonths: string[] = [];
+            for (let i = 0; i < elapsedMonths; i++) {
+                const cumulativeExpected = expectedOneTime + (monthlyFeeAmountValue * (i + 1));
+                if (totalPaid < cumulativeExpected) {
+                    pendingMonths.push(allMonths[i]);
+                }
+            }
+
+            // Determine if One-time is pending
+            const isOneTimePending = totalPaid < expectedOneTime;
+            const isMonthlyPending = totalPaid < (expectedOneTime + expectedMonthly);
+            
+            // DEBUG LOGGING
+            if (netPending > 0) {
+                console.log(`[DUE-LIST DEBUG] Student: ${student.user.name}, Expected: ${totalExpected}, Paid: ${totalPaid}, Pending: ${netPending}`);
+            }
+
+            // Month-wise Paid Breakdown
+            const monthWisePaid: { [key: string]: number } = {};
+            studentPayments.forEach(p => {
+                if (p.month && allMonths.includes(p.month)) {
+                    monthWisePaid[p.month] = (monthWisePaid[p.month] || 0) + (p.amountPaid || 0) + (p.discount || 0);
+                }
+            });
+
+            if (netPending <= 0) return null;
+
+            return {
+                id: student.id,
+                studentName: student.user.name,
+                fatherName: student.fatherName || 'N/A',
+                className: student.class?.name || 'Unassigned',
+                admissionNo: student.admissionNo,
+                isRT: student.isRT || false,
+                totalExpected,
+                totalPaid,
+                pending: netPending,
+                currentMonthExpected,
+                currentMonthPaid,
+                currentMonthPending,
+                pendingMonths,
+                monthlyPending: (expectedMonthly + expectedOneTime > totalPaid) ? (totalExpected - totalPaid) : 0,
+                oneTimePending: (totalPaid < expectedOneTime) ? (expectedOneTime - totalPaid) : 0,
+                expectedOneTime,
+                monthWisePaid,
+                previousSessionDue: student.previousSessionDue || 0,
+                monthlyFeeAmount: monthlyFeeAmountValue,
+                paidMonths,
+            };
+        }).filter(Boolean);
 
         res.json(dueList);
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: 'Failed to fetch due list' });
+        console.error('Due List Error:', error);
+        res.status(500).json({ error: 'Failed to fetch generative due list' });
+    }
+});
+
+// Update Fee Head
+router.put('/heads/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { name, type } = req.body;
+        const updated = await prisma.feeHead.update({
+            where: { id },
+            data: { name, type }
+        });
+        res.json(updated);
+    } catch (error: any) {
+        if (error.code === 'P2002') return res.status(400).json({ error: 'Fee Head name already exists' });
+        res.status(500).json({ error: 'Failed to update fee head' });
     }
 });
 
@@ -552,6 +635,121 @@ router.delete('/:id', async (req, res) => {
     } catch (error) {
         console.error('Delete Error:', error);
         res.status(500).json({ error: 'Failed to delete fee record. It might not exist.' });
+    }
+});
+
+// Get Transport Due List
+router.get('/transport-due-list', async (req, res) => {
+    try {
+        const allPayments = await prisma.feePayment.findMany({
+            where: { 
+                status: 'APPROVED', 
+                OR: [
+                    { feeHead: { contains: 'Transport', mode: 'insensitive' } },
+                    { feeHead: { contains: 'Bus', mode: 'insensitive' } }
+                ]
+            }
+        });
+
+        const transportStudentIdsFromPayments = [...new Set(allPayments.map(p => p.studentId))];
+
+        const students = await prisma.studentProfile.findMany({
+            where: { 
+                OR: [
+                    { transportStopId: { not: null } },
+                    { id: { in: transportStudentIdsFromPayments } }
+                ]
+            },
+            include: { user: true, class: true, transportStop: true }
+        });
+
+        const sessionStartMonth = 3; // April
+        const currentDate = new Date();
+        const currentMonth = currentDate.getMonth();
+        
+        let elapsedMonths = 0;
+        if (currentMonth >= sessionStartMonth) {
+            elapsedMonths = (currentMonth - sessionStartMonth) + 1;
+        } else {
+            elapsedMonths = (12 - sessionStartMonth) + (currentMonth + 1);
+        }
+
+        const dueList = students.map(student => {
+            const studentPayments = allPayments.filter(p => p.studentId === student.id);
+            
+            let monthlyFare = student.transportStop?.busFare || 0;
+            let stopName = student.transportStop?.name || 'N/A';
+            let totalPaid = 0;
+
+            const paidMonths: string[] = [];
+
+            studentPayments.forEach(p => {
+                let paymentTransportAmount = 0;
+                let isYearly = false;
+                
+                if (p.feeHead) {
+                    const parts = p.feeHead.split('==>');
+                    
+                    // Extract months from the left side of ==>
+                    if (parts.length > 1) {
+                        const mths = parts[0].split(',').map((m: string) => m.trim());
+                        paidMonths.push(...mths);
+                        
+                        const heads = parts[1].split('||');
+                        const transportHead = heads.find((h: string) => h.toLowerCase().includes('transport') || h.toLowerCase().includes('bus'));
+                        if (transportHead) {
+                            if (transportHead.toLowerCase().includes('yearly')) {
+                                isYearly = true;
+                            }
+                            const match = transportHead.match(/(?:Transport|Bus)\s*(?:\((.*?)\))?(?:\s*\(Yearly\))?:\s*(\d+)/i);
+                            if (match) {
+                                paymentTransportAmount = Number(match[2]);
+                                if (!student.transportStopId) {
+                                    stopName = match[1] ? match[1].trim() : 'Custom Transport';
+                                    monthlyFare = isYearly ? paymentTransportAmount / 12 : (paymentTransportAmount / mths.length);
+                                }
+                            } else {
+                                const fallbackMatch = transportHead.split(':');
+                                if (fallbackMatch.length > 1) {
+                                    paymentTransportAmount = Number(fallbackMatch[1].trim());
+                                    if (!student.transportStopId) monthlyFare = paymentTransportAmount / mths.length;
+                                }
+                            }
+                        }
+                    } else if (p.feeHead.toLowerCase().includes('transport') || p.feeHead.toLowerCase().includes('bus')) {
+                         paymentTransportAmount = p.amountPaid || 0;
+                         if (p.month) paidMonths.push(...p.month.split(',').map((m: string) => m.trim()));
+                    }
+                }
+                
+                totalPaid += paymentTransportAmount;
+            });
+
+            const uniquePaidMonths = [...new Set(paidMonths)];
+            const expectedTotal = monthlyFare * elapsedMonths;
+            const pending = expectedTotal - totalPaid;
+
+            if (monthlyFare === 0 && totalPaid === 0) return null;
+
+            return {
+                id: student.id,
+                studentName: student.user?.name || 'Unknown',
+                fatherName: student.fatherName || 'N/A',
+                className: student.class?.name || 'N/A',
+                stopName,
+                monthlyFare: Math.round(monthlyFare),
+                isRT: student.isRT || false,
+                expectedTotal: Math.round(expectedTotal),
+                totalPaid: Math.round(totalPaid),
+                pending: Math.max(0, Math.round(pending)),
+                paidMonths: uniquePaidMonths
+            };
+        }).filter(Boolean);
+
+        res.json(dueList);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Failed to fetch transport dues' });
     }
 });
 

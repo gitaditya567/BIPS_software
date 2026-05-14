@@ -359,7 +359,7 @@ router.post('/students', async (req, res) => {
         const {
             email, password, firstName, lastName, phone, admissionNo, classId, sectionId,
             gender, dob, bloodGroup, isRT, category, religion, nationality, aadhaar, address, photo,
-            prevSchoolName, prevClass, prevSchoolAddress, prevMarks
+            prevSchoolName, prevClass, prevSchoolAddress, prevMarks, transportStopId
         } = req.body;
 
         const name = `${firstName} ${lastName}`.trim();
@@ -432,7 +432,9 @@ router.post('/students', async (req, res) => {
                         motherName: req.body.motherName,
                         motherMobile: req.body.motherMobile,
                         motherOccupation: req.body.motherOccupation,
+                        motherOccupation: req.body.motherOccupation,
                         motherQualification: req.body.motherQualification,
+                        transportStopId: transportStopId || undefined,
                     }
                 }
             },
@@ -476,7 +478,7 @@ router.put('/students/:id', async (req, res) => {
         const {
             email, firstName, lastName, phone, admissionNo, classId, sectionId,
             gender, dob, bloodGroup, isRT, category, religion, nationality, aadhaar, address, photo,
-            prevSchoolName, prevClass, prevSchoolAddress, prevMarks, password
+            prevSchoolName, prevClass, prevSchoolAddress, prevMarks, password, transportStopId
         } = req.body;
 
         const profile = await prisma.studentProfile.findUnique({
@@ -548,6 +550,7 @@ router.put('/students/:id', async (req, res) => {
                 motherMobile: req.body.motherMobile,
                 motherOccupation: req.body.motherOccupation,
                 motherQualification: req.body.motherQualification,
+                transportStopId: transportStopId || null,
             }
         });
 

@@ -16,6 +16,7 @@ const Students: React.FC = () => {
     const [students, setStudents] = useState<any[]>([]);
     const [classes, setClasses] = useState<any[]>([]);
     const [sections, setSections] = useState<any[]>([]);
+    const [transportStops, setTransportStops] = useState<any[]>([]);
     const { addNotification } = useNotification();
 
     const [loading, setLoading] = useState(false);
@@ -27,6 +28,7 @@ const Students: React.FC = () => {
     const [filterSectionId, setFilterSectionId] = useState('');
     const [filterRT, setFilterRT] = useState('');
     const [filterSections, setFilterSections] = useState<any[]>([]);
+    const [filterStatus, setFilterStatus] = useState('');
     const [searchQuery, setSearchQuery] = useState('');
 
     useEffect(() => {
@@ -49,6 +51,10 @@ const Students: React.FC = () => {
         setCurrentPage(1);
     }, [searchQuery]);
 
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [filterStatus]);
+
     // Form fields
     const [firstName, setFirstName] = useState('');
     const [lastName, setLastName] = useState('');
@@ -58,6 +64,7 @@ const Students: React.FC = () => {
     const [admissionNo, setAdmissionNo] = useState('');
     const [classId, setClassId] = useState('');
     const [sectionId, setSectionId] = useState('');
+    const [transportStopId, setTransportStopId] = useState('');
     const [status, setStatus] = useState('Active');
 
     const [gender, setGender] = useState('');
@@ -104,7 +111,17 @@ const Students: React.FC = () => {
     useEffect(() => {
         fetchStudents();
         fetchClasses();
+        fetchTransportStops();
     }, []);
+
+    const fetchTransportStops = async () => {
+        try {
+            const res = await axios.get('/erp-api/admin/transport/stops');
+            setTransportStops(res.data);
+        } catch (err) {
+            console.error(err);
+        }
+    };
 
 
     useEffect(() => {
@@ -140,7 +157,7 @@ const Students: React.FC = () => {
     const resetForm = () => {
         setEditingId(null);
         setFirstName(''); setLastName(''); setEmail(''); setPhone(''); setPassword(generateRandomPassword()); setAdmissionNo('');
-        setClassId(''); setSectionId(''); setStatus('Active');
+        setClassId(''); setSectionId(''); setTransportStopId(''); setStatus('Active');
         setGender(''); setDob(''); setAddress(''); setBloodGroup(''); setIsRT(false); setCategory('');
         setReligion(''); setNationality(''); setAadhaar(''); setPhoto('');
         setPrevSchoolName(''); setPrevClass(''); setPrevSchoolAddress(''); setPrevMarks(''); setLeavingReason(''); setSiblingInfo('');
@@ -165,6 +182,7 @@ const Students: React.FC = () => {
         
         setClassId(student.classId || '');
         setTimeout(() => setSectionId(student.sectionId || ''), 100);
+        setTransportStopId(student.transportStopId || '');
         setStatus(student.status || 'Active');
         
         setGender(student.gender || '');
@@ -223,7 +241,10 @@ const Students: React.FC = () => {
                 let finalAdmissionNo = admissionNo || originalStudent?.admissionNo;
 
                 await axios.put(`/erp-api/admin/students/${editingId}`, {
-                    firstName, lastName, email: finalEmail, phone, password, admissionNo: finalAdmissionNo, classId: classId ? classId.trim() : null, sectionId: sectionId ? sectionId.trim() : null,
+                    firstName, lastName, email: finalEmail, phone, password, admissionNo: finalAdmissionNo, 
+                    classId: classId ? classId.trim() : null, 
+                    sectionId: sectionId ? sectionId.trim() : null,
+                    transportStopId: transportStopId ? transportStopId : null,
                     gender, dob, address, bloodGroup, isRT, category, religion, nationality, aadhaar, photo,
                     prevSchoolName, prevClass, prevSchoolAddress, prevMarks, leavingReason, siblingInfo,
                     admissionDate, rollNumber, medium, academicYear, house,
@@ -250,7 +271,8 @@ const Students: React.FC = () => {
                 const finalAdmissionNo = `BIPS/26/${String(nextNumber).padStart(3, '0')}`;
                 
                 await axios.post('/erp-api/admin/students', {
-                    firstName, lastName, email: finalEmail, phone, password, admissionNo: finalAdmissionNo, classId, sectionId,
+                    firstName, lastName, email: finalEmail, phone, password, admissionNo: finalAdmissionNo, 
+                    classId, sectionId, transportStopId,
                     gender, dob, address, bloodGroup, isRT, category, religion, nationality, aadhaar, photo,
                     prevSchoolName, prevClass, prevSchoolAddress, prevMarks, leavingReason, siblingInfo,
                     admissionDate, rollNumber, medium, academicYear, house,
@@ -416,21 +438,21 @@ const Students: React.FC = () => {
     };
 
     const handleExportExcel = () => {
-        const headers = ['S.R No', 'STUDENT ID', 'CLASS OF ADM.', 'NAME', 'EMAIL', 'CLASS', 'SECTION', 'STATUS'];
+        const headers = ['S.R No', 'STUDENT ID', 'NAME', 'FATHER NAME', 'ADDRESS', 'CLASS', 'SECTION', 'STATUS'];
         
         const csvContent = [
             headers.join(','),
             ...filteredStudents.map((s, idx) => {
                 const srNo = s.admissionNo || `BIPS/26/${String(filteredStudents.length - idx).padStart(3, '0')}`;
                 const studentId = s.studentId || 'N/A';
-                const classAdm = `"${s.className || 'N/A'}"`;
                 const name = `"${s.name || ''}"`;
-                const email = `"${s.email || ''}"`;
+                const fatherName = `"${s.fatherName || 'N/A'}"`;
+                const address = `"${s.address || s.user?.address || 'N/A'}"`;
                 const currentClass = `"${s.className || 'N/A'}"`;
                 const currentSection = `"${s.sectionName || 'N/A'}"`;
                 const status = s.status || 'Active';
                 
-                return [srNo, studentId, classAdm, name, email, currentClass, currentSection, status].join(',');
+                return [srNo, studentId, name, fatherName, address, currentClass, currentSection, status].join(',');
             })
         ].join('\n');
 
@@ -457,6 +479,9 @@ const Students: React.FC = () => {
     if (filterRT) {
         const isRTBool = filterRT === 'Yes';
         filteredStudents = filteredStudents.filter(s => s.isRT === isRTBool);
+    }
+    if (filterStatus) {
+        filteredStudents = filteredStudents.filter(s => s.status === filterStatus);
     }
     if (searchQuery) {
         const lowerQ = searchQuery.toLowerCase();
@@ -644,6 +669,16 @@ const Students: React.FC = () => {
                             <div className="form-group">
                                 <label>Default Password</label>
                                 <input type="text" className="form-control" value={password} onChange={e => setPassword(e.target.value)} />
+                            </div>
+
+                            <div className="form-group">
+                                <label>Transport Stop (If applicable)</label>
+                                <select className="form-control" value={transportStopId} onChange={e => setTransportStopId(e.target.value)}>
+                                    <option value="">No Transport</option>
+                                    {transportStops.map(s => (
+                                        <option key={s.id} value={s.id}>{s.name} (₹{s.busFare})</option>
+                                    ))}
+                                </select>
                             </div>
 
                         </div>
@@ -840,6 +875,12 @@ const Students: React.FC = () => {
                             <option value="">All RT</option>
                             <option value="Yes">RTE Yes</option>
                             <option value="No">RTE No</option>
+                        </select>
+                        
+                        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={{ padding: '0.6rem 1rem', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '0.9rem', backgroundColor: '#f8fafc', cursor: 'pointer', color: '#475569', fontWeight: 500, transition: 'all 0.2s' }} onFocus={e => e.currentTarget.style.borderColor = '#3b82f6'} onBlur={e => e.currentTarget.style.borderColor = '#cbd5e1'}>
+                            <option value="">All Status</option>
+                            <option value="Active">Active</option>
+                            <option value="Inactive">Inactive</option>
                         </select>
                         
                         <button 

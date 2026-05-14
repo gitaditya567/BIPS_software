@@ -421,13 +421,7 @@ router.get('/due-list', async (req, res) => {
         const currentYear = currentDate.getFullYear();
         const currentMonth = currentDate.getMonth();
         
-        let elapsedMonths = 0;
-        if (currentMonth >= sessionStartMonth) {
-            elapsedMonths = (currentMonth - sessionStartMonth) + 1;
-        } else {
-            // After December (Jan-Mar)
-            elapsedMonths = (12 - sessionStartMonth) + (currentMonth + 1);
-        }
+        const elapsedMonths = 12;
 
         // 3. Process each student
         const dueList = students.map(student => {
@@ -667,12 +661,7 @@ router.get('/transport-due-list', async (req, res) => {
         const currentDate = new Date();
         const currentMonth = currentDate.getMonth();
         
-        let elapsedMonths = 0;
-        if (currentMonth >= sessionStartMonth) {
-            elapsedMonths = (currentMonth - sessionStartMonth) + 1;
-        } else {
-            elapsedMonths = (12 - sessionStartMonth) + (currentMonth + 1);
-        }
+        const elapsedMonths = 12;
 
         const dueList = students.map(student => {
             const studentPayments = allPayments.filter(p => p.studentId === student.id);

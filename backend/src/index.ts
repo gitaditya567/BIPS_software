@@ -33,7 +33,7 @@ app.use((req, res, next) => {
 // Health Check (Top Priority)
 app.get('/api/health', async (req, res) => {
     const timestamp = new Date().toISOString();
-    console.log(`[${timestamp}] Health check from:`, req.ip, 'URL:', req.originalUrl);
+    // console.log(`[${timestamp}] Health check from:`, req.ip, 'URL:', req.originalUrl);
     try {
         await prisma.user.findFirst();
         res.json({ 
@@ -88,7 +88,7 @@ app.use('/teacher', teacherRoutes);
 // Admin Login
 const loginHandler = async (req: express.Request, res: express.Response): Promise<any> => {
     try {
-        console.log('Login attempt received:', req.body);
+        // console.log('Login attempt received:', req.body);
         const { email, password, role } = req.body;
         let user;
 

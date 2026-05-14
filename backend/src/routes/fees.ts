@@ -304,7 +304,7 @@ router.get('/concessions', async (req, res) => {
 // Real-time Reports
 router.get('/reports', async (req, res) => {
     try {
-        console.log('Fetching fee reports...');
+        // console.log('Fetching fee reports...');
         const allPayments = await prisma.feePayment.findMany({
             where: { status: 'APPROVED' },
             include: { 
@@ -318,7 +318,7 @@ router.get('/reports', async (req, res) => {
             orderBy: { paymentDate: 'desc' }
         });
 
-        console.log(`Found ${allPayments.length} approved payments for reports.`);
+        // console.log(`Found ${allPayments.length} approved payments for reports.`);
 
         // 1. Detailed Daily Report (Individual transactions)
         const daily = allPayments.map(p => ({
@@ -486,10 +486,7 @@ router.get('/due-list', async (req, res) => {
             const isOneTimePending = totalPaid < expectedOneTime;
             const isMonthlyPending = totalPaid < (expectedOneTime + expectedMonthly);
             
-            // DEBUG LOGGING
-            if (netPending > 0) {
-                console.log(`[DUE-LIST DEBUG] Student: ${student.user.name}, Expected: ${totalExpected}, Paid: ${totalPaid}, Pending: ${netPending}`);
-            }
+            // DEBUG LOGGING - REMOVED TO PREVENT TERMINAL FLOODING
 
             // Month-wise Paid Breakdown
             const monthWisePaid: { [key: string]: number } = {};

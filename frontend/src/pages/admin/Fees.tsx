@@ -2418,7 +2418,7 @@ const Fees: React.FC = () => {
                             { id: 'daily', label: 'Daily Collection' },
                             { id: 'monthly', label: 'Monthly Collection' },
                             { id: 'class', label: 'Class-wise Fee' },
-                            { id: 'pending', label: 'Pending Fee Report', disabled: true }
+                            { id: 'pending', label: 'Pending Fee Report' }
                         ].map(r => (
                             <button
                                 key={r.id}

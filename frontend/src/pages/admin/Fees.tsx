@@ -121,6 +121,7 @@ const Fees: React.FC = () => {
     const [transportDues, setTransportDues] = useState<any[]>([]);
     const [loadingTransportDues, setLoadingTransportDues] = useState(false);
     const [remark, setRemark] = useState('');
+    const [submitting, setSubmitting] = useState(false);
 
     /* Temporary Upload State - Disabled
     const [csvFile, setCsvFile] = useState<File | null>(null);
@@ -747,12 +748,15 @@ const Fees: React.FC = () => {
 
     const handleCollectFee = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (submitting) return;
+        
         const student = students.find(s => s.admissionNo === admissionNo);
         if (!student || !paidAmount || !receiptNo || (selectedFees.length === 0 && pendingDues === 0 && !isTransportEnabled)) 
             return alert('Please search student and select at least one fee head or clear previous dues');
             
         const isPending = Number(discount) > 0 && requiresApproval;
         
+        setSubmitting(true);
         try {
             const struct = feeStructure.find(s => s.className === student.className);
             const breakdownParts = selectedFees.map(f => {
@@ -837,6 +841,8 @@ const Fees: React.FC = () => {
             console.error(error);
             const errMsg = error.response?.data?.error || 'Failed to process fee collection';
             alert(errMsg);
+        } finally {
+            setSubmitting(false);
         }
 
     };
@@ -1609,9 +1615,9 @@ const Fees: React.FC = () => {
                                                 Send Receipt via WhatsApp
                                             </label>
                                         </div>
-                                        <button type="submit" className="btn-primary" style={{ width: '100%', marginTop: '1.5rem', padding: '1rem', backgroundColor: (Number(discount) > 0 && requiresApproval) ? '#ea580c' : '#166534', fontSize: '1.1rem' }}>
-                                            {(Number(discount) > 0 && requiresApproval) ? 'Submit for Principal Approval' : 'Confirm & Print Receipt'}
-                                        </button>
+                                         <button type="submit" disabled={submitting} className="btn-primary" style={{ width: '100%', marginTop: '1.5rem', padding: '1rem', backgroundColor: submitting ? '#94a3b8' : (Number(discount) > 0 && requiresApproval) ? '#ea580c' : '#166534', fontSize: '1.1rem', cursor: submitting ? 'not-allowed' : 'pointer' }}>
+                                             {submitting ? 'Processing...' : (Number(discount) > 0 && requiresApproval) ? 'Submit for Principal Approval' : 'Confirm & Print Receipt'}
+                                         </button>
                                     </form>
                                 </div>
                             </div>

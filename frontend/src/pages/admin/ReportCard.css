@@ -430,3 +430,198 @@
     grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
     gap: 1.5rem;
 }
+
+/* Quotation-Style Report Card for Class 9 */
+.class9-report-card {
+    background: white;
+    font-family: 'Arial', sans-serif;
+    color: #000;
+    border: 2px solid #000;
+    padding: 1rem;
+    box-sizing: border-box;
+    margin-bottom: 2rem;
+    page-break-after: always;
+}
+
+.class9-header-grid {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 2px solid #000;
+    padding-bottom: 1rem;
+    margin-bottom: 1rem;
+}
+
+.class9-school-details {
+    flex: 1;
+}
+
+.class9-school-name {
+    color: #1e3a8a;
+    font-size: 1.8rem;
+    font-weight: 800;
+    margin: 0;
+    text-transform: uppercase;
+}
+
+.class9-school-sub {
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin: 0.2rem 0;
+}
+
+.class9-logo-container {
+    width: 100px;
+    height: 100px;
+    border: 2px solid #000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-weight: bold;
+    background-color: #f1f5f9;
+    text-align: center;
+    font-size: 0.75rem;
+    border-radius: 8px;
+}
+
+.class9-info-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 0;
+    border: 2px solid #000;
+    margin-bottom: 1rem;
+}
+
+.class9-info-box {
+    padding: 0.5rem;
+    border-right: 2px solid #000;
+}
+
+.class9-info-box:last-child {
+    border-right: none;
+}
+
+.class9-info-title {
+    font-weight: 800;
+    font-size: 0.9rem;
+    background-color: #f1f5f9;
+    padding: 0.25rem;
+    border-bottom: 2px solid #000;
+    margin-bottom: 0.5rem;
+    text-transform: uppercase;
+}
+
+.class9-info-row {
+    font-size: 0.8rem;
+    margin-bottom: 0.3rem;
+    display: flex;
+    justify-content: space-between;
+}
+
+.class9-info-row span {
+    font-weight: bold;
+}
+
+.class9-title-bar {
+    border-top: 2px solid #000;
+    border-bottom: 2px solid #000;
+    text-align: center;
+    font-weight: 800;
+    font-size: 1.25rem;
+    padding: 0.4rem;
+    margin-bottom: 1rem;
+    background-color: #f1f5f9;
+    letter-spacing: 2px;
+}
+
+.class9-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.class9-table th, .class9-table td {
+    border: 1px solid #000;
+    padding: 0.35rem;
+    text-align: center;
+}
+
+.class9-table th {
+    background-color: #f1f5f9;
+    font-weight: bold;
+}
+
+.class9-table td.subject-name {
+    text-align: left;
+    font-weight: bold;
+    text-transform: uppercase;
+}
+
+.class9-bottom-layout {
+    display: grid;
+    grid-template-columns: 2.2fr 1fr;
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.class9-terms-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.75rem;
+}
+
+.class9-terms-table th, .class9-terms-table td {
+    border: 1px solid #000;
+    padding: 0.4rem;
+}
+
+.class9-terms-table td.term-desc {
+    font-weight: bold;
+    text-transform: uppercase;
+    width: 30%;
+    background-color: #f1f5f9;
+}
+
+.class9-summary-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.75rem;
+}
+
+.class9-summary-table td {
+    border: 1px solid #000;
+    padding: 0.4rem;
+    font-weight: bold;
+    text-align: center;
+}
+
+.class9-summary-table td.label {
+    text-align: left;
+    background-color: #f1f5f9;
+}
+
+.class9-signs-row {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 3rem;
+    font-weight: bold;
+    font-size: 0.85rem;
+    border-top: 1px dashed #000;
+    padding-top: 0.5rem;
+}
+
+.class9-signs-row div {
+    width: 30%;
+    text-align: center;
+}
+
+@media print {
+    .class9-report-card {
+        border: 2px solid #000 !important;
+        margin: 0 !important;
+        padding: 10mm !important;
+        height: auto !important;
+        min-height: 200mm !important; /* A4 landscape height */
+    }
+}

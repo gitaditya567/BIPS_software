@@ -136,6 +136,23 @@ router.post('/collect', async (req, res) => {
             const lastNoStr = lastPayment.receiptNo.replace('RCP', '');
             nextNumber = parseInt(lastNoStr) + 1;
         }
+        // Prevent duplicate submissions (same student, month, year, amount, and feeHead within 30 seconds)
+        const thirtySecondsAgo = new Date(Date.now() - 30 * 1000);
+        const existingRecentPayment = await prisma.feePayment.findFirst({
+            where: {
+                studentId,
+                amountPaid: Number(amountPaid),
+                month,
+                year,
+                feeHead,
+                paymentDate: { gte: thirtySecondsAgo }
+            }
+        });
+
+        if (existingRecentPayment) {
+            return res.status(400).json({ error: 'A duplicate payment was recently processed. Please wait a moment.' });
+        }
+
         const generatedReceiptNo = 'RCP' + String(nextNumber).padStart(3, '0');
 
         const feePayment = await prisma.feePayment.create({

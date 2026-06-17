@@ -362,8 +362,13 @@ const Fees: React.FC = () => {
         
         const isMonthly = headObj.type && headObj.type.toLowerCase().includes('month');
         
+        if (isMonthly) {
+            if (selectedMonths.length === 0) return false;
+            return selectedMonths.every(m => isHeadPaidForMonth(headName, m));
+        }
+        
         return studentHistory.some(r => {
-            if (r.status === 'REJECTED') return false;
+            if (r.status !== 'APPROVED') return false;
             
             const parts = r.feeHead.split('==>');
             if (parts.length < 2) return false;
@@ -371,7 +376,7 @@ const Fees: React.FC = () => {
             const headsPart = parts[1];
             const headNames = headsPart.split('||').map(h => h.split(':')[0].trim());
             
-            return headNames.includes(headName) && (!isMonthly || selectedMonths.includes(r.month || ''));
+            return headNames.includes(headName);
         });
     };
 

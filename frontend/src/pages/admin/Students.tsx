@@ -30,6 +30,7 @@ const Students: React.FC = () => {
     const [filterSections, setFilterSections] = useState<any[]>([]);
     const [filterStatus, setFilterStatus] = useState('');
     const [searchQuery, setSearchQuery] = useState('');
+    const [filterAddress, setFilterAddress] = useState('');
 
     useEffect(() => {
         if (filterClassId) {
@@ -50,6 +51,10 @@ const Students: React.FC = () => {
     useEffect(() => {
         setCurrentPage(1);
     }, [searchQuery]);
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [filterAddress]);
 
     useEffect(() => {
         setCurrentPage(1);
@@ -491,6 +496,13 @@ const Students: React.FC = () => {
             (s.studentId && s.studentId.toLowerCase().includes(lowerQ))
         );
     }
+    if (filterAddress) {
+        const lowerAddr = filterAddress.toLowerCase();
+        filteredStudents = filteredStudents.filter(s => 
+            (s.address && s.address.toLowerCase().includes(lowerAddr)) ||
+            (s.user?.address && s.user.address.toLowerCase().includes(lowerAddr))
+        );
+    }
     const totalPages = Math.ceil(filteredStudents.length / recordsPerPage) || 1;
 
     return (
@@ -856,6 +868,21 @@ const Students: React.FC = () => {
                                 value={searchQuery} 
                                 onChange={e => setSearchQuery(e.target.value)}
                                 style={{ width: '260px', padding: '0.6rem 1rem 0.6rem 2.4rem', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '0.9rem', backgroundColor: '#f8fafc', transition: 'all 0.2s', color: '#0f172a', fontWeight: 500 }}
+                                onFocus={e => { e.currentTarget.style.borderColor = '#3b82f6'; e.currentTarget.style.backgroundColor = '#ffffff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)'; }}
+                                onBlur={e => { e.currentTarget.style.borderColor = '#cbd5e1'; e.currentTarget.style.backgroundColor = '#f8fafc'; e.currentTarget.style.boxShadow = 'none'; }}
+                            />
+                        </div>
+                        
+                        <div style={{ position: 'relative' }}>
+                            <div style={{ position: 'absolute', left: '0.8rem', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', display: 'flex' }}>
+                                <Search size={16} />
+                            </div>
+                            <input 
+                                type="text" 
+                                placeholder="Search Address..." 
+                                value={filterAddress} 
+                                onChange={e => setFilterAddress(e.target.value)}
+                                style={{ width: '200px', padding: '0.6rem 1rem 0.6rem 2.4rem', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '0.9rem', backgroundColor: '#f8fafc', transition: 'all 0.2s', color: '#0f172a', fontWeight: 500 }}
                                 onFocus={e => { e.currentTarget.style.borderColor = '#3b82f6'; e.currentTarget.style.backgroundColor = '#ffffff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)'; }}
                                 onBlur={e => { e.currentTarget.style.borderColor = '#cbd5e1'; e.currentTarget.style.backgroundColor = '#f8fafc'; e.currentTarget.style.boxShadow = 'none'; }}
                             />

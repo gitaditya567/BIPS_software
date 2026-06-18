@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNotification } from '../../context/NotificationContext';
-import { IndianRupee, TrendingUp, CalendarDays, Trash2, Check, AlertCircle, Calendar, Users } from 'lucide-react';
+import { IndianRupee, TrendingUp, CalendarDays, Trash2, Check, AlertCircle, Calendar, Users, Download } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -114,6 +114,7 @@ const Fees: React.FC = () => {
     const [prevDueClassFilter, setPrevDueClassFilter] = useState('All');
     const [dueClassFilter, setDueClassFilter] = useState('All');
     const [dueMonthFilter, setDueMonthFilter] = useState('All');
+    const [prevDueSearchQuery, setPrevDueSearchQuery] = useState('');
     const [selectedStudentForHistory, setSelectedStudentForHistory] = useState<any>(null);
     const [showHistoryModal, setShowHistoryModal] = useState(false);
     const [dueRtFilter, setDueRtFilter] = useState('All');
@@ -692,7 +693,33 @@ const Fees: React.FC = () => {
         }
     };
 
+    const exportPreviousDueExcel = () => {
+        const filtered = dueFees
+            .filter(f => (f.previousSessionDue || 0) > 0)
+            .filter(f => prevDueClassFilter === 'All' || f.className === prevDueClassFilter)
+            .filter(f => prevDueSearchQuery === '' || (f.studentName || '').toLowerCase().includes(prevDueSearchQuery.toLowerCase()));
 
+        const headers = ['S.No.', 'Student Name', 'Father Name', 'Class', 'Previous Due (INR)'];
+        const csvContent = [
+            headers.join(','),
+            ...filtered.map((f, idx) => [
+                idx + 1,
+                `"${f.studentName}"`,
+                `"${f.fatherName || 'N/A'}"`,
+                `"${f.className}"`,
+                f.previousSessionDue
+            ].join(','))
+        ].join('\n');
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", `Previous_Dues_${new Date().toLocaleDateString()}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
 
     const fetchStudents = async () => {
         try {
@@ -2068,11 +2095,30 @@ const Fees: React.FC = () => {
 
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', background: '#f1f5f9', padding: '1rem', borderRadius: '12px' }}>
                             <div className="form-group" style={{ marginBottom: 0 }}>
+                                <label style={{ fontSize: '0.75rem', fontWeight: '700' }}>Search Name</label>
+                                <input 
+                                    type="text" 
+                                    className="form-control" 
+                                    placeholder="Search by student name..." 
+                                    value={prevDueSearchQuery} 
+                                    onChange={(e) => setPrevDueSearchQuery(e.target.value)} 
+                                    style={{ height: '38px', padding: '0.2rem 0.8rem' }}
+                                />
+                            </div>
+                            <div className="form-group" style={{ marginBottom: 0 }}>
                                 <label style={{ fontSize: '0.75rem', fontWeight: '700' }}>Filter by Class</label>
                                 <select className="form-control" style={{ height: '38px', padding: '0.2rem 0.8rem' }} onChange={(e) => setPrevDueClassFilter(e.target.value)}>
                                     <option value="All">All Classes</option>
                                     {Array.from(new Map(classes.map(c => [c.name, c])).values()).sort((a, b) => sortClassNames(a.name, b.name)).map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
                                 </select>
+                            </div>
+                            <div className="form-group" style={{ marginBottom: 0, display: 'flex', alignItems: 'flex-end' }}>
+                                <button
+                                    onClick={exportPreviousDueExcel}
+                                    style={{ padding: '0.5rem 1rem', borderRadius: '8px', border: 'none', backgroundColor: '#10b981', color: 'white', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', height: '38px' }}
+                                >
+                                    <Download size={16} /> Export Excel
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -2080,6 +2126,7 @@ const Fees: React.FC = () => {
                     <table style={{ width: '100%' }}>
                         <thead>
                             <tr style={{ backgroundColor: '#f8fafc' }}>
+                                <th style={{ padding: '1rem 1.5rem' }}>S.No.</th>
                                 <th style={{ padding: '1rem 1.5rem' }}>Student Name</th>
                                 <th style={{ padding: '1rem 1.5rem' }}>Class</th>
                                 <th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Previous Due (₹)</th>
@@ -2090,8 +2137,10 @@ const Fees: React.FC = () => {
                             {dueFees
                                 .filter(f => (f.previousSessionDue || 0) > 0)
                                 .filter(f => prevDueClassFilter === 'All' || f.className === prevDueClassFilter)
-                                .map((fee) => (
+                                .filter(f => prevDueSearchQuery === '' || (f.studentName || '').toLowerCase().includes(prevDueSearchQuery.toLowerCase()))
+                                .map((fee, index) => (
                                     <tr key={fee.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                        <td style={{ padding: '1rem 1.5rem', fontWeight: '600', color: '#64748b' }}>{index + 1}</td>
                                         <td style={{ padding: '1rem 1.5rem', fontWeight: '600', color: '#1e293b' }}>{fee.studentName}</td>
                                         <td style={{ padding: '1rem 1.5rem' }}>
                                             <span style={{ background: '#e0e7ff', color: '#4338ca', padding: '0.25rem 0.6rem', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '700' }}>

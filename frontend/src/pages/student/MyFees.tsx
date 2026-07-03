@@ -90,15 +90,22 @@ const MyFees: React.FC = () => {
                                 // Find type to show badge
                                 const headInfo = feeHeads.find(h => h.name === headName);
                                 const type = headInfo?.type || 'Other';
+                                const isMonthly = type === 'Monthly';
+                                const displayAmount = (studentInfo.isRT && isMonthly) ? 0 : amount;
                                 
                                 return (
                                     <div key={headName} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', backgroundColor: '#f7fafc', borderRadius: '12px' }}>
                                         <div>
-                                            <p style={{ margin: 0, fontWeight: 600, color: '#2d3748' }}>{headName}</p>
+                                            <p style={{ margin: 0, fontWeight: 600, color: '#2d3748' }}>
+                                                {headName}
+                                                {studentInfo.isRT && isMonthly && (
+                                                    <span style={{ marginLeft: '0.5rem', fontSize: '0.65rem', backgroundColor: '#e0f2fe', color: '#0369a1', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>RTE Exempt</span>
+                                                )}
+                                            </p>
                                             <span style={{ fontSize: '0.7rem', color: '#718096', backgroundColor: '#edf2f7', padding: '0.1rem 0.5rem', borderRadius: '10px', marginTop: '0.2rem', display: 'inline-block' }}>{type}</span>
                                         </div>
                                         <div style={{ fontWeight: 800, color: '#4a5568', fontSize: '1.2rem' }}>
-                                            ₹{amount}
+                                            ₹{displayAmount}
                                         </div>
                                     </div>
                                 )

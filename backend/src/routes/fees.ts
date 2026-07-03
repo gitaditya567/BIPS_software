@@ -548,7 +548,7 @@ router.get('/due-list', async (req, res) => {
                 const amount = Number(structure[head.name] || 0);
                 if (amount > 0) {
                     if (head.type === 'Monthly') {
-                        expectedMonthly += (amount * elapsedMonths);
+                        expectedMonthly += student.isRT ? 0 : (amount * elapsedMonths);
                     } else {
                         expectedOneTime += amount;
                     }
@@ -572,7 +572,7 @@ router.get('/due-list', async (req, res) => {
             let monthlyFeeAmountValue = 0;
             feeHeads.forEach(head => {
                 if (head.type === 'Monthly') {
-                    monthlyFeeAmountValue += Number(structure[head.name] || 0);
+                    monthlyFeeAmountValue += student.isRT ? 0 : Number(structure[head.name] || 0);
                 }
             });
 

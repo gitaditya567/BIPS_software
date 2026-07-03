@@ -114,6 +114,7 @@ const Fees: React.FC = () => {
     const [prevDueClassFilter, setPrevDueClassFilter] = useState('All');
     const [dueClassFilter, setDueClassFilter] = useState('All');
     const [dueMonthFilter, setDueMonthFilter] = useState('All');
+    const [dueSearchQuery, setDueSearchQuery] = useState('');
     const [prevDueSearchQuery, setPrevDueSearchQuery] = useState('');
     const [selectedStudentForHistory, setSelectedStudentForHistory] = useState<any>(null);
     const [showHistoryModal, setShowHistoryModal] = useState(false);
@@ -314,8 +315,9 @@ const Fees: React.FC = () => {
     const [fatherName, setFatherName] = useState('');
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
     const [selectedFees, setSelectedFees] = useState<string[]>([]);
-    const [selectedMonths, setSelectedMonths] = useState<string[]>(['April']);
-    const [selectedMonth, setSelectedMonth] = useState<string>('April');
+    const currentMonthNameInit = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][new Date().getMonth()];
+    const [selectedMonths, setSelectedMonths] = useState<string[]>([currentMonthNameInit]);
+    const [selectedMonth, setSelectedMonth] = useState<string>(currentMonthNameInit);
     const [showSearchDropdown, setShowSearchDropdown] = useState(false);
     const [requiresApproval, setRequiresApproval] = useState(false);
 
@@ -328,6 +330,22 @@ const Fees: React.FC = () => {
     useEffect(() => {
         fetchTransportStops();
     }, []);
+
+    useEffect(() => {
+        if (selectedMonth) {
+            const months = ['April','May','June','July','August','September','October','November','December','January','February','March'];
+            const mIdx = months.indexOf(selectedMonth);
+            if (mIdx !== -1) {
+                const newSelection = [];
+                for (let i = 0; i <= mIdx; i++) {
+                    if (!isMonthPaid(months[i])) {
+                        newSelection.push(months[i]);
+                    }
+                }
+                setSelectedMonths(newSelection);
+            }
+        }
+    }, [selectedMonth, studentHistory]);
 
     const fetchTransportStops = async () => {
         try {
@@ -363,6 +381,14 @@ const Fees: React.FC = () => {
         
         const isMonthly = headObj.type && headObj.type.toLowerCase().includes('month');
         
+        // Find if student is RTE
+        const currentStudent = students.find(s => s.admissionNo === admissionNo);
+        const isStudentRT = currentStudent?.isRT || false;
+
+        if (isStudentRT && isMonthly) {
+            return true;
+        }
+        
         if (isMonthly) {
             if (selectedMonths.length === 0) return false;
             return selectedMonths.every(m => isHeadPaidForMonth(headName, m));
@@ -384,6 +410,19 @@ const Fees: React.FC = () => {
     const isMonthPaid = (month: string) => {
         const struct = feeStructure.find(s => s.className === selectedClass);
         if (!struct) return false;
+        
+        // Find if student is RTE
+        const currentStudent = students.find(s => s.admissionNo === admissionNo);
+        const isStudentRT = currentStudent?.isRT || false;
+
+        if (isStudentRT) {
+            // RTE students don't pay monthly class fees.
+            // But they might pay transport fee.
+            if (currentStudent?.transportStopId) {
+                return isTransportPaidForMonth(month);
+            }
+            return true;
+        }
         
         const monthlyHeads = feeHeads.filter(h => h.type === 'Monthly' && (struct.fees?.[h.name] || 0) > 0);
         if (monthlyHeads.length === 0) return false;
@@ -622,6 +661,13 @@ const Fees: React.FC = () => {
                 .filter(f => {
                     if (dueMonthFilter === 'All') return true;
                     return (f.pendingMonths || []).includes(dueMonthFilter);
+                })
+                .filter(f => {
+                    if (dueSearchQuery === '') return true;
+                    const query = dueSearchQuery.toLowerCase();
+                    return (f.studentName || '').toLowerCase().includes(query) || 
+                           (f.admissionNo || '').toLowerCase().includes(query) ||
+                           (f.fatherName || '').toLowerCase().includes(query);
                 });
 
             const isMonthSelected = dueMonthFilter !== 'All';
@@ -667,6 +713,12 @@ const Fees: React.FC = () => {
                     if (dueRtFilter === 'All') return true;
                     if (dueRtFilter === 'RT') return d.isRT;
                     return !d.isRT;
+                })
+                .filter(d => {
+                    if (dueSearchQuery === '') return true;
+                    const query = dueSearchQuery.toLowerCase();
+                    return (d.studentName || '').toLowerCase().includes(query) ||
+                           (d.fatherName || '').toLowerCase().includes(query);
                 });
             const csvContent = [
                 headers.join(','),
@@ -754,10 +806,14 @@ const Fees: React.FC = () => {
         if (selectedClass) {
             const struct = feeStructure.find(s => s.className === selectedClass);
             if (struct && struct.fees) {
+                const currentStudent = students.find(s => s.admissionNo === admissionNo);
+                const isStudentRT = currentStudent?.isRT || false;
+
                 const subtotal = selectedFees.reduce((sum, feeName) => {
-                    const amount = struct.fees[feeName] || 0;
                     const head = feeHeads.find(h => h.name === feeName);
-                    const multiplier = (head?.type === 'Monthly') ? selectedMonths.filter(m => !isHeadPaidForMonth(feeName, m)).length : 1;
+                    const isMonthly = head?.type === 'Monthly';
+                    const amount = (isStudentRT && isMonthly) ? 0 : (struct.fees[feeName] || 0);
+                    const multiplier = isMonthly ? selectedMonths.filter(m => !isHeadPaidForMonth(feeName, m)).length : 1;
                     return sum + (amount * multiplier);
                 }, 0);
                 
@@ -791,10 +847,14 @@ const Fees: React.FC = () => {
         setSubmitting(true);
         try {
             const struct = feeStructure.find(s => s.className === student.className);
+            const currentStudent = students.find(s => s.admissionNo === admissionNo);
+            const isStudentRT = currentStudent?.isRT || false;
+
             const breakdownParts = selectedFees.map(f => {
-                const amount = struct?.fees?.[f] || 0;
                 const head = feeHeads.find(h => h.name === f);
-                const unpaidCount = head?.type === 'Monthly' ? selectedMonths.filter(m => !isHeadPaidForMonth(f, m)).length : 1;
+                const isMonthly = head?.type === 'Monthly';
+                const amount = (isStudentRT && isMonthly) ? 0 : (struct?.fees?.[f] || 0);
+                const unpaidCount = isMonthly ? selectedMonths.filter(m => !isHeadPaidForMonth(f, m)).length : 1;
                 return `${f}: ${amount * unpaidCount}`;
             });
             if (isTransportEnabled) {
@@ -862,7 +922,9 @@ const Fees: React.FC = () => {
             setDiscount('0'); 
             setRequiresApproval(false);
             setFinalAmount('0');
-            setSelectedMonths(['April']);
+            const currentMonthNameReset = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][new Date().getMonth()];
+            setSelectedMonth(currentMonthNameReset);
+            setSelectedMonths([currentMonthNameReset]);
             setIsTransportEnabled(false);
             setIsTransportYearly(false);
             setTransportRows([{ name: '', km: '', price: '', showDropdown: false }]);
@@ -1172,23 +1234,29 @@ const Fees: React.FC = () => {
                                                 <div 
                                                     key={m} 
                                                     onClick={() => {
-                                                        if (paid) return;
-                                                        const mIdx = months.indexOf(m);
-                                                        
-                                                        if (isSelected) {
-                                                            // Deselect this and all after
-                                                            setSelectedMonths(prev => prev.filter(month => months.indexOf(month) < mIdx));
-                                                        } else {
-                                                            // Select up to this
-                                                            const newSelection = [];
-                                                            for (let i = 0; i <= mIdx; i++) {
-                                                                if (!isMonthPaid(months[i])) {
-                                                                    newSelection.push(months[i]);
-                                                                }
-                                                            }
-                                                            setSelectedMonths(newSelection);
-                                                        }
-                                                    }}
+                                                         if (paid) return;
+                                                         const mIdx = months.indexOf(m);
+                                                         
+                                                         if (isSelected) {
+                                                             const remaining = selectedMonths.filter(month => months.indexOf(month) < mIdx);
+                                                             setSelectedMonths(remaining);
+                                                             if (remaining.length > 0) {
+                                                                 setSelectedMonth(remaining[remaining.length - 1]);
+                                                             } else {
+                                                                 const currentMonthName = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][new Date().getMonth()];
+                                                                 setSelectedMonth(currentMonthName);
+                                                             }
+                                                         } else {
+                                                             const newSelection = [];
+                                                             for (let i = 0; i <= mIdx; i++) {
+                                                                 if (!isMonthPaid(months[i])) {
+                                                                     newSelection.push(months[i]);
+                                                                 }
+                                                             }
+                                                             setSelectedMonths(newSelection);
+                                                             setSelectedMonth(m);
+                                                         }
+                                                     }}
                                                     style={{ 
                                                         textAlign: 'center', 
                                                         padding: '0.75rem 0.25rem', 
@@ -1240,42 +1308,51 @@ const Fees: React.FC = () => {
                                                 const amount = struct?.fees?.[h.name] || 0;
                                                 return h.type === 'Monthly' && amount > 0;
                                             }).map(h => {
-                                                                                                 const struct = feeStructure.find(s => s.className === selectedClass);
-                                                 const perMonthAmount = struct?.fees?.[h.name] || 0;
+                                                 const struct = feeStructure.find(s => s.className === selectedClass);
+                                                 const currentStudent = students.find(s => s.admissionNo === admissionNo);
+                                                 const isStudentRT = currentStudent?.isRT || false;
+                                                 const perMonthAmount = isStudentRT ? 0 : (struct?.fees?.[h.name] || 0);
                                                  const unpaidMonths = selectedMonths.filter(m => !isHeadPaidForMonth(h.name, m));
                                                  const amount = perMonthAmount * unpaidMonths.length;
                                                  const isSelected = selectedFees.includes(h.name);
-                                                 const paid = unpaidMonths.length === 0;
+                                                 const paid = isStudentRT ? true : (unpaidMonths.length === 0);
                                                  const partiallyPaid = !paid && unpaidMonths.length < selectedMonths.length;
 
-                                                return (
-                                                    <div 
-                                                        key={h.id}
-                                                        onClick={paid ? undefined : () => toggleFeeSelection(h.name)}
-                                                        style={{ 
-                                                            display: 'flex', 
-                                                            justifyContent: 'space-between', 
-                                                            alignItems: 'center', 
-                                                            padding: '0.85rem 1rem', 
-                                                            borderRadius: '12px', 
-                                                            background: paid ? '#f0fdf4' : isSelected ? '#eff6ff' : 'white',
-                                                            border: `1px solid ${paid ? '#bbf7d0' : isSelected ? '#bfdbfe' : '#e2e8f0'}`,
-                                                            cursor: paid ? 'default' : 'pointer',
-                                                            transition: '0.2s'
-                                                        }}
-                                                    >
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                                                            {paid ? <Check size={18} color="#166534" strokeWidth={3} /> : <input type="checkbox" checked={isSelected} readOnly style={{ width: '18px', height: '18px' }} />}
-                                                            <span style={{ fontWeight: '600', color: paid ? '#166534' : '#1e293b' }}>{h.name}</span>
-                                                        </div>
-                                                        <div style={{ textAlign: 'right' }}>
-                                                             <div style={{ fontWeight: '800', color: paid ? '#166534' : '#1e293b' }}>₹{amount.toLocaleString()}</div>
-                                                             {paid && <span style={{ fontSize: '0.65rem', fontWeight: '800', color: '#166534', textTransform: 'uppercase' }}>Already Paid</span>}
-                                                             {partiallyPaid && <span style={{ fontSize: '0.65rem', fontWeight: '800', color: '#f59e0b', textTransform: 'uppercase' }}>{unpaidMonths.length} Month(s) Remaining</span>}
+                                                 return (
+                                                     <div 
+                                                         key={h.id}
+                                                         onClick={paid ? undefined : () => toggleFeeSelection(h.name)}
+                                                         style={{ 
+                                                             display: 'flex', 
+                                                             justifyContent: 'space-between', 
+                                                             alignItems: 'center', 
+                                                             padding: '0.85rem 1rem', 
+                                                             borderRadius: '12px', 
+                                                             background: paid ? '#f0fdf4' : isSelected ? '#eff6ff' : 'white',
+                                                             border: `1px solid ${paid ? '#bbf7d0' : isSelected ? '#bfdbfe' : '#e2e8f0'}`,
+                                                             cursor: paid ? 'default' : 'pointer',
+                                                             transition: '0.2s'
+                                                         }}
+                                                     >
+                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                                             {paid ? <Check size={18} color="#166534" strokeWidth={3} /> : <input type="checkbox" checked={isSelected} readOnly style={{ width: '18px', height: '18px' }} />}
+                                                             <span style={{ fontWeight: '600', color: paid ? '#166534' : '#1e293b' }}>
+                                                                 {h.name} {isStudentRT && <span style={{ marginLeft: '0.5rem', fontSize: '0.65rem', backgroundColor: '#e0f2fe', color: '#0369a1', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>RTE Exempt</span>}
+                                                             </span>
                                                          </div>
-                                                    </div>
-                                                );
-                                            })}
+                                                         <div style={{ textAlign: 'right' }}>
+                                                              <div style={{ fontWeight: '800', color: paid ? '#166534' : '#1e293b' }}>₹{amount.toLocaleString()}</div>
+                                                              {isStudentRT ? (
+                                                                  <span style={{ fontSize: '0.65rem', fontWeight: '800', color: '#166534', textTransform: 'uppercase' }}>RTE Exempt</span>
+                                                              ) : paid ? (
+                                                                  <span style={{ fontSize: '0.65rem', fontWeight: '800', color: '#166534', textTransform: 'uppercase' }}>Already Paid</span>
+                                                              ) : partiallyPaid ? (
+                                                                  <span style={{ fontSize: '0.65rem', fontWeight: '800', color: '#f59e0b', textTransform: 'uppercase' }}>{unpaidMonths.length} Month(s) Remaining</span>
+                                                              ) : null}
+                                                          </div>
+                                                     </div>
+                                                 );
+                                             })}
                                         </div>
                                     </div>
 
@@ -1805,8 +1882,19 @@ const Fees: React.FC = () => {
 
                     <div className="data-table-container shadow-sm" style={{ border: '1px solid #e2e8f0', borderRadius: '12px' }}>
                         <div className="table-header" style={{ background: '#f8fafc', padding: '1.5rem', borderBottom: '1px solid #e2e8f0' }}>
-                            <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'flex-end' }}>
-                                <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
+                            <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                                <div className="form-group" style={{ marginBottom: 0, flex: 1, minWidth: '180px' }}>
+                                    <label style={{ fontSize: '0.8rem', fontWeight: '700', color: '#64748b' }}>Search Student</label>
+                                    <input 
+                                        type="text" 
+                                        className="form-control" 
+                                        placeholder="Search name or adm no..." 
+                                        value={dueSearchQuery} 
+                                        onChange={(e) => setDueSearchQuery(e.target.value)}
+                                        style={{ width: '100%', height: '38px', padding: '0.2rem 0.8rem' }}
+                                    />
+                                </div>
+                                <div className="form-group" style={{ marginBottom: 0, flex: 1, minWidth: '180px' }}>
                                     <label style={{ fontSize: '0.8rem', fontWeight: '700', color: '#64748b' }}>Select Class</label>
                                     <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                                         <select 
@@ -1895,6 +1983,13 @@ const Fees: React.FC = () => {
                                                 if (dueMonthFilter === 'All') return true;
                                                 return (f.pendingMonths || []).includes(dueMonthFilter);
                                             })
+                                            .filter(f => {
+                                                if (dueSearchQuery === '') return true;
+                                                const query = dueSearchQuery.toLowerCase();
+                                                return (f.studentName || '').toLowerCase().includes(query) || 
+                                                       (f.admissionNo || '').toLowerCase().includes(query) ||
+                                                       (f.fatherName || '').toLowerCase().includes(query);
+                                            })
                                     ).length})</th>
                                     <th style={{ padding: '1rem', color: '#475569', fontSize: '0.8rem', fontWeight: '700' }}>Admission No</th>
                                     <th style={{ padding: '1rem', color: '#475569', fontSize: '0.8rem', fontWeight: '700' }}>Class</th>
@@ -1914,6 +2009,13 @@ const Fees: React.FC = () => {
                                         .filter(f => {
                                             if (dueMonthFilter === 'All') return true;
                                             return (f.pendingMonths || []).includes(dueMonthFilter);
+                                        })
+                                        .filter(f => {
+                                            if (dueSearchQuery === '') return true;
+                                            const query = dueSearchQuery.toLowerCase();
+                                            return (f.studentName || '').toLowerCase().includes(query) || 
+                                                   (f.admissionNo || '').toLowerCase().includes(query) ||
+                                                   (f.fatherName || '').toLowerCase().includes(query);
                                         });
                                     
                                     if (filtered.length === 0) {
@@ -2028,6 +2130,12 @@ const Fees: React.FC = () => {
                                                 if (dueRtFilter === 'All') return true;
                                                 if (dueRtFilter === 'RT') return d.isRT;
                                                 return !d.isRT;
+                                            })
+                                            .filter(d => {
+                                                if (dueSearchQuery === '') return true;
+                                                const query = dueSearchQuery.toLowerCase();
+                                                return (d.studentName || '').toLowerCase().includes(query) ||
+                                                       (d.fatherName || '').toLowerCase().includes(query);
                                             })
                                             .map((due: any) => (
                                                 <tr key={due.id} style={{ borderBottom: '1px solid #e2e8f0' }}>

@@ -736,7 +736,7 @@ const Fees: React.FC = () => {
                     if (dueRtFilter === 'RT') return f.isRT;
                     return !f.isRT;
                 })
-                .filter(f => {
+                .filter(() => {
                     if (dueMonthFilter === 'All') return true;
                     // For the simple export, show ALL students in the class, not just pending ones
                     return true; 
@@ -880,7 +880,7 @@ const Fees: React.FC = () => {
                 if (dueRtFilter === 'RT') return f.isRT;
                 return !f.isRT;
             })
-            .filter(f => {
+            .filter(() => {
                 if (dueMonthFilter === 'All') return true;
                 // For Full details, show ALL students, so we can color them red/yellow/green
                 return true; 

@@ -543,6 +543,7 @@ router.get('/due-list', async (req, res) => {
             // Calculate Expected Fees for this student
             let expectedMonthly = 0;
             let expectedOneTime = 0;
+            const oneTimeBreakdown: { name: string, amount: number }[] = [];
 
             feeHeads.forEach(head => {
                 const amount = Number(structure[head.name] || 0);
@@ -551,6 +552,7 @@ router.get('/due-list', async (req, res) => {
                         expectedMonthly += student.isRT ? 0 : (amount * elapsedMonths);
                     } else {
                         expectedOneTime += amount;
+                        oneTimeBreakdown.push({ name: head.name, amount });
                     }
                 }
             });
@@ -560,9 +562,16 @@ router.get('/due-list', async (req, res) => {
             const totalPaid = studentPayments.reduce((sum, p) => sum + (p.amountPaid || 0) + (p.discount || 0), 0);
             
             // Actual months that have an APPROVED payment
-            const paidMonths: string[] = [...new Set(
-                studentPayments.map(p => p.month).filter((m): m is string => !!m)
-            )];
+            const paidMonthsSet = new Set<string>();
+            studentPayments.forEach(p => {
+                if (p.feeHead && p.feeHead.includes('==>')) {
+                    const monthsStr = p.feeHead.split('==>')[0];
+                    monthsStr.split(',').forEach(m => paidMonthsSet.add(m.trim()));
+                } else if (p.month) {
+                    paidMonthsSet.add(p.month);
+                }
+            });
+            const paidMonths: string[] = Array.from(paidMonthsSet).filter(Boolean);
 
             // Detailed Pending
             const totalExpected = expectedMonthly + expectedOneTime;
@@ -597,13 +606,23 @@ router.get('/due-list', async (req, res) => {
             const isOneTimePending = totalPaid < expectedOneTime;
             const isMonthlyPending = totalPaid < (expectedOneTime + expectedMonthly);
             
-            // DEBUG LOGGING - REMOVED TO PREVENT TERMINAL FLOODING
-
             // Month-wise Paid Breakdown
             const monthWisePaid: { [key: string]: number } = {};
             studentPayments.forEach(p => {
-                if (p.month && allMonths.includes(p.month)) {
-                    monthWisePaid[p.month] = (monthWisePaid[p.month] || 0) + (p.amountPaid || 0) + (p.discount || 0);
+                const totalVal = (p.amountPaid || 0) + (p.discount || 0);
+                if (p.feeHead && p.feeHead.includes('==>')) {
+                    const monthsStr = p.feeHead.split('==>')[0];
+                    const paidMonthsArr = monthsStr.split(',').map(m => m.trim()).filter(m => allMonths.includes(m));
+                    if (paidMonthsArr.length > 0) {
+                        const perMonthAmount = totalVal / paidMonthsArr.length;
+                        paidMonthsArr.forEach(m => {
+                            monthWisePaid[m] = (monthWisePaid[m] || 0) + perMonthAmount;
+                        });
+                    } else if (p.month && allMonths.includes(p.month)) {
+                        monthWisePaid[p.month] = (monthWisePaid[p.month] || 0) + totalVal;
+                    }
+                } else if (p.month && allMonths.includes(p.month)) {
+                    monthWisePaid[p.month] = (monthWisePaid[p.month] || 0) + totalVal;
                 }
             });
 
@@ -626,6 +645,7 @@ router.get('/due-list', async (req, res) => {
                 monthlyPending: (expectedMonthly + expectedOneTime > totalPaid) ? (totalExpected - totalPaid) : 0,
                 oneTimePending: (totalPaid < expectedOneTime) ? (expectedOneTime - totalPaid) : 0,
                 expectedOneTime,
+                oneTimeBreakdown,
                 monthWisePaid,
                 previousSessionDue: student.previousSessionDue || 0,
                 monthlyFeeAmount: monthlyFeeAmountValue,

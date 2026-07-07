@@ -4,6 +4,8 @@ import { useNotification } from '../../context/NotificationContext';
 import { IndianRupee, TrendingUp, CalendarDays, Trash2, Check, AlertCircle, Calendar, Users, Download } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import ExcelJS from 'exceljs';
+import { saveAs } from 'file-saver';
 
 interface FeeRecord {
     id: string;
@@ -45,6 +47,7 @@ interface DueFee {
     admissionNo?: string;
     monthlyFeeAmount?: number;
     monthWisePaid?: Record<string, number>;
+    oneTimeBreakdown?: { name: string, amount: number }[];
     fatherName?: string;
 }
 
@@ -129,6 +132,68 @@ const Fees: React.FC = () => {
     const [csvFile, setCsvFile] = useState<File | null>(null);
     const [uploadReport, setUploadReport] = useState<any>(null);
     */
+
+    const calculateDynamicDues = (fee: any, selectedMonthFilter: string) => {
+        const allMonths = ['April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December', 'January', 'February', 'March'];
+        
+        let monthsToCalculate = 0;
+        if (selectedMonthFilter !== 'All' && allMonths.includes(selectedMonthFilter)) {
+            monthsToCalculate = allMonths.indexOf(selectedMonthFilter) + 1;
+        } else {
+            const currentDate = new Date();
+            const currentMonth = currentDate.getMonth();
+            const sessionStartMonth = 3;
+            if (currentMonth >= sessionStartMonth) {
+                monthsToCalculate = (currentMonth - sessionStartMonth) + 1;
+            } else {
+                monthsToCalculate = (currentMonth + 12 - sessionStartMonth) + 1;
+            }
+            monthsToCalculate = Math.min(12, Math.max(1, monthsToCalculate));
+        }
+
+        const prevBalance = fee.previousSessionDue || 0;
+        const expectedOneTime = fee.expectedOneTime || 0;
+        const totalPaid = fee.totalPaid || 0;
+        const monthlyFee = fee.monthlyFeeAmount || 0;
+
+        const paidTowardsOneTime = Math.min(expectedOneTime, totalPaid);
+        const pendingOneTime = expectedOneTime - paidTowardsOneTime;
+
+        const paidTowardsMonthly = Math.max(0, totalPaid - expectedOneTime);
+
+        const cumulativeMonthlyExpected = monthlyFee * monthsToCalculate;
+        const pendingMonthly = Math.max(0, cumulativeMonthlyExpected - paidTowardsMonthly);
+
+        const totalPayableNow = prevBalance + pendingOneTime + pendingMonthly;
+
+        const unpaidMonthsList = [];
+        for (let i = 0; i < monthsToCalculate; i++) {
+            const expectedTillThisMonth = monthlyFee * (i + 1);
+            if (paidTowardsMonthly < expectedTillThisMonth) {
+                unpaidMonthsList.push(allMonths[i]);
+            }
+        }
+
+        let pendingDetailsParts = [];
+        if (prevBalance > 0) pendingDetailsParts.push('Old Dues');
+        if (pendingOneTime > 0) pendingDetailsParts.push('Admission/Annual Fees');
+        if (unpaidMonthsList.length > 0) pendingDetailsParts.push(unpaidMonthsList.join(', '));
+        
+        const pendingDetailsText = pendingDetailsParts.length > 0 ? pendingDetailsParts.join(' + ') : 'None';
+
+        return {
+            prevBalance,
+            expectedOneTime,
+            paidTowardsOneTime,
+            pendingOneTime,
+            cumulativeMonthlyExpected,
+            paidTowardsMonthly,
+            pendingMonthly,
+            totalPayableNow,
+            unpaidMonthsList,
+            pendingDetailsText
+        };
+    };
 
     const fetchReports = async () => {
         try {
@@ -358,18 +423,27 @@ const Fees: React.FC = () => {
 
     const isHeadPaidForMonth = (headName: string, month: string) => {
         return studentHistory.some(r => {
-            if (r.status !== 'APPROVED' || r.month !== month) return false;
+            if (r.status !== 'APPROVED') return false;
+            let paidMonths = [r.month?.trim()];
+            if (r.feeHead.includes('==>')) {
+                paidMonths = r.feeHead.split('==>')[0].split(',').map((m: string) => m.trim());
+            }
+            if (!paidMonths.includes(month)) return false;
             const parts = r.feeHead.split('==>');
-            if (parts.length < 2) return false;
-            const headsPart = parts[1];
-            const headNames = headsPart.split('||').map(hn => hn.split(':')[0].trim());
+            const headsPart = parts.length > 1 ? parts[1] : parts[0];
+            const headNames = headsPart.split('||').map((hn: string) => hn.split(':')[0].trim());
             return headNames.includes(headName);
         });
     };
 
     const isTransportPaidForMonth = (month: string) => {
         return studentHistory.some(r => {
-            if (r.status !== 'APPROVED' || r.month !== month) return false;
+            if (r.status !== 'APPROVED') return false;
+            let paidMonths = [r.month?.trim()];
+            if (r.feeHead.includes('==>')) {
+                paidMonths = r.feeHead.split('==>')[0].split(',').map((m: string) => m.trim());
+            }
+            if (!paidMonths.includes(month)) return false;
             return r.feeHead.includes('Transport');
         });
     };
@@ -430,11 +504,15 @@ const Fees: React.FC = () => {
         // A month is fully paid only if all monthly heads for that month have been paid
         return monthlyHeads.every(h => {
              return studentHistory.some(r => {
-                 if (r.status !== 'APPROVED' || r.month !== month) return false;
+                 if (r.status !== 'APPROVED') return false;
+                 let paidMonths = [r.month?.trim()];
+                 if (r.feeHead.includes('==>')) {
+                     paidMonths = r.feeHead.split('==>')[0].split(',').map((m: string) => m.trim());
+                 }
+                 if (!paidMonths.includes(month)) return false;
                  const parts = r.feeHead.split('==>');
-                 if (parts.length < 2) return false;
-                 const headsPart = parts[1];
-                 const headNames = headsPart.split('||').map(hn => hn.split(':')[0].trim());
+                 const headsPart = parts.length > 1 ? parts[1] : parts[0];
+                 const headNames = headsPart.split('||').map((hn: string) => hn.split(':')[0].trim());
                  return headNames.includes(h.name);
              });
         });
@@ -660,7 +738,8 @@ const Fees: React.FC = () => {
                 })
                 .filter(f => {
                     if (dueMonthFilter === 'All') return true;
-                    return (f.pendingMonths || []).includes(dueMonthFilter);
+                    // For the simple export, show ALL students in the class, not just pending ones
+                    return true; 
                 })
                 .filter(f => {
                     if (dueSearchQuery === '') return true;
@@ -670,37 +749,83 @@ const Fees: React.FC = () => {
                            (f.fatherName || '').toLowerCase().includes(query);
                 });
 
-            const isMonthSelected = dueMonthFilter !== 'All';
-            const headers = [
-                "Student Name", 
-                "Father Name", 
-                "Class", 
-                "Admission No", 
-                isMonthSelected ? `${dueMonthFilter} Monthly Fee` : "Total Expected", 
-                "Total Paid", 
-                "Total Net Pending",
-                "Remaining Amount"
-            ];
-            
-            const csvContent = [
-                headers.join(","),
-                ...filtered.map(f => [
-                    `"${f.studentName}"`,
-                    `"${f.fatherName || 'N/A'}"`,
-                    `"${f.className}"`,
-                    `"${f.admissionNo}"`,
-                    isMonthSelected ? f.monthlyFeeAmount : f.totalExpected,
-                    f.totalPaid,
-                    f.pending,
-                    isMonthSelected ? Math.max(0, (f.monthlyFeeAmount || 0) - (f.monthWisePaid?.[dueMonthFilter] || 0)) : f.pending
-                ].join(","))
-            ].join("\n");
+            let headers: string[] = [];
+            let csvContentLines: string[] = [];
+
+            if (dueMonthFilter !== 'All') {
+                headers = [
+                    "S.No.",
+                    "Student Name",
+                    "Admission No",
+                    "Class",
+                    "Monthly Fee Amount (Rs)",
+                    "Month Status",
+                    "Amount Paid (Rs)"
+                ];
+                
+                csvContentLines = [
+                    headers.join(","),
+                    ...filtered.map((f, index) => {
+                        const mPaid = f.monthWisePaid?.[dueMonthFilter] || 0;
+                        const mExpected = f.monthlyFeeAmount || 0;
+                        
+                        let status = "Pending";
+                        if (mExpected === 0) {
+                            status = f.isRT ? "RT Student" : "No Fee Assigned";
+                        } else {
+                            status = mPaid >= mExpected ? "Paid" : (mPaid > 0 ? "Partially Paid" : "Pending");
+                        }
+                        
+                        return [
+                            index + 1,
+                            `"${f.studentName || 'Unknown'}"`,
+                            `"${f.admissionNo || 'N/A'}"`,
+                            `"${f.className || 'Unknown'}"`,
+                            mExpected,
+                            `"${status}"`,
+                            mPaid
+                        ].join(",");
+                    })
+                ];
+            } else {
+                headers = [
+                    "S.No.",
+                    "Student Name",
+                    "Admission No",
+                    "Class",
+                    "Total Pending Amount (Rs)",
+                    "Pending Details"
+                ];
+                
+                // For 'All' months, filter only those who actually have pending
+                const pendingFiltered = filtered.filter(f => {
+                    const dyn = calculateDynamicDues(f, 'All');
+                    return dyn.totalPayableNow > 0;
+                });
+
+                csvContentLines = [
+                    headers.join(","),
+                    ...pendingFiltered.map((f, index) => {
+                        const dyn = calculateDynamicDues(f, 'All');
+                        return [
+                            index + 1,
+                            `"${f.studentName || 'Unknown'}"`,
+                            `"${f.admissionNo || 'N/A'}"`,
+                            `"${f.className || 'Unknown'}"`,
+                            dyn.totalPayableNow,
+                            `"${dyn.pendingDetailsText}"`
+                        ].join(",");
+                    })
+                ];
+            }
+
+            const csvContent = csvContentLines.join("\n");
 
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
             const url = URL.createObjectURL(blob);
             const link = document.createElement("a");
             link.setAttribute("href", url);
-            link.setAttribute("download", `Pending_Fees_${new Date().toLocaleDateString()}.csv`);
+            link.setAttribute("download", dueMonthFilter !== 'All' ? `Simple_List_${dueMonthFilter}_${new Date().toLocaleDateString()}.csv` : `Pending_Fees_${new Date().toLocaleDateString()}.csv`);
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
@@ -743,6 +868,162 @@ const Fees: React.FC = () => {
             link.click();
             document.body.removeChild(link);
         }
+    };
+
+    const downloadFullDetailsExcel = async () => {
+        if (dueView !== 'general') return;
+        
+        const filtered = (dueFees as any[])
+            .filter(f => dueClassFilter === 'All' || f.className === dueClassFilter)
+            .filter(f => {
+                if (dueRtFilter === 'All') return true;
+                if (dueRtFilter === 'RT') return f.isRT;
+                return !f.isRT;
+            })
+            .filter(f => {
+                if (dueMonthFilter === 'All') return true;
+                // For Full details, show ALL students, so we can color them red/yellow/green
+                return true; 
+            })
+            .filter(f => {
+                if (dueSearchQuery === '') return true;
+                const query = dueSearchQuery.toLowerCase();
+                return (f.studentName || '').toLowerCase().includes(query) || 
+                       (f.admissionNo || '').toLowerCase().includes(query) ||
+                       (f.fatherName || '').toLowerCase().includes(query);
+            });
+
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('Full Details');
+
+        worksheet.columns = [
+            { header: 'S.No.', key: 'sno', width: 8 },
+            { header: 'Student Name', key: 'studentName', width: 25 },
+            { header: 'Admission No', key: 'admNo', width: 15 },
+            { header: 'Class', key: 'class', width: 15 },
+            { header: 'Previous Months Pending (Rs)', key: 'prevPending', width: 28 },
+            { header: 'This Month Fee (Rs)', key: 'thisMonthFee', width: 20 },
+            { header: 'Total Amount Due', key: 'totalAmountDue', width: 22 },
+            { header: 'Payment Status', key: 'status', width: 18 },
+            { header: 'Description', key: 'description', width: 35 },
+            { header: 'Blank', key: 'blank', width: 20 }
+        ];
+
+        // Style the header
+        worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        worksheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF475569' } };
+        worksheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
+
+        filtered.forEach((f, index) => {
+            const allMonths = ['April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December', 'January', 'February', 'March'];
+            
+            // To calculate "This Month Fee" vs "Previous Months Pending"
+            let targetMonthIndex = dueMonthFilter === 'All' ? new Date().getMonth() - 3 : allMonths.indexOf(dueMonthFilter);
+            if (targetMonthIndex < 0) targetMonthIndex += 12; // Handle Jan-Mar
+            
+            const dyn = calculateDynamicDues(f, dueMonthFilter);
+            
+            // Expected One-time minus Paid One-time
+            const oneTimePending = dyn.pendingOneTime;
+            
+            // Monthly calculations
+            const monthlyFee = f.monthlyFeeAmount || 0;
+            const paidMonthly = dyn.paidTowardsMonthly;
+            
+            let prevMonthsExpected = 0;
+            if (targetMonthIndex > 0) {
+                 prevMonthsExpected = monthlyFee * targetMonthIndex;
+            }
+            // Previous arrears including old session dues + unpaid prev months
+            const prevPending = dyn.prevBalance + Math.max(0, prevMonthsExpected - paidMonthly);
+            
+            // This month's fee
+            const thisMonthExpected = monthlyFee;
+            let thisMonthPending = 0;
+            
+            if (paidMonthly >= prevMonthsExpected + thisMonthExpected) {
+                thisMonthPending = 0; // Fully paid up to this month
+            } else if (paidMonthly > prevMonthsExpected) {
+                thisMonthPending = (prevMonthsExpected + thisMonthExpected) - paidMonthly; // Partially paid this month
+            } else {
+                thisMonthPending = thisMonthExpected; // Not paid at all for this month
+            }
+
+            const totalAmountDue = prevPending + thisMonthPending;
+            
+            let status = 'Unpaid';
+            let rowColor = 'FFFFFFFF'; // White default
+            
+            if (totalAmountDue <= 0) {
+                status = f.isRT ? 'RT Student' : 'Paid';
+                rowColor = 'FFDCFCE7'; // Green (bg-green-100)
+            } else if (prevPending === 0 && thisMonthPending > 0) {
+                rowColor = 'FFFEEBC8'; // Yellow (bg-yellow-100)
+            } else {
+                rowColor = 'FFFEE2E2'; // Red (bg-red-100)
+            }
+
+            let description = '';
+            if (oneTimePending > 0) {
+                if (f.oneTimeBreakdown && f.oneTimeBreakdown.length > 0) {
+                    let remainingPaid = f.totalPaid || 0;
+                    const pendingList: string[] = [];
+                    for (const ot of f.oneTimeBreakdown) {
+                        if (remainingPaid >= ot.amount) {
+                            remainingPaid -= ot.amount;
+                        } else if (remainingPaid > 0) {
+                            pendingList.push(`${ot.name}-${ot.amount - remainingPaid}`);
+                            remainingPaid = 0;
+                        } else {
+                            pendingList.push(`${ot.name}-${ot.amount}`);
+                        }
+                    }
+                    description = pendingList.join(', ');
+                } else {
+                    description = `one time payment - ${oneTimePending}`;
+                }
+            }
+
+            if (f.isRT) {
+                description = description ? `${description} (RT Student)` : 'RT Student';
+            }
+
+            const row = worksheet.addRow({
+                sno: index + 1,
+                studentName: f.studentName || 'Unknown',
+                admNo: f.admissionNo || 'N/A',
+                class: f.className || 'Unknown',
+                prevPending: prevPending,
+                thisMonthFee: thisMonthPending,
+                totalAmountDue: totalAmountDue,
+                status: status,
+                description: description,
+                blank: ''
+            });
+
+            row.fill = {
+                type: 'pattern',
+                pattern: 'solid',
+                fgColor: { argb: rowColor }
+            };
+            
+            // Add borders
+            row.eachCell((cell) => {
+                cell.border = {
+                    top: {style:'thin', color: {argb:'FFE2E8F0'}},
+                    left: {style:'thin', color: {argb:'FFE2E8F0'}},
+                    bottom: {style:'thin', color: {argb:'FFE2E8F0'}},
+                    right: {style:'thin', color: {argb:'FFE2E8F0'}}
+                };
+                if(typeof cell.value === 'number') {
+                    cell.alignment = { horizontal: 'right' };
+                }
+            });
+        });
+
+        const buffer = await workbook.xlsx.writeBuffer();
+        const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        saveAs(blob, `Full_Details_${dueMonthFilter}_${new Date().toLocaleDateString()}.xlsx`);
     };
 
     const exportPreviousDueExcel = () => {
@@ -1951,7 +2232,7 @@ const Fees: React.FC = () => {
                                         onChange={(e) => setDueRtFilter(e.target.value)}
                                     >
                                         <option value="All">All Students</option>
-                                        <option value="RT">RT Students</option>
+                                    <option value="RT">RT Students</option>
                                         <option value="Non-RT">Non-RT Students</option>
                                     </select>
                                 </div>
@@ -1963,6 +2244,13 @@ const Fees: React.FC = () => {
                                     >
                                         Export CSV
                                     </button>
+                                    <button 
+                                        onClick={downloadFullDetailsExcel}
+                                        className="btn-primary" 
+                                        style={{ padding: '0.6rem 1.2rem', width: 'auto', backgroundColor: '#2563eb', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+                                    >
+                                        <Download size={16} /> Full Details
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -1971,7 +2259,7 @@ const Fees: React.FC = () => {
                             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                             <thead>
                                 <tr style={{ backgroundColor: '#f1f5f9', textAlign: 'left', position: 'sticky', top: 0, zIndex: 2 }}>
-                                    <th style={{ padding: '1rem', color: '#475569', fontSize: '0.8rem', fontWeight: '700' }}>Student Name ({(
+                                    <th style={{ padding: '1rem', color: '#475569', fontSize: '0.8rem', fontWeight: '700' }}>Student Details ({(
                                         dueFees
                                             .filter(f => dueClassFilter === 'All' || f.className?.trim() === dueClassFilter.trim())
                                             .filter(f => {
@@ -1991,9 +2279,19 @@ const Fees: React.FC = () => {
                                                        (f.fatherName || '').toLowerCase().includes(query);
                                             })
                                     ).length})</th>
-                                    <th style={{ padding: '1rem', color: '#475569', fontSize: '0.8rem', fontWeight: '700' }}>Admission No</th>
                                     <th style={{ padding: '1rem', color: '#475569', fontSize: '0.8rem', fontWeight: '700' }}>Class</th>
-                                    <th style={{ padding: '1rem', color: '#475569', fontSize: '0.8rem', fontWeight: '700', textAlign: 'right' }}>{dueMonthFilter === 'All' ? 'Total Pending (₹)' : `${dueMonthFilter} Monthly Fee (₹)`}</th>
+                                    {dueMonthFilter !== 'All' ? (
+                                        <>
+                                            <th style={{ padding: '1rem', color: '#475569', fontSize: '0.8rem', fontWeight: '700', textAlign: 'right' }}>Monthly Fee Amount</th>
+                                            <th style={{ padding: '1rem', color: '#475569', fontSize: '0.8rem', fontWeight: '700', textAlign: 'center' }}>Month Status</th>
+                                            <th style={{ padding: '1rem', color: '#475569', fontSize: '0.8rem', fontWeight: '700', textAlign: 'right' }}>Amount Paid</th>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <th style={{ padding: '1rem', color: '#475569', fontSize: '0.8rem', fontWeight: '700', textAlign: 'right' }}>Total Pending Amount</th>
+                                            <th style={{ padding: '1rem', color: '#475569', fontSize: '0.8rem', fontWeight: '700' }}>Pending Details</th>
+                                        </>
+                                    )}
                                     <th style={{ padding: '1rem', color: '#475569', fontSize: '0.8rem', fontWeight: '700', textAlign: 'center' }}>Action</th>
                                 </tr>
                             </thead>
@@ -2034,7 +2332,7 @@ const Fees: React.FC = () => {
                                             {/* Summary banner when month is selected */}
                                             {dueMonthFilter !== 'All' && (
                                                 <tr style={{ backgroundColor: '#f0f9ff' }}>
-                                                    <td colSpan={5} style={{ padding: '0.75rem 1rem', fontSize: '0.85rem', color: '#0369a1', fontWeight: '700', borderBottom: '2px solid #bae6fd' }}>
+                                                    <td colSpan={6} style={{ padding: '0.75rem 1rem', fontSize: '0.85rem', color: '#0369a1', fontWeight: '700', borderBottom: '2px solid #bae6fd' }}>
                                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                                             <span>📅 Showing {filtered.length} student(s) with dues for <strong>{dueMonthFilter}</strong></span>
                                                             <div style={{ display: 'flex', gap: '1.5rem' }}>
@@ -2047,36 +2345,74 @@ const Fees: React.FC = () => {
                                                 </tr>
                                             )}
                                             {filtered.map((fee: any) => {
-                                                const mPaid = dueMonthFilter === 'All' ? 0 : (fee.monthWisePaid?.[dueMonthFilter] || 0);
-                                                const mPending = dueMonthFilter === 'All' ? fee.pending : Math.max(0, fee.monthlyFeeAmount - mPaid);
+                                                const dyn = calculateDynamicDues(fee, dueMonthFilter);
                                                 return (
                                                     <tr key={fee.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                                                        <td style={{ padding: '1rem', fontWeight: '600' }}>{fee.studentName}</td>
-                                                        <td style={{ padding: '1rem', color: '#64748b' }}>{fee.admissionNo}</td>
+                                                        <td style={{ padding: '1rem' }}>
+                                                            <div style={{ fontWeight: '600' }}>{fee.studentName}</div>
+                                                            <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{fee.admissionNo}</div>
+                                                        </td>
                                                         <td style={{ padding: '1rem' }}>
                                                             <span style={{ background: '#e0e7ff', color: '#4338ca', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem' }}>
                                                                 {fee.className}
                                                             </span>
                                                         </td>
-                                                        <td style={{ padding: '1rem', textAlign: 'right', verticalAlign: 'middle' }}>
-                                                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                                                                <div style={{ fontSize: '1rem', fontWeight: '800', color: '#ef4444' }}>
-                                                                    ₹{mPending.toLocaleString()}
-                                                                </div>
-                                                                {dueMonthFilter !== 'All' && (
-                                                                    <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '2px' }}>
-                                                                        {mPaid > 0 ? (
-                                                                            <>₹{fee.monthlyFeeAmount.toLocaleString()} - <span style={{ color: '#059669', fontWeight: 'bold' }}>₹{mPaid.toLocaleString()} paid</span></>
-                                                                        ) : (
-                                                                            <>Full Month Bill: ₹{fee.monthlyFeeAmount.toLocaleString()}</>
-                                                                        )}
+                                                        {dueMonthFilter !== 'All' ? (() => {
+                                                            const mPaid = fee.monthWisePaid?.[dueMonthFilter] || 0;
+                                                            const mExpected = fee.monthlyFeeAmount || 0;
+                                                            let status = "Pending";
+                                                            let statusColor = "#ef4444"; // red
+                                                            let statusBg = "#fef2f2";
+                                                            
+                                                            if (mExpected === 0) {
+                                                                status = fee.isRT ? "RT Student" : "No Fee Assigned";
+                                                                statusColor = "#059669"; // green
+                                                                statusBg = "#ecfdf5";
+                                                            } else {
+                                                                if (mPaid >= mExpected) {
+                                                                    status = "Paid";
+                                                                    statusColor = "#059669";
+                                                                    statusBg = "#ecfdf5";
+                                                                } else if (mPaid > 0) {
+                                                                    status = "Partially Paid";
+                                                                    statusColor = "#d97706";
+                                                                    statusBg = "#fffbeb";
+                                                                }
+                                                            }
+                                                            
+                                                            return (
+                                                                <>
+                                                                    <td style={{ padding: '1rem', textAlign: 'right' }}>
+                                                                        <div style={{ fontSize: '0.95rem', fontWeight: '700', color: '#334155' }}>
+                                                                            ₹{mExpected.toLocaleString()}
+                                                                        </div>
+                                                                    </td>
+                                                                    <td style={{ padding: '1rem', textAlign: 'center' }}>
+                                                                        <span style={{ background: statusBg, color: statusColor, padding: '0.3rem 0.6rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: '600' }}>
+                                                                            {status}
+                                                                        </span>
+                                                                    </td>
+                                                                    <td style={{ padding: '1rem', textAlign: 'right' }}>
+                                                                        <div style={{ fontSize: '0.95rem', fontWeight: '700', color: '#0f172a' }}>
+                                                                            ₹{mPaid.toLocaleString()}
+                                                                        </div>
+                                                                    </td>
+                                                                </>
+                                                            );
+                                                        })() : (
+                                                            <>
+                                                                <td style={{ padding: '1rem', textAlign: 'right' }}>
+                                                                    <div style={{ fontSize: '1rem', fontWeight: '800', color: '#ef4444' }}>
+                                                                        ₹{dyn.totalPayableNow.toLocaleString()}
                                                                     </div>
-                                                                )}
-                                                                <div style={{ fontSize: '0.75rem', fontWeight: '700', color: '#1e293b', marginTop: '4px', background: '#f1f5f9', padding: '1px 6px', borderRadius: '4px' }}>
-                                                                    Total Dues: ₹{fee.pending.toLocaleString()}
-                                                                </div>
-                                                            </div>
-                                                        </td>
+                                                                </td>
+                                                                <td style={{ padding: '1rem' }}>
+                                                                    <div style={{ fontSize: '0.75rem', color: '#64748b', maxWidth: '250px', whiteSpace: 'normal', fontWeight: '500' }}>
+                                                                        {dyn.pendingDetailsText}
+                                                                    </div>
+                                                                </td>
+                                                            </>
+                                                        )}
                                                         <td style={{ padding: '1rem', textAlign: 'center' }}>
                                                             <button
                                                                 onClick={() => {

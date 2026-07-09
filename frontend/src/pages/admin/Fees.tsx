@@ -156,15 +156,20 @@ const Fees: React.FC = () => {
         const totalPaid = fee.totalPaid || 0;
         const monthlyFee = fee.monthlyFeeAmount || 0;
 
-        const paidTowardsOneTime = Math.min(expectedOneTime, totalPaid);
+        const actualOneTimePaid = fee.actualOneTimePaid ?? Math.min(expectedOneTime, totalPaid);
+        const actualMonthlyPaid = fee.actualMonthlyPaid ?? Math.max(0, totalPaid - expectedOneTime);
+        const actualPrevDuesPaid = fee.actualPrevDuesPaid ?? 0;
+
+        const paidTowardsOneTime = Math.min(expectedOneTime, actualOneTimePaid);
         const pendingOneTime = expectedOneTime - paidTowardsOneTime;
 
-        const paidTowardsMonthly = Math.max(0, totalPaid - expectedOneTime);
+        const adjustedPrevBalance = Math.max(0, prevBalance - actualPrevDuesPaid);
 
         const cumulativeMonthlyExpected = monthlyFee * monthsToCalculate;
+        const paidTowardsMonthly = actualMonthlyPaid;
         const pendingMonthly = Math.max(0, cumulativeMonthlyExpected - paidTowardsMonthly);
 
-        const totalPayableNow = prevBalance + pendingOneTime + pendingMonthly;
+        const totalPayableNow = adjustedPrevBalance + pendingOneTime + pendingMonthly;
 
         const unpaidMonthsList = [];
         for (let i = 0; i < monthsToCalculate; i++) {
@@ -175,14 +180,14 @@ const Fees: React.FC = () => {
         }
 
         let pendingDetailsParts = [];
-        if (prevBalance > 0) pendingDetailsParts.push('Old Dues');
+        if (adjustedPrevBalance > 0) pendingDetailsParts.push('Old Dues');
         if (pendingOneTime > 0) pendingDetailsParts.push('Admission/Annual Fees');
         if (unpaidMonthsList.length > 0) pendingDetailsParts.push(unpaidMonthsList.join(', '));
         
         const pendingDetailsText = pendingDetailsParts.length > 0 ? pendingDetailsParts.join(' + ') : 'None';
 
         return {
-            prevBalance,
+            prevBalance: adjustedPrevBalance,
             expectedOneTime,
             paidTowardsOneTime,
             pendingOneTime,
@@ -914,7 +919,7 @@ const Fees: React.FC = () => {
         worksheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF475569' } };
         worksheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
 
-        filtered.forEach((f, index) => {
+        const enrichedData = filtered.map((f) => {
             const allMonths = ['April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December', 'January', 'February', 'March'];
             
             // To calculate "This Month Fee" vs "Previous Months Pending"
@@ -988,23 +993,40 @@ const Fees: React.FC = () => {
                 description = description ? `${description} (RT Student)` : 'RT Student';
             }
 
+            return {
+                ...f,
+                prevPending,
+                thisMonthPending,
+                totalAmountDue,
+                status,
+                rowColor,
+                description
+            };
+        });
+
+        // Sort: Unpaid (higher dues) at top, Paid (0 or negative dues) at bottom
+        enrichedData.sort((a, b) => {
+            return b.totalAmountDue - a.totalAmountDue;
+        });
+
+        enrichedData.forEach((f, index) => {
             const row = worksheet.addRow({
                 sno: index + 1,
                 studentName: f.studentName || 'Unknown',
                 admNo: f.admissionNo || 'N/A',
                 class: f.className || 'Unknown',
-                prevPending: prevPending,
-                thisMonthFee: thisMonthPending,
-                totalAmountDue: totalAmountDue,
-                status: status,
-                description: description,
+                prevPending: f.prevPending,
+                thisMonthFee: f.thisMonthPending,
+                totalAmountDue: f.totalAmountDue,
+                status: f.status,
+                description: f.description,
                 blank: ''
             });
 
             row.fill = {
                 type: 'pattern',
                 pattern: 'solid',
-                fgColor: { argb: rowColor }
+                fgColor: { argb: f.rowColor }
             };
             
             // Add borders

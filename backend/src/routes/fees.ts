@@ -573,6 +573,71 @@ router.get('/due-list', async (req, res) => {
             });
             const paidMonths: string[] = Array.from(paidMonthsSet).filter(Boolean);
 
+            // Calculate Actual Payment Breakdown safely
+            let actualOneTimePaid = 0;
+            let actualMonthlyPaid = 0;
+            let actualPrevDuesPaid = 0;
+
+            studentPayments.forEach(p => {
+                let totalVal = (p.amountPaid || 0) + (p.discount || 0);
+                if (p.feeHead && p.feeHead.includes(':')) {
+                    const breakdownStr = p.feeHead.includes('==>') ? p.feeHead.split('==>')[1] : p.feeHead;
+                    const items = breakdownStr.split('||');
+                    
+                    let expectedPrevDues = 0;
+                    let expectedOneTime = 0;
+                    let expectedMonthly = 0;
+                    let expectedTransport = 0;
+
+                    items.forEach(item => {
+                        const parts = item.split(':');
+                        if (parts.length >= 2) {
+                            const name = parts[0].trim();
+                            const amt = parseFloat(parts[1].trim()) || 0;
+                            const nameLower = name.toLowerCase();
+
+                            if (name === 'Previous Dues') {
+                                expectedPrevDues += amt;
+                            } else if (nameLower.includes('transport') || nameLower.includes('bus')) {
+                                expectedTransport += amt;
+                            } else {
+                                const headObj = feeHeads.find(h => {
+                                    const hName = h.name.toLowerCase();
+                                    return nameLower.startsWith(hName) || hName.startsWith(nameLower);
+                                });
+                                if (headObj && headObj.type !== 'Monthly') {
+                                    expectedOneTime += amt;
+                                } else {
+                                    expectedMonthly += amt;
+                                }
+                            }
+                        }
+                    });
+
+                    // Distribute actual payment (totalVal)
+                    const payToPrev = Math.min(totalVal, expectedPrevDues);
+                    actualPrevDuesPaid += payToPrev;
+                    totalVal -= payToPrev;
+
+                    // Subtract transport from general dues so it doesn't inflate monthly paid
+                    const payToTransport = Math.min(totalVal, expectedTransport);
+                    totalVal -= payToTransport;
+
+                    const payToOneTime = Math.min(totalVal, expectedOneTime);
+                    actualOneTimePaid += payToOneTime;
+                    totalVal -= payToOneTime;
+
+                    actualMonthlyPaid += totalVal; // Everything else to monthly
+                } else {
+                    // Fallback, if it's purely a transport payment, ignore it
+                    if (p.feeHead && (p.feeHead.toLowerCase().includes('transport') || p.feeHead.toLowerCase().includes('bus'))) {
+                        // purely transport, ignore
+                    } else {
+                        actualMonthlyPaid += totalVal;
+                    }
+                }
+            });
+
             // Detailed Pending
             const totalExpected = expectedMonthly + expectedOneTime;
             const netPending = (totalExpected - totalPaid) + (student.previousSessionDue || 0);
@@ -650,6 +715,9 @@ router.get('/due-list', async (req, res) => {
                 previousSessionDue: student.previousSessionDue || 0,
                 monthlyFeeAmount: monthlyFeeAmountValue,
                 paidMonths,
+                actualOneTimePaid,
+                actualMonthlyPaid,
+                actualPrevDuesPaid,
             };
         }).filter(Boolean);
 

@@ -3,11 +3,13 @@ import {
     Users, GraduationCap, Wallet, Calendar, TrendingUp, TrendingDown,
     ArrowRight, Bell, CheckCircle2, Clock, UserPlus, School,
     BookOpen, Bus, Shield, FileText, ArrowUpCircle, BarChart2, AlertCircle, IndianRupee,
-    CheckSquare, CornerDownLeft, Check, Trash2
+    CheckSquare, CornerDownLeft, Check, Trash2, Download, ChevronRight, ChevronDown
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import Chart from 'react-apexcharts';
+import ExcelJS from 'exceljs';
+import { saveAs } from 'file-saver';
 
 // ─── Time Formatter ──────────────────────────────────────────────────────────
 const formatTimeAgo = (dateStr: string) => {
@@ -50,8 +52,8 @@ const AnimatedNumber = ({ value, isCurrency = false, suffix = '' }: { value: num
         return () => clearInterval(timer);
     }, [value]);
 
-    if (isCurrency) return <>₹{count.toLocaleString()}</>;
-    return <>{count.toLocaleString()}{suffix}</>;
+    if (isCurrency) return <>₹{count.toLocaleString('en-IN')}</>;
+    return <>{count.toLocaleString('en-IN')}{suffix}</>;
 };
 
 
@@ -129,14 +131,17 @@ const StatCard = ({ title, value, icon, color, trend, isNegative, sparklineData 
     );
 };
 
-const SectionCard = ({ title, children }: any) => (
+const SectionCard = ({ title, action, children }: any) => (
     <div style={{
         backgroundColor: 'white', borderRadius: '20px', padding: '2rem',
         boxShadow: '0 4px 20px rgba(0,0,0,0.05)', border: '1px solid #edf2f7'
     }}>
-        <h3 style={{ fontSize: '1.15rem', fontWeight: '700', color: '#2d3748', marginBottom: '1.5rem', paddingBottom: '1rem', borderBottom: '1px solid #f0f4f8' }}>
-            {title}
-        </h3>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', paddingBottom: '1rem', borderBottom: '1px solid #f0f4f8', gap: '1rem' }}>
+            <h3 style={{ fontSize: '1.15rem', fontWeight: '700', color: '#2d3748', margin: 0 }}>
+                {title}
+            </h3>
+            {action}
+        </div>
         {children}
     </div>
 );
@@ -194,45 +199,26 @@ const QuickLink = ({ icon, color, label, path }: any) => {
 
 // ─── Role-based config ────────────────────────────────────────────────────────
 
-const getRoleConfig = (role: string, statsData: any) => {
+const getRoleConfig = (role: string, statsData: any, revenueData?: any) => {
     switch (role) {
         case 'ADMIN':
-            return {
-                greeting: 'Superadmin Dashboard',
-                subtitle: 'System-wide overview and management',
-                accentColor: '#4a90e2',
-                badge: { label: 'ADMIN', bg: '#ebf4ff', color: '#2b6cb0' },
-                stats: [
-                    { title: 'Total Students', value: <AnimatedNumber value={statsData?.totalStudents || 0} />, icon: <GraduationCap size={22} />, color: '#4a90e2', trend: `+${statsData?.newAdmissions || 0} recent`, sparklineData: [400, 430, 450, 490, 560, 650, statsData?.totalStudents || 702] },
-                    { title: 'Total Teachers', value: <AnimatedNumber value={statsData?.totalTeachers || 0} />, icon: <Users size={22} />, color: '#9f7aea', trend: '', sparklineData: [15, 16, 16, 18, 19, 21, statsData?.totalTeachers || 22] },
-                    { title: 'Monthly Collection', value: <AnimatedNumber value={statsData?.monthlyCollection || 0} isCurrency={true} />, icon: <Wallet size={22} />, color: '#48bb78', trend: '', sparklineData: statsData?.dailyCollections?.map((d:any)=>d.amount) || [1000, 5000, 2000, 8000, 15000, 12000] },
-                    { title: 'Avg. Attendance', value: <AnimatedNumber value={statsData?.attendancePercentage || 0} suffix="%" />, icon: <Calendar size={22} />, color: '#ed8936', trend: '', sparklineData: [85, 82, 88, 91, 95, 93, statsData?.attendancePercentage || 95] },
-                ],
-            };
+        case 'ACCOUNTS':
         case 'PRINCIPAL':
             return {
-                greeting: 'Principal Dashboard',
-                subtitle: 'Academic performance & school overview',
-                accentColor: '#805ad5',
-                badge: { label: 'PRINCIPAL', bg: '#faf5ff', color: '#6b46c1' },
+                greeting: role === 'ADMIN' ? 'Superadmin Dashboard' : role === 'ACCOUNTS' ? 'Accounts Dashboard' : 'Principal Dashboard',
+                subtitle: role === 'ADMIN' ? 'System-wide overview and management' : role === 'ACCOUNTS' ? 'Fee collection, dues & financial overview' : 'Academic performance & school overview',
+                accentColor: role === 'ADMIN' ? '#4a90e2' : role === 'ACCOUNTS' ? '#38a169' : '#805ad5',
+                badge: { 
+                    label: role, 
+                    bg: role === 'ADMIN' ? '#ebf4ff' : role === 'ACCOUNTS' ? '#f0fff4' : '#faf5ff', 
+                    color: role === 'ADMIN' ? '#2b6cb0' : role === 'ACCOUNTS' ? '#276749' : '#6b46c1' 
+                },
                 stats: [
-                    { title: 'Total Students', value: <AnimatedNumber value={statsData?.totalStudents || 0} />, icon: <GraduationCap size={22} />, color: '#805ad5', trend: '', sparklineData: [400, 430, 450, 490, 560, 650, statsData?.totalStudents || 702] },
-                    { title: 'Total Teachers', value: <AnimatedNumber value={statsData?.totalTeachers || 0} />, icon: <Users size={22} />, color: '#4a90e2', trend: '', sparklineData: [15, 16, 16, 18, 19, 21, statsData?.totalTeachers || 22] },
-                    { title: 'Classes Running', value: <AnimatedNumber value={15} />, icon: <BookOpen size={22} />, color: '#48bb78', trend: '', sparklineData: [5, 8, 12, 14, 15, 15, 15] },
-                    { title: 'Avg. Attendance', value: <AnimatedNumber value={statsData?.attendancePercentage || 0} suffix="%" />, icon: <Calendar size={22} />, color: '#ed8936', trend: '', sparklineData: [85, 82, 88, 91, 95, 93, statsData?.attendancePercentage || 95] },
-                ],
-            };
-        case 'ACCOUNTS':
-            return {
-                greeting: 'Accounts Dashboard',
-                subtitle: 'Fee collection, dues & financial overview',
-                accentColor: '#38a169',
-                badge: { label: 'ACCOUNTS', bg: '#f0fff4', color: '#276749' },
-                stats: [
-                    { title: 'Total Collected', value: <AnimatedNumber value={statsData?.monthlyCollection || 0} isCurrency={true} />, icon: <Wallet size={22} />, color: '#38a169', trend: '', sparklineData: statsData?.dailyCollections?.map((d:any)=>d.amount) || [1000, 5000, 2000, 8000, 15000, 12000] },
-                    { title: 'Pending Dues', value: <AnimatedNumber value={statsData?.pendingFees || 0} isCurrency={true} />, icon: <AlertCircle size={22} />, color: '#e53e3e', trend: '', sparklineData: [50000, 45000, 42000, 38000, 31000, statsData?.pendingFees || 25000] },
-                    { title: 'Students with Dues', value: <AnimatedNumber value={0} />, icon: <Users size={22} />, color: '#ed8936', trend: '', sparklineData: [120, 115, 105, 95, 85, 70, 50] },
-                    { title: 'TC Issued', value: <AnimatedNumber value={0} />, icon: <GraduationCap size={22} />, color: '#4a90e2', trend: '', sparklineData: [0, 1, 2, 2, 4, 5, 5] },
+                    { title: 'Total Students', value: <AnimatedNumber value={revenueData?.summary?.totalStudents || statsData?.totalStudents || 0} />, icon: <GraduationCap size={22} />, color: '#4a90e2', trend: `+${statsData?.newAdmissions || 0} recent` },
+                    { title: 'Expected Revenue (Year)', value: <AnimatedNumber value={revenueData?.summary?.totalExpectedRevenue || 0} isCurrency={true} />, icon: <Wallet size={22} />, color: '#9f7aea', trend: '' },
+                    { title: 'Total Collected', value: <AnimatedNumber value={revenueData?.summary?.totalCollected || 0} isCurrency={true} />, icon: <Wallet size={22} />, color: '#48bb78', trend: '' },
+                    { title: 'Total Outstanding', value: <AnimatedNumber value={revenueData?.summary?.totalOutstanding || 0} isCurrency={true} />, icon: <AlertCircle size={22} />, color: '#e53e3e', trend: '' },
+                    { title: 'Concessions Given', value: <AnimatedNumber value={revenueData?.summary?.totalConcessions || 0} isCurrency={true} />, icon: <TrendingDown size={22} />, color: '#ed8936', trend: '' },
                 ],
             };
         case 'TEACHER':
@@ -348,6 +334,455 @@ const RoleDashboard: React.FC = () => {
 
     const [statsData, setStatsData] = useState<any>({});
     const [fetchedActivities, setFetchedActivities] = useState<any[]>([]);
+    const [revenueData, setRevenueData] = useState<any | null>(null);
+    const [expandedClassId, setExpandedClassId] = useState<string | null>(null);
+    const [downloadingClassId, setDownloadingClassId] = useState<string | null>(null);
+
+    const downloadClassExcelReport = async (classId: string, className: string) => {
+        try {
+            setDownloadingClassId(classId);
+            const res = await axios.get(`/erp-api/fees/dashboard/revenue/class/${classId}`);
+            if (!res.data || !res.data.students || res.data.students.length === 0) {
+                alert("No students found in this class to export.");
+                setDownloadingClassId(null);
+                return;
+            }
+
+            const studentsData = res.data.students;
+
+            const workbook = new ExcelJS.Workbook();
+            const worksheet = workbook.addWorksheet(`${className} Detailed Report`);
+
+            const oneTimeHeads = new Set<string>();
+            const monthlyHeads = new Set<string>();
+
+            studentsData.forEach((s: any) => {
+                if (s.oneTime?.details) {
+                    s.oneTime.details.forEach((item: any) => oneTimeHeads.add(item.name));
+                }
+                if (s.monthly?.details) {
+                    s.monthly.details.forEach((item: any) => monthlyHeads.add(item.name));
+                }
+            });
+
+            const oneTimeHeadsList = Array.from(oneTimeHeads);
+            const monthlyHeadsList = Array.from(monthlyHeads);
+
+            // Filter out heads that have 0 expected values across ALL students in this class
+            const activeOneTimeHeads = oneTimeHeadsList.filter(head => {
+                return studentsData.some((s: any) => {
+                    const detail = s.oneTime?.details?.find((d: any) => d.name === head);
+                    return detail && Number(detail.expected) > 0;
+                });
+            });
+
+            const activeMonthlyHeads = monthlyHeadsList.filter(head => {
+                return studentsData.some((s: any) => {
+                    const detail = s.monthly?.details?.find((d: any) => d.name === head);
+                    return detail && Number(detail.expected) > 0;
+                });
+            });
+
+            // Columns structure
+            const cols = [
+                { header: 'Roll No', key: 'rollNo', width: 12 },
+                { header: 'Admission No', key: 'admNo', width: 15 },
+                { header: 'Student Name', key: 'name', width: 25 },
+                { header: 'RTE Status', key: 'rte', width: 15 },
+                { header: 'Previous Session Dues (Expected)', key: 'prevExpected', width: 25 },
+                { header: 'Previous Session Dues (Paid)', key: 'prevPaid', width: 25 },
+                { header: 'Previous Session Dues (Due)', key: 'prevBalance', width: 25 },
+                { header: 'Transport Fee (Yearly Expected)', key: 'transExpected', width: 25 },
+                { header: 'Transport Fee (Yearly Paid)', key: 'transPaid', width: 25 },
+                { header: 'Transport Fee (Yearly Due)', key: 'transBalance', width: 25 },
+            ];
+
+            activeOneTimeHeads.forEach(head => {
+                cols.push(
+                    { header: `${head} (Expected)`, key: `ot_${head}_exp`, width: 22 },
+                    { header: `${head} (Paid)`, key: `ot_${head}_paid`, width: 22 },
+                    { header: `${head} (Due)`, key: `ot_${head}_bal`, width: 22 }
+                );
+            });
+
+            activeMonthlyHeads.forEach(head => {
+                cols.push(
+                    { header: `${head} Yearly (Expected)`, key: `m_${head}_exp`, width: 22 },
+                    { header: `${head} Yearly (Paid)`, key: `m_${head}_paid`, width: 22 },
+                    { header: `${head} Yearly (Due)`, key: `m_${head}_bal`, width: 22 }
+                );
+            });
+
+            cols.push(
+                { header: 'Total Expected (Annual Gross)', key: 'grossExpected', width: 28 },
+                { header: 'Total Paid (Annual Net)', key: 'grossPaid', width: 25 },
+                { header: 'Total Concessions (Discount)', key: 'grossDiscount', width: 25 },
+                { header: 'Net Outstanding Dues', key: 'grossOutstanding', width: 25 }
+            );
+
+            // 1. Report Header & Metadata
+            const totalColsCount = cols.length;
+            const getColLetter = (index: number): string => {
+                let temp = index;
+                let letter = '';
+                while (temp >= 0) {
+                    letter = String.fromCharCode((temp % 26) + 65) + letter;
+                    temp = Math.floor(temp / 26) - 1;
+                }
+                return letter;
+            };
+            const lastColLetter = getColLetter(totalColsCount - 1);
+
+            worksheet.mergeCells(`A1:${lastColLetter}1`);
+            const row1Cell = worksheet.getCell('A1');
+            row1Cell.value = 'BIPS SENIOR SECONDARY SCHOOL';
+            row1Cell.font = { name: 'Arial', size: 16, bold: true, color: { argb: 'FFFFFFFF' } };
+            row1Cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
+            row1Cell.alignment = { vertical: 'middle', horizontal: 'center' };
+            worksheet.getRow(1).height = 40;
+
+            worksheet.mergeCells(`A2:${lastColLetter}2`);
+            const row2Cell = worksheet.getCell('A2');
+            row2Cell.value = 'Detailed Class-Wise Revenue Ledger';
+            row2Cell.font = { name: 'Arial', size: 12, bold: true, color: { argb: 'FF334155' } };
+            row2Cell.alignment = { vertical: 'middle', horizontal: 'center' };
+            worksheet.getRow(2).height = 25;
+
+            const activeSessionStr = localStorage.getItem('activeSession') || '2026-2027';
+            worksheet.mergeCells(`A3:${lastColLetter}3`);
+            const row3Cell = worksheet.getCell('A3');
+            row3Cell.value = `Academic Session: ${activeSessionStr}  |  Class: ${className}  |  Generated On: ${new Date().toLocaleDateString('en-GB')} at ${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`;
+            row3Cell.font = { name: 'Arial', size: 10, italic: true, color: { argb: 'FF64748B' } };
+            row3Cell.alignment = { vertical: 'middle', horizontal: 'center' };
+            worksheet.getRow(3).height = 20;
+
+            worksheet.getRow(4).height = 15;
+
+            worksheet.getRow(5).values = cols.map(c => c.header);
+            worksheet.getRow(5).height = 28;
+
+            cols.forEach((col, idx) => {
+                const cell = worksheet.getRow(5).getCell(idx + 1);
+                cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+                
+                if (col.key.endsWith('exp') || col.key === 'grossExpected') {
+                    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF475569' } };
+                } else if (col.key.endsWith('paid') || col.key === 'grossPaid') {
+                    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF15803D' } };
+                } else if (col.key.endsWith('bal') || col.key === 'grossOutstanding' || col.key.endsWith('Due') || col.key.endsWith('Balance')) {
+                    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFB91C1C' } };
+                } else {
+                    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF334155' } };
+                }
+                
+                cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+            });
+
+            const startRow = 6;
+            studentsData.forEach((s: any) => {
+                const rowData: any = {};
+                rowData[cols[0].key || 'rollNo'] = s.rollNumber;
+                rowData[cols[1].key || 'admNo'] = s.admissionNo;
+                rowData[cols[2].key || 'name'] = s.studentName;
+                rowData[cols[3].key || 'rte'] = s.isRT ? 'RTE' : 'Regular';
+                rowData[cols[4].key || 'prevExpected'] = Number(s.prevDues.expected);
+                rowData[cols[5].key || 'prevPaid'] = Number(s.prevDues.paid);
+                rowData[cols[6].key || 'prevBalance'] = Number(s.prevDues.balance);
+                rowData[cols[7].key || 'transExpected'] = Number(s.transport.expected);
+                rowData[cols[8].key || 'transPaid'] = Number(s.transport.paid);
+                rowData[cols[9].key || 'transBalance'] = Number(s.transport.balance);
+
+                activeOneTimeHeads.forEach(head => {
+                    const detail = s.oneTime?.details?.find((d: any) => d.name === head);
+                    rowData[`ot_${head}_exp`] = detail ? Number(detail.expected) : 0;
+                    rowData[`ot_${head}_paid`] = detail ? Number(detail.paid) : 0;
+                    rowData[`ot_${head}_bal`] = detail ? Number(detail.balance) : 0;
+                });
+
+                activeMonthlyHeads.forEach(head => {
+                    const detail = s.monthly?.details?.find((d: any) => d.name === head);
+                    rowData[`m_${head}_exp`] = detail ? Number(detail.expected) : 0;
+                    rowData[`m_${head}_paid`] = detail ? Number(detail.paid) : 0;
+                    rowData[`m_${head}_bal`] = detail ? Number(detail.balance) : 0;
+                });
+
+                rowData['grossExpected'] = Number(s.grossSummary.expected);
+                rowData['grossPaid'] = Number(s.grossSummary.paid);
+                rowData['grossDiscount'] = Number(s.grossSummary.discount);
+                rowData['grossOutstanding'] = Number(s.grossSummary.outstanding);
+
+                const rowValues = cols.map(c => rowData[c.key]);
+                const row = worksheet.addRow(rowValues);
+                row.height = 20;
+
+                cols.forEach((col, cIdx) => {
+                    const cell = row.getCell(cIdx + 1);
+                    cell.font = { name: 'Arial', size: 9 };
+                    cell.alignment = { vertical: 'middle', horizontal: cIdx < 4 ? 'left' : 'right' };
+
+                    if (cIdx >= 4) {
+                        cell.numFmt = '₹#,##0.00';
+                        
+                        if (col.key.endsWith('exp') || col.key === 'grossExpected') {
+                            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+                        } else if (col.key.endsWith('paid') || col.key === 'grossPaid') {
+                            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE6F4EA' } };
+                        } else if (col.key.endsWith('bal') || col.key === 'grossOutstanding' || col.key.endsWith('Due') || col.key.endsWith('Balance')) {
+                            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFCE8E6' } };
+                        }
+                    }
+                });
+
+                const outstandingVal = Number(s.grossSummary.outstanding);
+                if (outstandingVal <= 0) {
+                    cols.forEach((_, cIdx) => {
+                        const cell = row.getCell(cIdx + 1);
+                        if (cIdx < 4) {
+                            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD1FAE5' } };
+                        }
+                    });
+                } else if (outstandingVal > 10000) {
+                    cols.forEach((_, cIdx) => {
+                        const cell = row.getCell(cIdx + 1);
+                        if (cIdx < 4) {
+                            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEE2E2' } };
+                        }
+                    });
+                }
+            });
+
+            const lastStudentRow = startRow + studentsData.length - 1;
+
+            const summaryRowValues = [];
+            summaryRowValues[0] = '';
+            summaryRowValues[1] = '';
+            summaryRowValues[2] = 'GRAND TOTAL';
+            summaryRowValues[3] = '';
+
+            cols.forEach((_, cIdx) => {
+                if (cIdx >= 4) {
+                    const colLetter = getColLetter(cIdx);
+                    summaryRowValues[cIdx] = { formula: `=SUM(${colLetter}${startRow}:${colLetter}${lastStudentRow})` };
+                }
+            });
+
+            const summaryRow = worksheet.addRow(summaryRowValues);
+            summaryRow.height = 24;
+
+            cols.forEach((_, cIdx) => {
+                const cell = summaryRow.getCell(cIdx + 1);
+                cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF1E293B' } };
+                cell.alignment = { vertical: 'middle', horizontal: cIdx < 4 ? 'left' : 'right' };
+                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } };
+                
+                cell.border = {
+                    top: { style: 'thin', color: { argb: 'FF94A3B8' } },
+                    bottom: { style: 'double', color: { argb: 'FF1E293B' } }
+                };
+
+                if (cIdx >= 4) {
+                    cell.numFmt = '₹#,##0.00';
+                }
+            });
+
+            worksheet.views = [
+                {
+                    state: 'frozen',
+                    xSplit: 3,
+                    ySplit: 5
+                }
+            ];
+
+            cols.forEach((_, cIdx) => {
+                if (cIdx >= 4 && cIdx < totalColsCount - 4) {
+                    worksheet.getColumn(cIdx + 1).outlineLevel = 1;
+                }
+            });
+
+            cols.forEach((col, cIdx) => {
+                const excelCol = worksheet.getColumn(cIdx + 1);
+                const currentWidth = col.width || 15;
+                excelCol.width = Math.max(currentWidth, 12);
+            });
+
+            const buffer = await workbook.xlsx.writeBuffer();
+            const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            saveAs(blob, `${className}_Detailed_Revenue_Report_${activeSessionStr}_${new Date().toISOString().split('T')[0]}.xlsx`);
+            setDownloadingClassId(null);
+        } catch (error) {
+            console.error("Failed to export Excel report:", error);
+            alert("Failed to export Excel. Please try again.");
+            setDownloadingClassId(null);
+        }
+    };
+
+    const downloadMatrixExcel = async () => {
+        if (!revenueData || !revenueData.classMatrix) {
+            alert("No data available to export.");
+            return;
+        }
+
+        try {
+            const workbook = new ExcelJS.Workbook();
+            const worksheet = workbook.addWorksheet('School Snapshot Matrix');
+
+            const cols = [
+                { header: 'Class Name', key: 'className', width: 25 },
+                { header: 'Total Students', key: 'totalStudents', width: 18 },
+                { header: 'Yearly Projected (Gross)', key: 'yearlyProjected', width: 28 },
+                { header: 'Collected (Net)', key: 'collected', width: 20 },
+                { header: 'Discounts Given', key: 'discountGiven', width: 20 },
+                { header: 'Current Outstanding (Due)', key: 'currentOutstanding', width: 28 },
+                { header: 'Collection %', key: 'collectionPercent', width: 18 }
+            ];
+
+            worksheet.columns = cols;
+
+            // Report Header
+            worksheet.mergeCells('A1:G1');
+            const row1Cell = worksheet.getCell('A1');
+            row1Cell.value = 'BIPS SENIOR SECONDARY SCHOOL';
+            row1Cell.font = { name: 'Arial', size: 16, bold: true, color: { argb: 'FFFFFFFF' } };
+            row1Cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
+            row1Cell.alignment = { vertical: 'middle', horizontal: 'center' };
+            worksheet.getRow(1).height = 40;
+
+            worksheet.mergeCells('A2:G2');
+            const row2Cell = worksheet.getCell('A2');
+            row2Cell.value = 'Class-Wise Financial Matrix (School Snapshot)';
+            row2Cell.font = { name: 'Arial', size: 12, bold: true, color: { argb: 'FF334155' } };
+            row2Cell.alignment = { vertical: 'middle', horizontal: 'center' };
+            worksheet.getRow(2).height = 25;
+
+            const activeSessionStr = localStorage.getItem('activeSession') || '2026-2027';
+            worksheet.mergeCells('A3:G3');
+            const row3Cell = worksheet.getCell('A3');
+            row3Cell.value = `Academic Session: ${activeSessionStr}  |  Generated On: ${new Date().toLocaleDateString('en-GB')} at ${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`;
+            row3Cell.font = { name: 'Arial', size: 10, italic: true, color: { argb: 'FF64748B' } };
+            row3Cell.alignment = { vertical: 'middle', horizontal: 'center' };
+            worksheet.getRow(3).height = 20;
+
+            // Header Row (Row 5)
+            const headerRow = worksheet.getRow(5);
+            headerRow.values = cols.map(c => c.header);
+            headerRow.height = 30;
+            headerRow.eachCell((cell, colNumber) => {
+                cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2563EB' } }; // Blue header
+                cell.alignment = { 
+                    vertical: 'middle', 
+                    horizontal: colNumber === 1 ? 'left' : (colNumber === 2 ? 'center' : 'right') 
+                };
+                cell.border = {
+                    top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+                    bottom: { style: 'medium', color: { argb: 'FF1E3A8A' } },
+                    left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+                    right: { style: 'thin', color: { argb: 'FFCBD5E1' } }
+                };
+            });
+
+            let grandStudents = 0;
+            let grandProjected = 0;
+            let grandCollected = 0;
+            let grandDiscount = 0;
+            let grandOutstanding = 0;
+
+            revenueData.classMatrix.forEach((cls: any, index: number) => {
+                const totalStudents = cls.totalStudents || 0;
+                const yearlyProjected = Math.round(cls.yearlyProjected || 0);
+                const collected = Math.round(cls.collected || 0);
+                const discountGiven = Math.round(cls.discountGiven || 0);
+                const currentOutstanding = Math.round(cls.currentOutstanding || 0);
+                const collectionPercent = yearlyProjected > 0 
+                    ? Math.round(((collected + discountGiven) / yearlyProjected) * 100) 
+                    : 0;
+
+                grandStudents += totalStudents;
+                grandProjected += yearlyProjected;
+                grandCollected += collected;
+                grandDiscount += discountGiven;
+                grandOutstanding += currentOutstanding;
+
+                const rowNum = 6 + index;
+                const row = worksheet.getRow(rowNum);
+                row.values = [
+                    cls.className,
+                    totalStudents,
+                    yearlyProjected,
+                    collected,
+                    discountGiven,
+                    currentOutstanding,
+                    `${collectionPercent}%`
+                ];
+                row.height = 22;
+
+                const isEven = index % 2 === 0;
+                row.eachCell((cell, colNumber) => {
+                    cell.font = { name: 'Arial', size: 10, color: { argb: 'FF334155' } };
+                    cell.alignment = { 
+                        vertical: 'middle', 
+                        horizontal: colNumber === 1 ? 'left' : (colNumber === 2 ? 'center' : 'right') 
+                    };
+                    if (isEven) {
+                        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
+                    }
+                    cell.border = {
+                        top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+                        bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+                        left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+                        right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
+                    };
+
+                    if ([3, 4, 5, 6].includes(colNumber)) {
+                        cell.numFmt = '₹#,##,##0';
+                    }
+                });
+            });
+
+            // Grand Total Row
+            const grandTotalRowNum = 6 + revenueData.classMatrix.length;
+            const grandRow = worksheet.getRow(grandTotalRowNum);
+            const overallEfficiency = grandProjected > 0 
+                ? Math.round(((grandCollected + grandDiscount) / grandProjected) * 100)
+                : 0;
+
+            grandRow.values = [
+                'GRAND TOTAL',
+                grandStudents,
+                grandProjected,
+                grandCollected,
+                grandDiscount,
+                grandOutstanding,
+                `${overallEfficiency}%`
+            ];
+            grandRow.height = 26;
+            grandRow.eachCell((cell, colNumber) => {
+                cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF1E293B' } };
+                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } };
+                cell.alignment = { 
+                    vertical: 'middle', 
+                    horizontal: colNumber === 1 ? 'left' : (colNumber === 2 ? 'center' : 'right') 
+                };
+                cell.border = {
+                    top: { style: 'medium', color: { argb: 'FF94A3B8' } },
+                    bottom: { style: 'double', color: { argb: 'FF1E293B' } },
+                    left: { style: 'thin', color: { argb: 'FF94A3B8' } },
+                    right: { style: 'thin', color: { argb: 'FF94A3B8' } }
+                };
+
+                if ([3, 4, 5, 6].includes(colNumber)) {
+                    cell.numFmt = '₹#,##,##0';
+                }
+            });
+
+            const buffer = await workbook.xlsx.writeBuffer();
+            const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            saveAs(blob, `Class_Wise_Financial_Matrix_Report_${activeSessionStr}_${new Date().toISOString().split('T')[0]}.xlsx`);
+        } catch (error) {
+            console.error("Failed to export Matrix Excel report:", error);
+            alert("Failed to export Excel. Please try again.");
+        }
+    };
 
     // State for live clock & greeting
     const [time, setTime] = useState(new Date());
@@ -373,10 +808,15 @@ const RoleDashboard: React.FC = () => {
         const fetchDashboardData = async () => {
             try {
                 if (['ADMIN', 'PRINCIPAL', 'ACCOUNTS'].includes(role)) {
-                    const res = await axios.get('/erp-api/admin/dashboard/stats');
+                    const session = localStorage.getItem('activeSession') || '2026-2027';
+                    const res = await axios.get(`/erp-api/admin/dashboard/stats?session=${session}`);
                     if (res.data) {
                         setStatsData(res.data.stats);
                         setFetchedActivities(res.data.recentActivities || []);
+                    }
+                    const revRes = await axios.get(`/erp-api/admin/dashboard/revenue?session=${session}`);
+                    if (revRes.data) {
+                        setRevenueData(revRes.data);
                     }
                 } else if (role === 'TEACHER' && user.id) {
                     // Sync Profile for Service Record
@@ -418,7 +858,7 @@ const RoleDashboard: React.FC = () => {
         return () => clearInterval(clockTimer);
     }, [role, user.id]);
 
-    const config = getRoleConfig(role, statsData);
+    const config = getRoleConfig(role, statsData, revenueData);
     const quickLinks = getQuickLinks(role);
 
     const today = new Date().toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
@@ -525,7 +965,7 @@ const RoleDashboard: React.FC = () => {
             {/* ── Stats Grid ── */}
             <div className="animate-fade-in delay-1" style={{
                 display: 'grid',
-                gridTemplateColumns: `repeat(${Math.min(config.stats.length, 4)}, 1fr)`,
+                gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
                 gap: '1.5rem',
                 marginBottom: '2rem'
             }}>
@@ -549,138 +989,493 @@ const RoleDashboard: React.FC = () => {
                 </SectionCard>
             </div>
 
-            {/* ── Dashboard Charts ── */}
-            <div className="animate-fade-in delay-3" style={{ 
-                display: role === 'ADMIN' ? 'grid' : 'block', 
-                gridTemplateColumns: role === 'ADMIN' ? '1.8fr 1fr' : 'none', 
-                gap: '1.5rem', 
-                marginBottom: '2rem' 
-            }}>
-                
-                {/* ── Monthly Collection Chart (ADMIN ONLY) ── */}
-                {role === 'ADMIN' && (
-                    <SectionCard title="📈 Monthly Collection Overview">
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                            <div>
-                                <h4 style={{ margin: 0, fontSize: '0.85rem', color: '#718096', fontWeight: '500' }}>Total Collected (This Year)</h4>
-                                <p style={{ margin: '0.2rem 0 0', fontSize: '1.4rem', fontWeight: '800', color: '#2d3748' }}>₹{(statsData?.monthlyCollection * 8 || 125000).toLocaleString()}</p>
+            {/* ── Dashboard Charts / Revenue Dashboard ── */}
+            {['ADMIN', 'PRINCIPAL', 'ACCOUNTS'].includes(role) && revenueData ? (
+                <>
+                    {/* ── Class-Wise Financial Matrix Table ── */}
+                    <div className="animate-fade-in delay-3" style={{ marginBottom: '2rem' }}>
+                        <SectionCard 
+                            title="📊 Class-Wise Financial Matrix (School Snapshot)"
+                            action={
+                                <button 
+                                    onClick={downloadMatrixExcel}
+                                    style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '0.5rem',
+                                        backgroundColor: '#10B981', // Emerald green for Excel
+                                        color: 'white',
+                                        border: 'none',
+                                        padding: '0.6rem 1.2rem',
+                                        borderRadius: '10px',
+                                        cursor: 'pointer',
+                                        fontWeight: '700',
+                                        fontSize: '0.85rem',
+                                        boxShadow: '0 4px 6px -1px rgba(16, 185, 129, 0.2)',
+                                        transition: 'all 0.2s',
+                                        outline: 'none'
+                                    }}
+                                    onMouseOver={e => {
+                                        e.currentTarget.style.backgroundColor = '#059669';
+                                        e.currentTarget.style.transform = 'translateY(-1px)';
+                                        e.currentTarget.style.boxShadow = '0 6px 8px -1px rgba(16, 185, 129, 0.3)';
+                                    }}
+                                    onMouseOut={e => {
+                                        e.currentTarget.style.backgroundColor = '#10B981';
+                                        e.currentTarget.style.transform = 'translateY(0)';
+                                        e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(16, 185, 129, 0.2)';
+                                    }}
+                                >
+                                    <Download size={16} /> Excel Download
+                                </button>
+                            }
+                        >
+                            <div style={{ overflowX: 'auto' }}>
+                                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '800px' }}>
+                                    <thead>
+                                        <tr style={{ borderBottom: '2px solid #e2e8f0', color: '#4a5568', fontSize: '0.85rem', fontWeight: '700' }}>
+                                            <th style={{ padding: '1rem 0.5rem' }}>Class Name</th>
+                                            <th style={{ padding: '1rem 0.5rem', textAlign: 'center' }}>Total Students</th>
+                                            <th style={{ padding: '1rem 0.5rem', textAlign: 'right' }}>Yearly Projected (Gross)</th>
+                                            <th style={{ padding: '1rem 0.5rem', textAlign: 'right' }}>Collected (Net)</th>
+                                            <th style={{ padding: '1rem 0.5rem', textAlign: 'right' }}>Discounts Given</th>
+                                            <th style={{ padding: '1rem 0.5rem', textAlign: 'right' }}>Current Outstanding (Due Till Now)</th>
+                                            <th style={{ padding: '1rem 0.5rem', width: '180px' }}>Collection %</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {revenueData.classMatrix.map((cls: any) => {
+                                            const isExpanded = expandedClassId === cls.classId;
+                                            const collectionPercent = cls.yearlyProjected > 0 
+                                                ? Math.min(100, Math.round(((cls.collected + cls.discountGiven) / cls.yearlyProjected) * 100)) 
+                                                : 0;
+                                            return (
+                                                <React.Fragment key={cls.classId}>
+                                                    <tr 
+                                                        onClick={() => setExpandedClassId(isExpanded ? null : cls.classId)}
+                                                        style={{ 
+                                                            borderBottom: '1px solid #edf2f7', 
+                                                            cursor: 'pointer',
+                                                            transition: 'background 0.2s',
+                                                            fontSize: '0.9rem',
+                                                            fontWeight: '600'
+                                                        }}
+                                                        onMouseOver={e => e.currentTarget.style.backgroundColor = '#f8fafc'}
+                                                        onMouseOut={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                                                    >
+                                                        <td style={{ padding: '1rem 0.5rem', color: '#1a202c', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                            {isExpanded ? <ChevronDown size={15} style={{ color: '#4a5568', marginRight: '0.2rem' }} /> : <ChevronRight size={15} style={{ color: '#a0aec0', marginRight: '0.2rem' }} />}
+                                                            {cls.className}
+                                                        </td>
+                                                        <td style={{ padding: '1rem 0.5rem', textAlign: 'center', color: '#4a5568' }}>{cls.totalStudents}</td>
+                                                        <td style={{ padding: '1rem 0.5rem', textAlign: 'right', color: '#2b6cb0' }} title="Click to view expected fee head breakdown">
+                                                            ₹{cls.yearlyProjected.toLocaleString('en-IN')}
+                                                        </td>
+                                                        <td style={{ padding: '1rem 0.5rem', textAlign: 'right', color: '#2f855a' }}>
+                                                            ₹{cls.collected.toLocaleString('en-IN')}
+                                                        </td>
+                                                        <td style={{ padding: '1rem 0.5rem', textAlign: 'right', color: '#dd6b20' }}>
+                                                            ₹{cls.discountGiven.toLocaleString('en-IN')}
+                                                        </td>
+                                                        <td style={{ padding: '1rem 0.5rem', textAlign: 'right', color: cls.outstanding > 0 ? '#e53e3e' : '#48bb78' }}>
+                                                            ₹{cls.outstanding.toLocaleString('en-IN')}
+                                                        </td>
+                                                        <td style={{ padding: '1rem 0.5rem' }}>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                                <div style={{ flex: 1, height: '8px', backgroundColor: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
+                                                                    <div style={{ 
+                                                                        width: `${collectionPercent}%`, 
+                                                                        height: '100%', 
+                                                                        backgroundColor: collectionPercent >= 80 ? '#48bb78' : collectionPercent >= 50 ? '#d69e2e' : '#e53e3e',
+                                                                        borderRadius: '4px' 
+                                                                    }} />
+                                                                </div>
+                                                                <span style={{ fontSize: '0.75rem', fontWeight: '700', color: '#4a5568', width: '35px', textAlign: 'right' }}>
+                                                                    {collectionPercent}%
+                                                                </span>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                    {isExpanded && (
+                                                        <tr>
+                                                            <td colSpan={7} style={{ backgroundColor: '#f7fafc', padding: '1.25rem' }}>
+                                                                <div style={{
+                                                                    display: 'grid',
+                                                                    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                                                                    gap: '1.5rem',
+                                                                    border: '1px solid #e2e8f0',
+                                                                    borderRadius: '12px',
+                                                                    padding: '1.25rem',
+                                                                    backgroundColor: 'white',
+                                                                    boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02)'
+                                                                }}>
+                                                                    <div>
+                                                                        <h5 style={{ margin: '0 0 0.5rem 0', color: '#718096', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Revenue Source Breakdown</h5>
+                                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', fontSize: '0.85rem' }}>
+                                                                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                                                <span style={{ color: '#4a5568' }}>Tuition Fees (12 Months):</span>
+                                                                                <span style={{ fontWeight: '700', color: '#2d3748' }}>₹{cls.breakdown.tuition.toLocaleString('en-IN')}</span>
+                                                                            </div>
+                                                                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                                                <span style={{ color: '#4a5568' }}>Transport Fees (12 Months):</span>
+                                                                                <span style={{ fontWeight: '700', color: '#2d3748' }}>₹{cls.breakdown.transport.toLocaleString('en-IN')}</span>
+                                                                            </div>
+                                                                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                                                <span style={{ color: '#4a5568' }}>One-Time & Annual Fees:</span>
+                                                                                <span style={{ fontWeight: '700', color: '#2d3748' }}>₹{cls.breakdown.admission.toLocaleString('en-IN')}</span>
+                                                                            </div>
+                                                                            {cls.breakdown.previousDues !== undefined ? (
+                                                                                <>
+                                                                                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                                                        <span style={{ color: '#4a5568' }}>Prev. Session Dues:</span>
+                                                                                        <span style={{ fontWeight: '700', color: '#2d3748' }}>₹{cls.breakdown.previousDues.toLocaleString('en-IN')}</span>
+                                                                                    </div>
+                                                                                    {cls.breakdown.other > 0 && (
+                                                                                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                                                            <span style={{ color: '#4a5568' }}>Other &amp; Misc Fees:</span>
+                                                                                            <span style={{ fontWeight: '700', color: '#2d3748' }}>₹{cls.breakdown.other.toLocaleString('en-IN')}</span>
+                                                                                        </div>
+                                                                                    )}
+                                                                                    {((cls.breakdown as any).rteFees || 0) > 0 && (
+                                                                                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                                                            <span style={{ color: '#e53e3e', fontWeight: '600' }}>🔴 RTE Student Fees:</span>
+                                                                                            <span style={{ fontWeight: '700', color: '#e53e3e' }}>₹{((cls.breakdown as any).rteFees || 0).toLocaleString('en-IN')}</span>
+                                                                                        </div>
+                                                                                    )}
+                                                                                    {((cls.breakdown as any).thirdChildFees || 0) > 0 && (
+                                                                                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                                                            <span style={{ color: '#805ad5', fontWeight: '600' }}>👨‍👩‍👧 Third Child Fees:</span>
+                                                                                            <span style={{ fontWeight: '700', color: '#805ad5' }}>₹{((cls.breakdown as any).thirdChildFees || 0).toLocaleString('en-IN')}</span>
+                                                                                        </div>
+                                                                                    )}
+                                                                                </>
+                                                                            ) : (
+                                                                                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                                                    <span style={{ color: '#4a5568' }}>Prev. Session Dues &amp; Misc:</span>
+                                                                                    <span style={{ fontWeight: '700', color: '#2d3748' }}>₹{cls.breakdown.other.toLocaleString('en-IN')}</span>
+                                                                                </div>
+                                                                            )}
+                                                                            <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #edf2f7', paddingTop: '0.4rem', marginTop: '0.2rem' }}>
+                                                                                <span style={{ color: '#4a5568', fontWeight: '600' }}>Gross Expected Total:</span>
+                                                                                <span style={{ fontWeight: '800', color: '#2b6cb0' }}>₹{cls.yearlyProjected.toLocaleString('en-IN')}</span>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <div style={{ borderLeft: '1px solid #edf2f7', paddingLeft: '1.5rem' }}>
+                                                                        <h5 style={{ margin: '0 0 0.5rem 0', color: '#718096', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Collection Summary</h5>
+                                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', fontSize: '0.85rem' }}>
+                                                                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                                                <span style={{ color: '#4a5568' }}>Actual Fees Collected:</span>
+                                                                                <span style={{ fontWeight: '700', color: '#2f855a' }}>₹{cls.collected.toLocaleString('en-IN')}</span>
+                                                                            </div>
+                                                                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                                                <span style={{ color: '#4a5568' }}>Concessions / Discounts:</span>
+                                                                                <span style={{ fontWeight: '700', color: '#dd6b20' }}>- ₹{cls.breakdown.discount.toLocaleString('en-IN')}</span>
+                                                                            </div>
+                                                                            <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #edf2f7', paddingTop: '0.4rem', marginTop: '0.2rem' }}>
+                                                                                <span style={{ color: '#4a5568', fontWeight: '600' }}>Outstanding Balance (Due):</span>
+                                                                                <span style={{ fontWeight: '800', color: '#e53e3e' }}>₹{cls.outstanding.toLocaleString('en-IN')}</span>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <div style={{ borderLeft: '1px solid #edf2f7', paddingLeft: '1.5rem', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
+                                                                        <div style={{ textAlign: 'center' }}>
+                                                                            <div style={{ fontSize: '1.75rem', fontWeight: '800', color: collectionPercent >= 80 ? '#48bb78' : collectionPercent >= 50 ? '#d69e2e' : '#e53e3e' }}>
+                                                                                {collectionPercent}%
+                                                                            </div>
+                                                                            <div style={{ fontSize: '0.75rem', fontWeight: '600', color: '#718096', textTransform: 'uppercase', marginTop: '0.25rem', marginBottom: '1rem' }}>
+                                                                                Collection Efficiency
+                                                                            </div>
+                                                                            <button
+                                                                                disabled={downloadingClassId === cls.classId}
+                                                                                onClick={(e) => { e.stopPropagation(); downloadClassExcelReport(cls.classId, cls.className); }}
+                                                                                style={{
+                                                                                    backgroundColor: '#1e293b',
+                                                                                    color: 'white',
+                                                                                    border: 'none',
+                                                                                    padding: '0.5rem 1rem',
+                                                                                    borderRadius: '8px',
+                                                                                    fontSize: '0.8rem',
+                                                                                    fontWeight: '700',
+                                                                                    cursor: 'pointer',
+                                                                                    display: 'flex',
+                                                                                    alignItems: 'center',
+                                                                                    gap: '0.5rem',
+                                                                                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                                                                                    transition: 'all 0.2s',
+                                                                                    opacity: downloadingClassId === cls.classId ? 0.7 : 1
+                                                                                }}
+                                                                                onMouseOver={e => e.currentTarget.style.backgroundColor = '#0f172a'}
+                                                                                onMouseOut={e => e.currentTarget.style.backgroundColor = '#1e293b'}
+                                                                            >
+                                                                                <Download size={14} />
+                                                                                {downloadingClassId === cls.classId ? 'Exporting...' : 'Export Excel'}
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    )}
+                                                </React.Fragment>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
                             </div>
-                            <select style={{ padding: '0.4rem 0.75rem', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '0.85rem', fontWeight: '600', color: '#4a5568', outline: 'none', background: '#f8fafc' }}>
-                                <option>Year 2026</option>
-                                <option>Year 2025</option>
-                            </select>
-                        </div>
-                        
-                        {/* Interactive ApexCharts Bar Chart */}
-                        <div style={{ height: '260px', marginTop: '1rem' }}>
-                            {statsData?.dailyCollections ? (
+                        </SectionCard>
+                    </div>
+
+                    {/* ── Expected vs Collected Revenue Chart & Revenue Distribution Chart ── */}
+                    <div className="animate-fade-in delay-4" style={{ 
+                        display: 'grid', 
+                        gridTemplateColumns: '1.6fr 1fr', 
+                        gap: '1.5rem', 
+                        marginBottom: '2rem' 
+                    }}>
+                        <SectionCard title="📈 Expected vs Collected Revenue By Class">
+                            <div style={{ height: '320px' }}>
                                 <Chart 
                                     options={{
-                                        chart: { 
-                                            type: 'bar', 
+                                        chart: {
+                                            type: 'bar',
                                             toolbar: { show: false },
-                                            fontFamily: "'Inter', sans-serif",
-                                            parentHeightOffset: 0,
+                                            fontFamily: "'Inter', sans-serif"
                                         },
-                                        plotOptions: { 
-                                            bar: { 
-                                                borderRadius: 6, 
-                                                columnWidth: '65%',
+                                        plotOptions: {
+                                            bar: {
+                                                borderRadius: 6,
+                                                columnWidth: '55%',
                                                 dataLabels: { position: 'top' }
-                                            } 
+                                            }
                                         },
-                                        dataLabels: { 
-                                            enabled: false,
+                                        dataLabels: { enabled: false },
+                                        xaxis: {
+                                            categories: revenueData.classMatrix.map((c: any) => c.className),
+                                            labels: { style: { colors: '#718096', fontSize: '11px', fontWeight: 600 } }
                                         },
-                                        xaxis: { 
-                                            categories: statsData.dailyCollections.map((d: any) => `${d.day} ${new Date(d.date).toLocaleString('en-IN', { month: 'short' })}`),
+                                        yaxis: {
                                             labels: {
-                                                style: { colors: '#718096', fontSize: '11px', fontWeight: 600 }
-                                            },
-                                            axisBorder: { show: false },
-                                            axisTicks: { show: false }
-                                        },
-                                        yaxis: { 
-                                            labels: { 
-                                                formatter: (val) => val >= 1000 ? `₹${(val / 1000).toFixed(1)}k` : `₹${val}`,
+                                                formatter: (val) => val >= 100000 ? `₹${(val / 100000).toFixed(1)}L` : val >= 1000 ? `₹${(val / 1000).toFixed(0)}k` : `₹${val}`,
                                                 style: { colors: '#a0aec0', fontSize: '11px', fontWeight: 600 }
-                                            } 
+                                            }
                                         },
                                         grid: {
                                             borderColor: '#f1f5f9',
-                                            strokeDashArray: 4,
-                                            yaxis: { lines: { show: true } }
+                                            strokeDashArray: 4
                                         },
-                                        colors: ['#4a90e2'],
-                                        fill: {
-                                            type: 'gradient',
-                                            gradient: {
-                                                shade: 'light',
-                                                type: 'vertical',
-                                                shadeIntensity: 0.25,
-                                                gradientToColors: ['#357abd'],
-                                                inverseColors: true,
-                                                opacityFrom: 1,
-                                                opacityTo: 1,
-                                                stops: [0, 100]
-                                            }
+                                        colors: ['#4a90e2', '#48bb78'],
+                                        legend: {
+                                            position: 'top',
+                                            horizontalAlign: 'right',
+                                            fontSize: '12px',
+                                            fontWeight: '600',
+                                            labels: { colors: '#4a5568' }
                                         },
-                                        tooltip: { 
+                                        tooltip: {
                                             theme: 'light',
-                                            y: { formatter: (val) => `₹${val.toLocaleString()}` } 
+                                            y: { formatter: (val) => `₹${val.toLocaleString()}` }
                                         }
                                     }}
-                                    series={[{ 
-                                        name: 'Daily Collection', 
-                                        data: statsData.dailyCollections.map((d: any) => d.amount) 
-                                    }]}
-                                    type="bar" 
-                                    height="100%" 
+                                    series={[
+                                        { name: 'Expected Projected', data: revenueData.classMatrix.map((c: any) => c.yearlyProjected) },
+                                        { name: 'Collected', data: revenueData.classMatrix.map((c: any) => c.collected) }
+                                    ]}
+                                    type="bar"
+                                    height="100%"
                                 />
-                            ) : (
-                                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: '#a0aec0' }}>
-                                    Loading chart data...
-                                </div>
-                            )}
-                        </div>
-                    </SectionCard>
-                )}
+                            </div>
+                        </SectionCard>
 
-                {/* ── User Distribution Chart (ADMIN ONLY) ── */}
-                {role === 'ADMIN' && (
-                    <SectionCard title="👥 User Distribution">
-                        <div style={{ height: '280px', marginTop: '1rem', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                            <Chart
-                                options={{
-                                    chart: { type: 'donut', fontFamily: "'Inter', sans-serif" },
-                                    labels: ['Students', 'Teachers', 'Staff', 'Admins'],
-                                    colors: ['#4a90e2', '#9f7aea', '#48bb78', '#ed8936'],
-                                    plotOptions: {
-                                        pie: {
-                                            donut: {
-                                                size: '72%',
-                                                labels: { 
-                                                    show: true, 
-                                                    name: { fontSize: '14px', color: '#718096' }, 
-                                                    value: { fontSize: '26px', fontWeight: 800, color: '#2d3748' }, 
-                                                    total: { show: true, label: 'Total Users', color: '#718096', fontSize: '13px' } 
+                        <SectionCard title="🍰 Revenue Distribution Source">
+                            <div style={{ height: '320px', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                                <Chart 
+                                    options={{
+                                        chart: {
+                                            type: 'donut',
+                                            fontFamily: "'Inter', sans-serif"
+                                        },
+                                        labels: ['Tuition Fee', 'Transport Fee', 'Admission/One-Time', 'Other & Misc', 'RTE Student Fees', 'Third Child Fees'],
+                                        colors: ['#4a90e2', '#ed8936', '#9f7aea', '#48bb78', '#e53e3e', '#805ad5'],
+                                        legend: {
+                                            position: 'bottom',
+                                            fontSize: '12px',
+                                            fontWeight: '600',
+                                            labels: { colors: '#4a5568' }
+                                        },
+                                        plotOptions: {
+                                            pie: {
+                                                donut: {
+                                                    size: '65%',
+                                                    labels: {
+                                                        show: true,
+                                                        total: {
+                                                            show: true,
+                                                            label: 'Total Expected',
+                                                            formatter: () => `₹${(revenueData.summary.totalExpectedRevenue / 100000).toFixed(1)}L`,
+                                                            fontSize: '14px',
+                                                            fontWeight: '700',
+                                                            color: '#2d3748'
+                                                        }
+                                                    }
                                                 }
                                             }
+                                        },
+                                        tooltip: {
+                                            y: { formatter: (val) => `₹${val.toLocaleString()}` }
                                         }
-                                    },
-                                    dataLabels: { enabled: false },
-                                    stroke: { width: 0 },
-                                    legend: { position: 'bottom', markers: { size: 12 }, itemMargin: { horizontal: 10, vertical: 5 } },
-                                    tooltip: { theme: 'light' }
-                                }}
-                                series={[statsData?.totalStudents || 702, statsData?.totalTeachers || 22, 12, 3]}
-                                type="donut"
-                                height="100%"
-                            />
-                        </div>
-                    </SectionCard>
-                )}
-            </div>
+                                    }}
+                                    series={[
+                                        revenueData.summary.breakdown.tuition,
+                                        revenueData.summary.breakdown.transport,
+                                        revenueData.summary.breakdown.admission,
+                                        revenueData.summary.breakdown.other,
+                                        (revenueData.summary.breakdown as any).rteFees || 0,
+                                        (revenueData.summary.breakdown as any).thirdChildFees || 0
+                                    ]}
+                                    type="donut"
+                                    width="100%"
+                                    height="100%"
+                                />
+                            </div>
+                        </SectionCard>
+                    </div>
+                </>
+            ) : (
+                <div className="animate-fade-in delay-3" style={{ 
+                    display: role === 'ADMIN' ? 'grid' : 'block', 
+                    gridTemplateColumns: role === 'ADMIN' ? '1.8fr 1fr' : 'none', 
+                    gap: '1.5rem', 
+                    marginBottom: '2rem' 
+                }}>
+                    
+                    {/* ── Monthly Collection Chart (ADMIN ONLY) ── */}
+                    {role === 'ADMIN' && (
+                        <SectionCard title="📈 Monthly Collection Overview">
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                                <div>
+                                    <h4 style={{ margin: 0, fontSize: '0.85rem', color: '#718096', fontWeight: '500' }}>Total Collected (This Year)</h4>
+                                    <p style={{ margin: '0.2rem 0 0', fontSize: '1.4rem', fontWeight: '800', color: '#2d3748' }}>₹{(statsData?.monthlyCollection * 8 || 125000).toLocaleString()}</p>
+                                </div>
+                                <select style={{ padding: '0.4rem 0.75rem', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '0.85rem', fontWeight: '600', color: '#4a5568', outline: 'none', background: '#f8fafc' }}>
+                                    <option>Year 2026</option>
+                                    <option>Year 2025</option>
+                                </select>
+                            </div>
+                            
+                            {/* Interactive ApexCharts Bar Chart */}
+                            <div style={{ height: '260px', marginTop: '1rem' }}>
+                                {statsData?.dailyCollections ? (
+                                    <Chart 
+                                        options={{
+                                            chart: { 
+                                                type: 'bar', 
+                                                toolbar: { show: false },
+                                                fontFamily: "'Inter', sans-serif",
+                                                parentHeightOffset: 0,
+                                            },
+                                            plotOptions: { 
+                                                bar: { 
+                                                    borderRadius: 6, 
+                                                    columnWidth: '65%',
+                                                    dataLabels: { position: 'top' }
+                                                } 
+                                            },
+                                            dataLabels: { 
+                                                enabled: false,
+                                            },
+                                            xaxis: { 
+                                                categories: statsData.dailyCollections.map((d: any) => `${d.day} ${new Date(d.date).toLocaleString('en-IN', { month: 'short' })}`),
+                                                labels: {
+                                                    style: { colors: '#718096', fontSize: '11px', fontWeight: 600 }
+                                                },
+                                                axisBorder: { show: false },
+                                                axisTicks: { show: false }
+                                            },
+                                            yaxis: { 
+                                                labels: { 
+                                                    formatter: (val) => val >= 1000 ? `₹${(val / 1000).toFixed(1)}k` : `₹${val}`,
+                                                    style: { colors: '#a0aec0', fontSize: '11px', fontWeight: 600 }
+                                                } 
+                                            },
+                                            grid: {
+                                                borderColor: '#f1f5f9',
+                                                strokeDashArray: 4,
+                                                yaxis: { lines: { show: true } }
+                                            },
+                                            colors: ['#4a90e2'],
+                                            fill: {
+                                                type: 'gradient',
+                                                gradient: {
+                                                    shade: 'light',
+                                                    type: 'vertical',
+                                                    shadeIntensity: 0.25,
+                                                    gradientToColors: ['#357abd'],
+                                                    inverseColors: true,
+                                                    opacityFrom: 1,
+                                                    opacityTo: 1,
+                                                    stops: [0, 100]
+                                                }
+                                            },
+                                            tooltip: { 
+                                                theme: 'light',
+                                                y: { formatter: (val) => `₹${val.toLocaleString()}` } 
+                                            }
+                                        }}
+                                        series={[{ 
+                                            name: 'Daily Collection', 
+                                            data: statsData.dailyCollections.map((d: any) => d.amount) 
+                                        }]}
+                                        type="bar" 
+                                        height="100%" 
+                                    />
+                                ) : (
+                                    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: '#a0aec0' }}>
+                                        Loading chart data...
+                                    </div>
+                                )}
+                            </div>
+                        </SectionCard>
+                    )}
+
+                    {/* ── User Distribution Chart (ADMIN ONLY) ── */}
+                    {role === 'ADMIN' && (
+                        <SectionCard title="👥 User Distribution">
+                            <div style={{ height: '280px', marginTop: '1rem', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                                <Chart
+                                    options={{
+                                        chart: { type: 'donut', fontFamily: "'Inter', sans-serif" },
+                                        labels: ['Students', 'Teachers', 'Staff', 'Admins'],
+                                        colors: ['#4a90e2', '#9f7aea', '#48bb78', '#ed8936'],
+                                        plotOptions: {
+                                            pie: {
+                                                donut: {
+                                                    size: '72%',
+                                                    labels: { 
+                                                        show: true, 
+                                                        name: { fontSize: '14px', color: '#718096' }, 
+                                                        value: { fontSize: '26px', fontWeight: 800, color: '#2d3748' }, 
+                                                        total: { show: true, label: 'Total Users', color: '#718096', fontSize: '13px' } 
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        dataLabels: { enabled: false },
+                                        stroke: { width: 0 },
+                                        legend: { position: 'bottom', markers: { size: 12 }, itemMargin: { horizontal: 10, vertical: 5 } },
+                                        tooltip: { theme: 'light' }
+                                    }}
+                                    series={[statsData?.totalStudents || 702, statsData?.totalTeachers || 22, 12, 3]}
+                                    type="donut"
+                                    height="100%"
+                                />
+                            </div>
+                        </SectionCard>
+                    )}
+                </div>
+            )}
 
             {/* ── Recent Activity, Alerts & Tasks ── */}
             <div className="animate-fade-in delay-4" style={{ 

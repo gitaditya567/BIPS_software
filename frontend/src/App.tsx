@@ -15,6 +15,7 @@ import ReportCards from './pages/admin/ReportCards';
 import AdminAttendance from './pages/admin/Attendance';
 import RoleManagement from './pages/admin/RoleManagement';
 import Expenses from './pages/admin/Expenses';
+import SessionSettings from './pages/admin/SessionSettings';
 import MyClasses from './pages/teacher/MyClasses';
 import Attendance from './pages/teacher/Attendance';
 import PendingFee from './pages/teacher/PendingFee';
@@ -46,7 +47,7 @@ const App: React.FC = () => {
             <Route path="admin/classes" element={<Classes />} />
             <Route path="admin/fees" element={<Fees />} />
             <Route path="admin/tc" element={<TransferCertificate />} />
-            <Route path="admin/settings" element={<div style={{ padding: '2rem' }}><h2>Settings (Coming Soon)</h2></div>} />
+            <Route path="admin/settings" element={<SessionSettings />} />
             <Route path="admin/roles" element={<RoleManagement />} />
             <Route path="admin/transport" element={<Transport />} />
             <Route path="admin/report-card" element={<ReportCards />} />

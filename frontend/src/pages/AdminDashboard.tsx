@@ -32,7 +32,8 @@ const AdminDashboard: React.FC = () => {
     useEffect(() => {
         const fetchDashboardData = async () => {
             try {
-                const res = await axios.get('/erp-api/admin/dashboard/stats');
+                const session = localStorage.getItem('activeSession') || '2026-2027';
+                const res = await axios.get(`/erp-api/admin/dashboard/stats?session=${session}`);
                 if (res.data) {
                     setStats(res.data.stats);
                     setRecentActivities(res.data.recentActivities);

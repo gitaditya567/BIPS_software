@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNotification } from '../../context/NotificationContext';
 import { IndianRupee, TrendingUp, CalendarDays, Trash2, Check, AlertCircle, Calendar, Users, Download } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import ExcelJS from 'exceljs';
@@ -26,6 +27,10 @@ interface FeeRecord {
     month?: string;
     year?: string;
     remark?: string;
+    session?: {
+        name: string;
+    };
+    sessionName?: string | null;
 }
 
 interface FeeHead {
@@ -42,6 +47,7 @@ interface DueFee {
     paid: number;
     pending: number;
     previousSessionDue?: number;
+    prevDuePending?: number;
     isRT?: boolean;
     pendingMonths?: string[];
     admissionNo?: string;
@@ -70,7 +76,70 @@ const sortClassNames = (a: string, b: string) => {
     return a.localeCompare(b);
 };
 
+const isClass1To8OrPrePrimary = (className: string | null | undefined): boolean => {
+    if (!className) return false;
+    const name = className.toLowerCase();
+    
+    // Pre-primary classes
+    if (name.includes('nursery') || name.includes('lkg') || name.includes('ukg') || name.includes('kindergarten')) {
+        return true;
+    }
+    
+    // Match Class 1 to Class 8
+    const match = name.match(/class\s+(\d+)/);
+    if (match) {
+        const num = parseInt(match[1]);
+        if (num >= 1 && num <= 8) {
+            return true;
+        }
+    }
+    return false;
+};
+
+const isFeeExempt = (
+    student: { isRT: boolean; isThirdChild?: boolean; className?: string } | null | undefined,
+    head: { name: string; type: string }
+): boolean => {
+    if (!student) return false;
+    const headNameLower = head.name.toLowerCase();
+    const isRT = student.isRT || false;
+    const isThirdChild = student.isThirdChild || false;
+
+    // Filter "RTE STUDENTS FEES" - only charged to RTE students
+    if (headNameLower.includes('rte students fees')) {
+        return !isRT;
+    }
+
+    // Filter "third child one time fees" - only charged to Third Child students
+    if (headNameLower.includes('third child one time fees')) {
+        return !isThirdChild;
+    }
+
+    if (head.type && head.type.toLowerCase().includes('month')) {
+        // RTE students are exempt from all monthly fees
+        if (isRT) {
+            return true;
+        }
+        // Third Child students do NOT pay monthly fees, EXCEPT Computer Class Fee in Nursery-Class 8
+        if (isThirdChild) {
+            if (headNameLower.includes('computer class fee') && isClass1To8OrPrePrimary(student.className)) {
+                return false;
+            }
+            return true;
+        }
+    }
+
+    return false;
+};
+
+const formatAmount = (val: any) => {
+    const num = Number(val);
+    if (isNaN(num)) return '0';
+    return Number(num.toFixed(2)).toLocaleString('en-IN');
+};
+
 const Fees: React.FC = () => {
+    const navigate = useNavigate();
     const { addNotification } = useNotification();
     const [user, setUser] = useState<{ id: string; role: string; name: string } | null>(null);
     const [activeTab, setActiveTab] = useState<'collection' | 'heads' | 'due' | 'structure' | 'reports' | 'approvals' | 'drafts' | 'previous_due'>('collection');
@@ -119,9 +188,14 @@ const Fees: React.FC = () => {
     const [dueMonthFilter, setDueMonthFilter] = useState('All');
     const [dueSearchQuery, setDueSearchQuery] = useState('');
     const [prevDueSearchQuery, setPrevDueSearchQuery] = useState('');
+    const [receiptSearchQuery, setReceiptSearchQuery] = useState('');
     const [selectedStudentForHistory, setSelectedStudentForHistory] = useState<any>(null);
     const [showHistoryModal, setShowHistoryModal] = useState(false);
+    const [studentLedger, setStudentLedger] = useState<any | null>(null);
+    const [loadingLedger, setLoadingLedger] = useState(false);
     const [dueRtFilter, setDueRtFilter] = useState('All');
+    const [dueStatusFilter, setDueStatusFilter] = useState('All');
+    const [dueFeeTypeFilter, setDueFeeTypeFilter] = useState('All');
     const [dueView, setDueView] = useState<'general' | 'transport'>('general');
     const [transportDues, setTransportDues] = useState<any[]>([]);
     const [loadingTransportDues, setLoadingTransportDues] = useState(false);
@@ -153,28 +227,24 @@ const Fees: React.FC = () => {
 
         const prevBalance = fee.previousSessionDue || 0;
         const expectedOneTime = fee.expectedOneTime || 0;
-        const totalPaid = fee.totalPaid || 0;
         const monthlyFee = fee.monthlyFeeAmount || 0;
 
-        const actualOneTimePaid = fee.actualOneTimePaid ?? Math.min(expectedOneTime, totalPaid);
-        const actualMonthlyPaid = fee.actualMonthlyPaid ?? Math.max(0, totalPaid - expectedOneTime);
+        const actualOneTimePaid = fee.actualOneTimePaid ?? 0;
+        const actualMonthlyPaid = fee.actualMonthlyPaid ?? 0;
         const actualPrevDuesPaid = fee.actualPrevDuesPaid ?? 0;
 
-        const paidTowardsOneTime = Math.min(expectedOneTime, actualOneTimePaid);
-        const pendingOneTime = expectedOneTime - paidTowardsOneTime;
-
+        const pendingOneTime = Math.max(0, expectedOneTime - actualOneTimePaid);
         const adjustedPrevBalance = Math.max(0, prevBalance - actualPrevDuesPaid);
 
         const cumulativeMonthlyExpected = monthlyFee * monthsToCalculate;
-        const paidTowardsMonthly = actualMonthlyPaid;
-        const pendingMonthly = Math.max(0, cumulativeMonthlyExpected - paidTowardsMonthly);
+        const pendingMonthly = Math.max(0, cumulativeMonthlyExpected - actualMonthlyPaid);
 
         const totalPayableNow = adjustedPrevBalance + pendingOneTime + pendingMonthly;
 
         const unpaidMonthsList = [];
         for (let i = 0; i < monthsToCalculate; i++) {
             const expectedTillThisMonth = monthlyFee * (i + 1);
-            if (paidTowardsMonthly < expectedTillThisMonth) {
+            if (actualMonthlyPaid < expectedTillThisMonth) {
                 unpaidMonthsList.push(allMonths[i]);
             }
         }
@@ -189,10 +259,10 @@ const Fees: React.FC = () => {
         return {
             prevBalance: adjustedPrevBalance,
             expectedOneTime,
-            paidTowardsOneTime,
+            paidTowardsOneTime: actualOneTimePaid,
             pendingOneTime,
             cumulativeMonthlyExpected,
-            paidTowardsMonthly,
+            paidTowardsMonthly: actualMonthlyPaid,
             pendingMonthly,
             totalPayableNow,
             unpaidMonthsList,
@@ -200,9 +270,371 @@ const Fees: React.FC = () => {
         };
     };
 
+    const getFilteredDues = (sourceList: any[]) => {
+        return sourceList
+            .filter(f => dueClassFilter === 'All' || f.className?.trim() === dueClassFilter.trim())
+            .filter(f => {
+                if (dueRtFilter === 'All') return true;
+                if (dueRtFilter === 'RT') return !!f.isRT;
+                return !f.isRT;
+            })
+            .filter(f => {
+                if (dueMonthFilter === 'All') return true;
+                // Show student if they have pending OR paid for this month
+                const hasPending = (f.pendingMonths || []).includes(dueMonthFilter);
+                const hasPaid = (f.monthWisePaid?.[dueMonthFilter] || 0) > 0;
+                return hasPending || hasPaid;
+            })
+            .filter(f => {
+                if (dueSearchQuery === '') return true;
+                const query = dueSearchQuery.toLowerCase();
+                return (f.studentName || '').toLowerCase().includes(query) || 
+                       (f.admissionNo || '').toLowerCase().includes(query) ||
+                       (f.fatherName || '').toLowerCase().includes(query);
+            })
+            .filter(f => {
+                // When a specific month is selected, use month-specific paid/pending amounts
+                const isMonthSelected = dueMonthFilter !== 'All';
+                const monthlyFee = f.monthlyFeeAmount || 0;
+
+                let expected = 0;
+                let paid = 0;
+                let pending = 0;
+
+                if (isMonthSelected) {
+                    // Month-specific calculation
+                    const mPaid = f.monthWisePaid?.[dueMonthFilter] || 0;
+                    const mExpected = monthlyFee;
+
+                    if (dueFeeTypeFilter === 'Monthly Only') {
+                        expected = mExpected;
+                        paid = mPaid;
+                        pending = Math.max(0, mExpected - mPaid);
+                    } else if (dueFeeTypeFilter === 'One-time Only') {
+                        const dyn = calculateDynamicDues(f, dueMonthFilter);
+                        expected = dyn.expectedOneTime;
+                        paid = f.actualOneTimePaid || 0;
+                        pending = dyn.pendingOneTime;
+                    } else {
+                        // All Fees for this month
+                        const dyn = calculateDynamicDues(f, dueMonthFilter);
+                        expected = mExpected + dyn.expectedOneTime;
+                        paid = mPaid + (f.actualOneTimePaid || 0);
+                        pending = Math.max(0, mExpected - mPaid) + dyn.pendingOneTime;
+                    }
+                } else {
+                    const dyn = calculateDynamicDues(f, dueMonthFilter);
+                    if (dueFeeTypeFilter === 'Monthly Only') {
+                        expected = dyn.cumulativeMonthlyExpected;
+                        paid = f.actualMonthlyPaid || 0;
+                        pending = dyn.pendingMonthly;
+                    } else if (dueFeeTypeFilter === 'One-time Only') {
+                        expected = dyn.expectedOneTime;
+                        paid = f.actualOneTimePaid || 0;
+                        pending = dyn.pendingOneTime;
+                    } else {
+                        expected = (f.previousSessionDue || 0) + dyn.expectedOneTime + dyn.cumulativeMonthlyExpected;
+                        paid = (f.actualPrevDuesPaid || 0) + (f.actualOneTimePaid || 0) + (f.actualMonthlyPaid || 0);
+                        pending = dyn.totalPayableNow;
+                    }
+                }
+
+                if (dueStatusFilter === 'Paid') {
+                    return pending === 0 && expected > 0;
+                } else if (dueStatusFilter === 'Unpaid') {
+                    return paid === 0 && expected > 0;
+                } else if (dueStatusFilter === 'Partially Paid') {
+                    return paid > 0 && pending > 0;
+                } else if (dueStatusFilter === 'Any Outstanding') {
+                    return pending > 0;
+                }
+                return true;
+            });
+    };
+
+
+    const downloadStudentStatementExcel = (ledger: any) => {
+        if (!ledger) return;
+        
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('Account Statement');
+        
+        // 1. Title Block
+        worksheet.mergeCells('A1:H1');
+        worksheet.getCell('A1').value = 'BIPS SENIOR SECONDARY SCHOOL';
+        worksheet.getCell('A1').font = { size: 16, bold: true, color: { argb: 'FFFFFFFF' } };
+        worksheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
+        worksheet.getCell('A1').alignment = { horizontal: 'center', vertical: 'middle' };
+        worksheet.getRow(1).height = 40;
+
+        worksheet.mergeCells('A2:H2');
+        worksheet.getCell('A2').value = 'OFFICIAL STATEMENT OF ACCOUNT / LEDGER';
+        worksheet.getCell('A2').font = { size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+        worksheet.getCell('A2').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF475569' } };
+        worksheet.getCell('A2').alignment = { horizontal: 'center', vertical: 'middle' };
+        worksheet.getRow(2).height = 25;
+
+        // Generated timestamp
+        worksheet.mergeCells('A3:H3');
+        const activeSessionStr = localStorage.getItem('activeSession') || '2024-2025';
+        worksheet.getCell('A3').value = `Generated on: ${new Date().toLocaleString('en-GB')} | Academic Session: ${activeSessionStr}`;
+        worksheet.getCell('A3').font = { size: 9, italic: true, color: { argb: 'FF64748B' } };
+        worksheet.getCell('A3').alignment = { horizontal: 'center' };
+
+        // 2. Student & Parent Profile Block
+        worksheet.getCell('A5').value = 'Student Profile Details';
+        worksheet.getCell('A5').font = { bold: true, size: 11, color: { argb: 'FF1E293B' } };
+        
+        worksheet.getCell('A6').value = 'Student Name:';
+        worksheet.getCell('B6').value = ledger.student?.name || 'N/A';
+        worksheet.getCell('B6').font = { bold: true };
+        
+        worksheet.getCell('A7').value = 'Admission No:';
+        worksheet.getCell('B7').value = ledger.student?.admissionNo || 'N/A';
+        worksheet.getCell('B7').font = { bold: true };
+
+        worksheet.getCell('A8').value = 'Class / Grade:';
+        worksheet.getCell('B8').value = ledger.student?.className || 'N/A';
+        worksheet.getCell('B8').font = { bold: true };
+
+        worksheet.getCell('C6').value = "Father's Name:";
+        worksheet.getCell('D6').value = ledger.student?.fatherName || 'N/A';
+        worksheet.getCell('D6').font = { bold: true };
+
+        worksheet.getCell('C7').value = 'Transport Stop:';
+        worksheet.getCell('D7').value = ledger.student?.transportStop !== 'N/A' ? ledger.student?.transportStop : 'None (Self-Transport)';
+        worksheet.getCell('D7').font = { bold: true };
+
+        worksheet.getCell('C8').value = 'RTE Student:';
+        worksheet.getCell('D8').value = ledger.student?.isRT ? 'Yes (Exempt)' : 'No (Regular)';
+        worksheet.getCell('D8').font = { bold: true };
+
+        // Summary Box
+        worksheet.getCell('F5').value = 'Ledger Summary';
+        worksheet.getCell('F5').font = { bold: true, size: 11, color: { argb: 'FF059669' } };
+
+        worksheet.getCell('F6').value = 'Total Expected (Year):';
+        worksheet.getCell('G6').value = ledger.summary?.totalExpectedWholeYear || 0;
+        worksheet.getCell('G6').numFmt = '₹#,##0.00';
+        worksheet.getCell('G6').font = { bold: true };
+
+        worksheet.getCell('F7').value = 'Total Paid (All Time):';
+        worksheet.getCell('G7').value = ledger.summary?.totalPaidAllTime || 0;
+        worksheet.getCell('G7').numFmt = '₹#,##0.00';
+        worksheet.getCell('G7').font = { bold: true, color: { argb: 'FF059669' } };
+
+        worksheet.getCell('F8').value = 'Total Concessions:';
+        const totalConcessions = ledger.payments?.reduce((sum: number, p: any) => sum + (p.discount || 0), 0) || 0;
+        worksheet.getCell('G8').value = totalConcessions;
+        worksheet.getCell('G8').numFmt = '₹#,##0.00';
+        worksheet.getCell('G8').font = { bold: true, color: { argb: 'FFD97706' } };
+
+        worksheet.getCell('F9').value = 'Net Outstanding:';
+        worksheet.getCell('G9').value = ledger.summary?.netOutstanding || 0;
+        worksheet.getCell('G9').numFmt = '₹#,##0.00';
+        worksheet.getCell('G9').font = { bold: true, color: { argb: 'FFEF4444' } };
+
+        // Table headers
+        const tableHeaderRow = 11;
+        worksheet.getRow(tableHeaderRow).values = [
+            'Date',
+            'Particulars / Transaction Description',
+            'Receipt No.',
+            'Type',
+            'Debit (Billed) (Dr.)',
+            'Credit (Paid) (Cr.)',
+            'Discount/Concession (Cr.)',
+            'Running Balance'
+        ];
+        worksheet.getRow(tableHeaderRow).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        worksheet.getRow(tableHeaderRow).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF475569' } };
+        worksheet.getRow(tableHeaderRow).alignment = { horizontal: 'center', vertical: 'middle' };
+        worksheet.getRow(tableHeaderRow).height = 25;
+
+        interface LedgerEvent {
+            date: Date;
+            dateStr: string;
+            description: string;
+            receiptNo: string;
+            type: string;
+            debit: number;
+            credit: number;
+            discount: number;
+        }
+        
+        const events: LedgerEvent[] = [];
+
+        // A. Opening/Previous dues (April 1, 2024)
+        if (ledger.summary?.previousSessionDue > 0) {
+            events.push({
+                date: new Date('2024-04-01T00:00:00.000Z'),
+                dateStr: '01/04/2024',
+                description: 'Previous Academic Session Pending Dues (Opening Balance)',
+                receiptNo: '-',
+                type: 'Opening Dues',
+                debit: ledger.summary?.previousSessionDue,
+                credit: 0,
+                discount: 0
+            });
+        }
+
+        // B. One-Time/Annual Fees expected (April 1, 2024)
+        ledger.oneTimeStatus?.forEach((ot: any) => {
+            events.push({
+                date: new Date('2024-04-01T00:01:00.000Z'),
+                dateStr: '01/04/2024',
+                description: `Billed: ${ot.name}`,
+                receiptNo: '-',
+                type: 'One-Time Fee',
+                debit: ot.amount,
+                credit: 0,
+                discount: 0
+            });
+        });
+
+        // C. Monthly Fees expected (1st of each month)
+        const months = ['April','May','June','July','August','September','October','November','December','January','February','March'];
+        const struct = feeStructure.find((s: any) => s.className === ledger.student?.className);
+        const regularMonthlyFee = feeHeads.filter((h: any) => h.type === 'Monthly' && (struct?.fees?.[h.name] || 0) > 0);
+        
+        months.forEach((m, mIndex) => {
+            const year = mIndex < 9 ? 2024 : 2025;
+            const monthNumber = mIndex < 9 ? mIndex + 3 : mIndex - 9;
+            const billingDate = new Date(year, monthNumber, 1);
+            
+            regularMonthlyFee.forEach((f: any) => {
+                const amount = ledger.student?.isRT ? 0 : (struct?.fees?.[f.name] || 0);
+                if (amount > 0) {
+                    events.push({
+                        date: billingDate,
+                        dateStr: `01/${(monthNumber + 1).toString().padStart(2, '0')}/${year}`,
+                        description: `Billed: Monthly ${f.name} (${m})`,
+                        receiptNo: '-',
+                        type: 'Monthly Fee',
+                        debit: amount,
+                        credit: 0,
+                        discount: 0
+                    });
+                }
+            });
+
+            if (ledger.student?.transportFare > 0) {
+                events.push({
+                    date: new Date(year, monthNumber, 1, 0, 1),
+                    dateStr: `01/${(monthNumber + 1).toString().padStart(2, '0')}/${year}`,
+                    description: `Billed: Monthly Transport Fare (${m})`,
+                    receiptNo: '-',
+                    type: 'Transport Fee',
+                    debit: ledger.student?.transportFare,
+                    credit: 0,
+                    discount: 0
+                });
+            }
+        });
+
+        // D. Payments/Concessions (Approved Receipts)
+        ledger.payments?.forEach((p: any) => {
+            const payDate = new Date(p.paymentDate);
+            const day = payDate.getDate().toString().padStart(2, '0');
+            const month = (payDate.getMonth() + 1).toString().padStart(2, '0');
+            const yr = payDate.getFullYear();
+            
+            events.push({
+                date: payDate,
+                dateStr: `${day}/${month}/${yr}`,
+                description: `Payment Received | Mode: ${p.paymentMode || 'Cash'} ${p.remark ? `(${p.remark})` : ''}`,
+                receiptNo: p.receiptNo || 'N/A',
+                type: 'Receipt Credit',
+                debit: 0,
+                credit: p.amountPaid || 0,
+                discount: p.discount || 0
+            });
+        });
+
+        // Sort all events chronologically
+        events.sort((a, b) => a.date.getTime() - b.date.getTime());
+
+        let runningBalance = 0;
+        let currentRow = tableHeaderRow + 1;
+        const borderThin = { style: 'thin' as const, color: { argb: 'FFE2E8F0' } };
+
+        events.forEach((evt) => {
+            runningBalance += evt.debit - evt.credit - evt.discount;
+
+            worksheet.getRow(currentRow).values = [
+                evt.dateStr,
+                evt.description,
+                evt.receiptNo,
+                evt.type,
+                evt.debit === 0 ? '-' : evt.debit,
+                evt.credit === 0 ? '-' : evt.credit,
+                evt.discount === 0 ? '-' : evt.discount,
+                runningBalance
+            ];
+
+            worksheet.getCell(`A${currentRow}`).alignment = { horizontal: 'center' };
+            worksheet.getCell(`C${currentRow}`).alignment = { horizontal: 'center' };
+            worksheet.getCell(`D${currentRow}`).alignment = { horizontal: 'center' };
+            
+            if (evt.debit > 0) {
+                worksheet.getCell(`E${currentRow}`).numFmt = '₹#,##0.00';
+                worksheet.getCell(`E${currentRow}`).font = { color: { argb: 'FF334155' } };
+            }
+            if (evt.credit > 0) {
+                worksheet.getCell(`F${currentRow}`).numFmt = '₹#,##0.00';
+                worksheet.getCell(`F${currentRow}`).font = { color: { argb: 'FF059669' }, bold: true };
+            }
+            if (evt.discount > 0) {
+                worksheet.getCell(`G${currentRow}`).numFmt = '₹#,##0.00';
+                worksheet.getCell(`G${currentRow}`).font = { color: { argb: 'FFD97706' } };
+            }
+            
+            worksheet.getCell(`H${currentRow}`).numFmt = '₹#,##0.00';
+            worksheet.getCell(`H${currentRow}`).font = { bold: true, color: { argb: runningBalance > 0 ? 'FFEF4444' : 'FF059669' } };
+
+            if (evt.credit > 0) {
+                worksheet.getRow(currentRow).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0FDF4' } };
+            }
+
+            for (let c = 1; c <= 8; c++) {
+                worksheet.getRow(currentRow).getCell(c).border = {
+                    top: borderThin,
+                    bottom: borderThin,
+                    left: borderThin,
+                    right: borderThin
+                };
+            }
+
+            currentRow++;
+        });
+
+        // Set column widths
+        worksheet.getColumn('A').width = 12;
+        worksheet.getColumn('B').width = 45;
+        worksheet.getColumn('C').width = 15;
+        worksheet.getColumn('D').width = 15;
+        worksheet.getColumn('E').width = 18;
+        worksheet.getColumn('F').width = 18;
+        worksheet.getColumn('G').width = 18;
+        worksheet.getColumn('H').width = 20;
+
+        workbook.xlsx.writeBuffer().then((buffer) => {
+            const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.setAttribute("href", url);
+            const session = localStorage.getItem('activeSession') || '2024-2025';
+            link.setAttribute("download", `Statement_of_Account_${ledger.student?.name?.replace(/\s+/g, '_')}_${ledger.student?.admissionNo}_${session}.xlsx`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        });
+    };
+
     const fetchReports = async () => {
         try {
-            const res = await axios.get('/erp-api/fees/reports');
+            const session = localStorage.getItem('activeSession') || '2026-2027';
+            const res = await axios.get(`/erp-api/fees/reports?session=${session}`);
             setReportData(res.data);
         } catch (err) {
             console.error("Failed to fetch reports");
@@ -270,11 +702,12 @@ const Fees: React.FC = () => {
 
     const exportToPDF = () => {
         const doc = new jsPDF() as any;
+        const activeSessionStr = localStorage.getItem('activeSession') || '2024-2025';
         doc.setFont("helvetica", "bold");
         doc.text("BIPS ERP - SCHOOL MANAGEMENT SYSTEM", 14, 15);
         doc.setFontSize(10);
         doc.setFont("helvetica", "normal");
-        doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 22);
+        doc.text(`Generated on: ${new Date().toLocaleString()} | Academic Session: ${activeSessionStr}`, 14, 22);
 
         let reportName = "";
         let head: any[] = [];
@@ -282,11 +715,23 @@ const Fees: React.FC = () => {
 
         if (activeReport === 'daily') {
             const todayStr = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-            reportName = `Daily Collection Report (${todayStr})`;
+            const query = receiptSearchQuery.trim().toLowerCase();
+            reportName = query !== '' ? `Search Collection Report` : `Daily Collection Report (${todayStr})`;
             head = [['Date', 'Student Name', 'Father Name', 'Class', 'Receipt No', 'Amount (INR)']];
-            body = reportData.daily
-                .filter(d => d.date === todayStr)
-                .map(d => [d.date, d.studentName, d.fatherName || 'N/A', d.className, d.receiptNo, `Rs. ${d.paidAmount.toLocaleString()}`]);
+            
+            const filtered = query !== ''
+                ? reportData.daily.filter(d => 
+                    (d.receiptNo || '').toLowerCase().includes(query) ||
+                    (d.studentName || '').toLowerCase().includes(query) ||
+                    (d.admissionNo || '').toLowerCase().includes(query)
+                  )
+                : reportData.daily.filter(d => d.date === todayStr);
+
+            body = filtered.map(d => [d.date, d.studentName, d.fatherName || 'N/A', d.className, d.receiptNo, `Rs. ${d.paidAmount.toLocaleString()}`]);
+            
+            // Add a total row
+            const total = filtered.reduce((s, d) => s + d.paidAmount, 0);
+            body.push([{ content: 'GRAND TOTAL:', colSpan: 5, styles: { halign: 'right', fontStyle: 'bold' } }, { content: `Rs. ${total.toLocaleString()}`, styles: { fontStyle: 'bold' } }]);
         } else if (activeReport === 'monthly') {
             reportName = `Monthly Collection Detailed (${reportFilterMonth})`;
             head = [['Date', 'Receipt No', 'Student Name', 'Class', 'Mode', 'Amount (INR)']];
@@ -355,7 +800,7 @@ const Fees: React.FC = () => {
             margin: { top: 40 }
         });
 
-        doc.save(`${reportName.replace(/ /g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`);
+        doc.save(`${reportName.replace(/ /g, '_')}_${activeSessionStr}_${new Date().toISOString().split('T')[0]}.pdf`);
     };
 
 
@@ -394,12 +839,34 @@ const Fees: React.FC = () => {
     // Transport state
     const [isTransportEnabled, setIsTransportEnabled] = useState(false);
     const [isTransportYearly, setIsTransportYearly] = useState(false);
+    const [isTransportFixed, setIsTransportFixed] = useState(false);
     const [transportRows, setTransportRows] = useState([{ name: '', km: '', price: '', showDropdown: false }]);
     const [transportStops, setTransportStops] = useState<{ id: string; name: string; km: string; ratePerKm?: string, busFare: number }[]>([]);
 
+
     useEffect(() => {
         fetchTransportStops();
+        
+        const handleAfterPrint = () => {
+            document.body.classList.remove('printing-statement');
+            document.body.classList.remove('printing-receipt');
+            document.body.classList.remove('printing-dues-report');
+        };
+        window.addEventListener('afterprint', handleAfterPrint);
+        return () => {
+            window.removeEventListener('afterprint', handleAfterPrint);
+        };
     }, []);
+
+    const printStudentStatement = () => {
+        document.body.classList.add('printing-statement');
+        window.print();
+    };
+
+    const printDuesReport = () => {
+        document.body.classList.add('printing-dues-report');
+        window.print();
+    };
 
     useEffect(() => {
         if (selectedMonth) {
@@ -442,13 +909,24 @@ const Fees: React.FC = () => {
     };
 
     const isTransportPaidForMonth = (month: string) => {
+        // Normalize short month names (e.g. 'Apr') to full names (e.g. 'April')
+        const shortToFull: Record<string, string> = {
+            'Jan': 'January', 'Feb': 'February', 'Mar': 'March',
+            'Apr': 'April', 'May': 'May', 'Jun': 'June',
+            'Jul': 'July', 'Aug': 'August', 'Sep': 'September',
+            'Oct': 'October', 'Nov': 'November', 'Dec': 'December'
+        };
+        const normalizedMonth = shortToFull[month] || month; // 'Apr' -> 'April', or keep as-is
+
         return studentHistory.some(r => {
             if (r.status !== 'APPROVED') return false;
-            let paidMonths = [r.month?.trim()];
+            let paidMonths: string[] = [r.month?.trim() || ''];
             if (r.feeHead.includes('==>')) {
                 paidMonths = r.feeHead.split('==>')[0].split(',').map((m: string) => m.trim());
             }
-            if (!paidMonths.includes(month)) return false;
+            // Also normalize stored months for comparison
+            const normalizedPaidMonths = paidMonths.map(m => shortToFull[m] || m);
+            if (!normalizedPaidMonths.includes(normalizedMonth)) return false;
             return r.feeHead.includes('Transport');
         });
     };
@@ -460,11 +938,9 @@ const Fees: React.FC = () => {
         
         const isMonthly = headObj.type && headObj.type.toLowerCase().includes('month');
         
-        // Find if student is RTE
+        // Find if student is RTE / Third Child
         const currentStudent = students.find(s => s.admissionNo === admissionNo);
-        const isStudentRT = currentStudent?.isRT || false;
-
-        if (isStudentRT && isMonthly) {
+        if (currentStudent && isFeeExempt(currentStudent, headObj)) {
             return true;
         }
         
@@ -490,24 +966,27 @@ const Fees: React.FC = () => {
         const struct = feeStructure.find(s => s.className === selectedClass);
         if (!struct) return false;
         
-        // Find if student is RTE
         const currentStudent = students.find(s => s.admissionNo === admissionNo);
-        const isStudentRT = currentStudent?.isRT || false;
+        
+        const monthlyHeads = feeHeads.filter(h => {
+            const isMonthly = h.type && h.type.toLowerCase().includes('month');
+            if (!isMonthly) return false;
+            if ((struct.fees?.[h.name] || 0) <= 0) return false;
+            
+            if (currentStudent && isFeeExempt(currentStudent, h)) {
+                return false;
+            }
+            return true;
+        });
 
-        if (isStudentRT) {
-            // RTE students don't pay monthly class fees.
-            // But they might pay transport fee.
+        if (monthlyHeads.length === 0) {
             if (currentStudent?.transportStopId) {
                 return isTransportPaidForMonth(month);
             }
             return true;
         }
         
-        const monthlyHeads = feeHeads.filter(h => h.type === 'Monthly' && (struct.fees?.[h.name] || 0) > 0);
-        if (monthlyHeads.length === 0) return false;
-
-        // A month is fully paid only if all monthly heads for that month have been paid
-        return monthlyHeads.every(h => {
+        const monthlyHeadsPaid = monthlyHeads.every(h => {
              return studentHistory.some(r => {
                  if (r.status !== 'APPROVED') return false;
                  let paidMonths = [r.month?.trim()];
@@ -521,6 +1000,11 @@ const Fees: React.FC = () => {
                  return headNames.includes(h.name);
              });
         });
+
+        if (currentStudent?.transportStopId) {
+            return monthlyHeadsPaid && isTransportPaidForMonth(month);
+        }
+        return monthlyHeadsPaid;
     };
 
     const toggleFeeSelection = (feeName: string) => {
@@ -566,25 +1050,27 @@ const Fees: React.FC = () => {
             };
             document.addEventListener('mousedown', handleClickOutside);
 
-            // Polling for auto-refresh every 5 seconds
+            // Polling for auto-refresh every 15 seconds (only for pending approvals)
             const interval = setInterval(() => {
                 if (parsedUser.role === 'PRINCIPAL' || parsedUser.role === 'ADMIN') {
                     fetchPendingApprovals();
                 }
-                if (parsedUser.role === 'ACCOUNTS' || parsedUser.role === 'ADMIN' || parsedUser.role === 'PRINCIPAL') {
-                    fetchAllHistory();
-                    fetchDueFees();
-                }
-                // Refresh reports if active
-                if (activeTab === 'reports') {
-                    fetchReports();
-                }
-            }, 5000);
+            }, 15000);
+
+            const handleSessionChange = () => {
+                fetchAllHistory();
+                fetchReports();
+                fetchDueFees();
+                fetchStudents();
+                fetchTransportDues();
+            };
+            window.addEventListener('activeSessionChanged', handleSessionChange);
 
             // Cleanup interval and listener on unmount
             return () => {
                 clearInterval(interval);
                 document.removeEventListener('mousedown', handleClickOutside);
+                window.removeEventListener('activeSessionChanged', handleSessionChange);
             };
         }
     }, []);
@@ -632,22 +1118,151 @@ const Fees: React.FC = () => {
     };
 
 
-    const fetchStudentHistory = async (studentId: string, studentNameVal: string) => {
+    const fetchStudentHistory = async (
+        studentId: string, 
+        studentNameVal: string, 
+        autoSelect: boolean = false, 
+        dueFeeItem: any = null, 
+        monthFilter: string = 'All'
+    ) => {
         try {
+            setLoadingLedger(true);
             const res = await axios.get(`/erp-api/fees/history/${studentId}`);
-            setStudentHistory(res.data.map((r: any) => ({
+            const mappedHistory = res.data.map((r: any) => ({
                 ...r,
                 paidAmount: r.amountPaid || r.paidAmount || 0,
-                date: new Date(r.paymentDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
+                date: new Date(r.paymentDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
                 studentName: studentNameVal,
                 admissionNo: r.student?.admissionNo || r.admissionNo || 'N/A',
-                className: r.student?.class?.name || r.className || 'N/A'
-            })));
+                className: r.student?.class?.name || r.className || 'N/A',
+                sessionName: r.session?.name || null
+            }));
+            setStudentHistory(mappedHistory);
             
             const balRes = await axios.get(`/erp-api/fees/student/${studentId}/balance`);
-            setPendingDues(balRes.data.outstandingBalance || 0);
+            setPendingDues(balRes.data.previousSessionDue || 0);
+
+            const hasTr = balRes.data.hasTransport || false;
+
+            if (hasTr) {
+                setIsTransportEnabled(true);
+                setTransportRows([{ 
+                    name: balRes.data.transportStopName || '', 
+                    km: '', 
+                    price: (balRes.data.transportBusFare || 0).toString(), 
+                    showDropdown: false 
+                }]);
+                setIsTransportFixed(true);
+            } else {
+                setIsTransportEnabled(false);
+                setTransportRows([{ name: '', km: '', price: '', showDropdown: false }]);
+                setIsTransportFixed(false);
+            }
+
+            const ledgerRes = await axios.get(`/erp-api/fees/student/${studentId}/ledger`);
+            setStudentLedger(ledgerRes.data);
+
+            if (autoSelect && dueFeeItem) {
+                const dyn = calculateDynamicDues(dueFeeItem, monthFilter);
+                
+                // 1. Select unpaid months
+                if (dyn.unpaidMonthsList && dyn.unpaidMonthsList.length > 0) {
+                    setSelectedMonths(dyn.unpaidMonthsList);
+                } else if (monthFilter !== 'All') {
+                    setSelectedMonths([monthFilter]);
+                } else {
+                    const currentDate = new Date();
+                    const allMonths = ['April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December', 'January', 'February', 'March'];
+                    const currentMonthName = allMonths[(currentDate.getMonth() - 3 + 12) % 12];
+                    setSelectedMonths([currentMonthName]);
+                }
+
+                // 2. Select unpaid fee heads
+                const struct = feeStructure.find(s => s.className === dueFeeItem.className);
+                if (struct && struct.fees) {
+                    const unpaidHeads: string[] = [];
+                    
+                    const checkIsHeadPaidForMonth = (headName: string, month: string) => {
+                        return mappedHistory.some((r: any) => {
+                            if (r.status !== 'APPROVED') return false;
+                            let paidMonths = [r.month?.trim()];
+                            if (r.feeHead.includes('==>')) {
+                                paidMonths = r.feeHead.split('==>')[0].split(',').map((m: string) => m.trim());
+                            }
+                            if (!paidMonths.includes(month)) return false;
+                            const parts = r.feeHead.split('==>');
+                            const headsPart = parts.length > 1 ? parts[1] : parts[0];
+                            const headNames = headsPart.split('||').map((hn: string) => hn.split(':')[0].trim());
+                            return headNames.includes(headName);
+                        });
+                    };
+
+                    const checkIsTransportPaidForMonth = (month: string) => {
+                        const shortToFull: Record<string, string> = {
+                            'Jan': 'January', 'Feb': 'February', 'Mar': 'March',
+                            'Apr': 'April', 'May': 'May', 'Jun': 'June',
+                            'Jul': 'July', 'Aug': 'August', 'Sep': 'September',
+                            'Oct': 'October', 'Nov': 'November', 'Dec': 'December'
+                        };
+                        const normalizedMonth = shortToFull[month] || month;
+                        return mappedHistory.some((r: any) => {
+                            if (r.status !== 'APPROVED') return false;
+                            let paidMonths: string[] = [r.month?.trim() || ''];
+                            if (r.feeHead.includes('==>')) {
+                                paidMonths = r.feeHead.split('==>')[0].split(',').map((m: string) => m.trim());
+                            }
+                            const normalizedPaidMonths = paidMonths.map(m => shortToFull[m] || m);
+                            if (!normalizedPaidMonths.includes(normalizedMonth)) return false;
+                            return r.feeHead.includes('Transport');
+                        });
+                    };
+
+                    // Check monthly and one-time heads
+                    feeHeads.forEach(h => {
+                        const amount = struct.fees?.[h.name] || 0;
+                        if (amount <= 0) return;
+                        
+                        const isMonthly = h.type === 'Monthly';
+                        const currentStudent = students.find(s => s.id === studentId || s.admissionNo === dueFeeItem.admissionNo);
+                        const isExempt = currentStudent && isFeeExempt(currentStudent, h);
+                        if (isExempt) return;
+
+                        if (isMonthly) {
+                            const monthsToCheck = dyn.unpaidMonthsList.length > 0 ? dyn.unpaidMonthsList : (monthFilter !== 'All' ? [monthFilter] : []);
+                            const hasUnpaidMonth = monthsToCheck.some(m => !checkIsHeadPaidForMonth(h.name, m));
+                            if (hasUnpaidMonth) {
+                                unpaidHeads.push(h.name);
+                            }
+                        } else {
+                            const isPaid = mappedHistory.some((r: any) => {
+                                if (r.status !== 'APPROVED') return false;
+                                const parts = r.feeHead.split('==>');
+                                const headsPart = parts.length > 1 ? parts[1] : parts[0];
+                                const headNames = headsPart.split('||').map((hn: string) => hn.split(':')[0].trim());
+                                return headNames.includes(h.name);
+                            });
+                            if (!isPaid) {
+                                unpaidHeads.push(h.name);
+                            }
+                        }
+                    });
+
+                    // Check transport if enabled
+                    if (hasTr) {
+                        const monthsToCheck = dyn.unpaidMonthsList.length > 0 ? dyn.unpaidMonthsList : (monthFilter !== 'All' ? [monthFilter] : []);
+                        const hasUnpaidTransport = monthsToCheck.some(m => !checkIsTransportPaidForMonth(m));
+                        if (hasUnpaidTransport) {
+                            unpaidHeads.push('Transport Fee');
+                        }
+                    }
+
+                    setSelectedFees(unpaidHeads);
+                }
+            }
         } catch (err) {
             console.error('Failed to fetch history:', err);
+        } finally {
+            setLoadingLedger(false);
         }
     };
 
@@ -677,9 +1292,10 @@ const Fees: React.FC = () => {
             setFeeRecords(res.data.map((r: any) => ({
                 ...r,
                 paidAmount: r.amountPaid || r.paidAmount || 0,
-                date: new Date(r.paymentDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
+                date: new Date(r.paymentDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
                 studentName: r.studentName || 'Unknown Student',
-                className: r.className || 'Unknown Class'
+                className: r.className || 'Unknown Class',
+                sessionName: r.session?.name || null
             })));
         } catch (err) {
             console.error('Failed to fetch full history:', err);
@@ -688,7 +1304,8 @@ const Fees: React.FC = () => {
 
     const fetchDueFees = async () => {
         try {
-            const res = await axios.get('/erp-api/fees/due-list');
+            const session = localStorage.getItem('activeSession') || '2024-2025';
+            const res = await axios.get(`/erp-api/fees/due-list?session=${session}`);
             console.log("Due Fees Data Received:", res.data.length, "records");
             const enrichedData = res.data.map((f: any) => {
                 if (!f.pendingMonths) {
@@ -717,7 +1334,8 @@ const Fees: React.FC = () => {
     const fetchTransportDues = async () => {
         setLoadingTransportDues(true);
         try {
-            const res = await axios.get('/erp-api/fees/transport-due-list');
+            const session = localStorage.getItem('activeSession') || '2024-2025';
+            const res = await axios.get(`/erp-api/fees/transport-due-list?session=${session}`);
             setTransportDues(res.data);
         } catch (error) {
             console.error('Failed to fetch transport dues');
@@ -727,32 +1345,54 @@ const Fees: React.FC = () => {
     };
 
     useEffect(() => {
-        if (activeTab === 'due' && dueView === 'transport') {
-            fetchTransportDues();
-        }
-    }, [activeTab, dueView]);
+        if (!user) return;
+        
+        const refreshData = () => {
+            switch (activeTab) {
+                case 'due':
+                    if (dueView === 'general') {
+                        fetchDueFees();
+                    } else if (dueView === 'transport') {
+                        fetchTransportDues();
+                    }
+                    break;
+                case 'previous_due':
+                    fetchDueFees();
+                    break;
+                case 'reports':
+                    fetchReports();
+                    break;
+                case 'approvals':
+                    fetchPendingApprovals();
+                    break;
+                case 'drafts':
+                    fetchAllHistory();
+                    break;
+                case 'collection':
+                    fetchAllHistory();
+                    break;
+                case 'heads':
+                    fetchFeeHeads();
+                    break;
+                case 'structure':
+                    fetchFeeStructure();
+                    break;
+                default:
+                    break;
+            }
+        };
+
+        refreshData();
+
+        const interval = setInterval(refreshData, 10000);
+
+        return () => clearInterval(interval);
+    }, [activeTab, dueView, user]);
 
     const downloadDueExcel = () => {
+        const activeSessionStr = localStorage.getItem('activeSession') || '2024-2025';
         if (dueView === 'general') {
-            const filtered = (dueFees as any[])
-                .filter(f => dueClassFilter === 'All' || f.className === dueClassFilter)
-                .filter(f => {
-                    if (dueRtFilter === 'All') return true;
-                    if (dueRtFilter === 'RT') return f.isRT;
-                    return !f.isRT;
-                })
-                .filter(() => {
-                    if (dueMonthFilter === 'All') return true;
-                    // For the simple export, show ALL students in the class, not just pending ones
-                    return true; 
-                })
-                .filter(f => {
-                    if (dueSearchQuery === '') return true;
-                    const query = dueSearchQuery.toLowerCase();
-                    return (f.studentName || '').toLowerCase().includes(query) || 
-                           (f.admissionNo || '').toLowerCase().includes(query) ||
-                           (f.fatherName || '').toLowerCase().includes(query);
-                });
+            const filtered = getFilteredDues(dueFees);
 
             let headers: string[] = [];
             let csvContentLines: string[] = [];
@@ -769,6 +1409,8 @@ const Fees: React.FC = () => {
                 ];
                 
                 csvContentLines = [
+                    `"Academic Session: ${activeSessionStr}"`,
+                    "",
                     headers.join(","),
                     ...filtered.map((f, index) => {
                         const mPaid = f.monthWisePaid?.[dueMonthFilter] || 0;
@@ -809,6 +1451,8 @@ const Fees: React.FC = () => {
                 });
 
                 csvContentLines = [
+                    `"Academic Session: ${activeSessionStr}"`,
+                    "",
                     headers.join(","),
                     ...pendingFiltered.map((f, index) => {
                         const dyn = calculateDynamicDues(f, 'All');
@@ -830,7 +1474,7 @@ const Fees: React.FC = () => {
             const url = URL.createObjectURL(blob);
             const link = document.createElement("a");
             link.setAttribute("href", url);
-            link.setAttribute("download", dueMonthFilter !== 'All' ? `Simple_List_${dueMonthFilter}_${new Date().toLocaleDateString()}.csv` : `Pending_Fees_${new Date().toLocaleDateString()}.csv`);
+            link.setAttribute("download", dueMonthFilter !== 'All' ? `Simple_List_${dueMonthFilter}_${activeSessionStr}_${new Date().toLocaleDateString()}.csv` : `Pending_Fees_${activeSessionStr}_${new Date().toLocaleDateString()}.csv`);
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
@@ -849,8 +1493,17 @@ const Fees: React.FC = () => {
                     const query = dueSearchQuery.toLowerCase();
                     return (d.studentName || '').toLowerCase().includes(query) ||
                            (d.fatherName || '').toLowerCase().includes(query);
+                })
+                .filter(d => {
+                    if (dueStatusFilter === 'Paid') return d.pending === 0;
+                    if (dueStatusFilter === 'Unpaid') return d.totalPaid === 0 && d.monthlyFare > 0;
+                    if (dueStatusFilter === 'Partially Paid') return d.totalPaid > 0 && d.pending > 0;
+                    if (dueStatusFilter === 'Any Outstanding') return d.pending > 0;
+                    return true;
                 });
             const csvContent = [
+                `"Academic Session: ${activeSessionStr}"`,
+                "",
                 headers.join(','),
                 ...filtered.map(d => [
                     `"${d.studentName}"`,
@@ -868,7 +1521,7 @@ const Fees: React.FC = () => {
             const url = URL.createObjectURL(blob);
             const link = document.createElement("a");
             link.setAttribute("href", url);
-            link.setAttribute("download", `Transport_Dues_${new Date().toLocaleDateString()}.csv`);
+            link.setAttribute("download", `Transport_Dues_${activeSessionStr}_${new Date().toLocaleDateString()}.csv`);
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
@@ -878,25 +1531,7 @@ const Fees: React.FC = () => {
     const downloadFullDetailsExcel = async () => {
         if (dueView !== 'general') return;
         
-        const filtered = (dueFees as any[])
-            .filter(f => dueClassFilter === 'All' || f.className === dueClassFilter)
-            .filter(f => {
-                if (dueRtFilter === 'All') return true;
-                if (dueRtFilter === 'RT') return f.isRT;
-                return !f.isRT;
-            })
-            .filter(() => {
-                if (dueMonthFilter === 'All') return true;
-                // For Full details, show ALL students, so we can color them red/yellow/green
-                return true; 
-            })
-            .filter(f => {
-                if (dueSearchQuery === '') return true;
-                const query = dueSearchQuery.toLowerCase();
-                return (f.studentName || '').toLowerCase().includes(query) || 
-                       (f.admissionNo || '').toLowerCase().includes(query) ||
-                       (f.fatherName || '').toLowerCase().includes(query);
-            });
+            const filtered = getFilteredDues(dueFees);
 
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('Full Details');
@@ -906,98 +1541,56 @@ const Fees: React.FC = () => {
             { header: 'Student Name', key: 'studentName', width: 25 },
             { header: 'Admission No', key: 'admNo', width: 15 },
             { header: 'Class', key: 'class', width: 15 },
-            { header: 'Previous Months Pending (Rs)', key: 'prevPending', width: 28 },
-            { header: 'This Month Fee (Rs)', key: 'thisMonthFee', width: 20 },
-            { header: 'Total Amount Due', key: 'totalAmountDue', width: 22 },
+            { header: 'Previous Session Dues (Rs)', key: 'prevSessionDues', width: 25 },
+            { header: 'One-Time/Annual Pending (Rs)', key: 'oneTimePending', width: 28 },
+            { header: 'Monthly Fees Pending (Rs)', key: 'monthlyPending', width: 25 },
+            { header: 'Total Outstanding (Rs)', key: 'totalOutstanding', width: 22 },
             { header: 'Payment Status', key: 'status', width: 18 },
-            { header: 'Description', key: 'description', width: 35 },
-            { header: 'Blank', key: 'blank', width: 20 }
+            { header: 'Pending Details', key: 'description', width: 35 }
         ];
 
-        // Style the header
-        worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
-        worksheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF475569' } };
-        worksheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
+        // Insert Title row for Session
+        const activeSessionStr = localStorage.getItem('activeSession') || '2024-2025';
+        worksheet.insertRow(1, [`Academic Session: ${activeSessionStr}`]);
+        worksheet.insertRow(2, []); // Blank spacer
+
+        worksheet.mergeCells('A1:J1');
+        worksheet.getRow(1).font = { bold: true, size: 12, color: { argb: 'FF1F2937' } };
+        worksheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'left' };
+
+        // Style the header (now row 3)
+        worksheet.getRow(3).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        worksheet.getRow(3).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF475569' } };
+        worksheet.getRow(3).alignment = { vertical: 'middle', horizontal: 'center' };
 
         const enrichedData = filtered.map((f) => {
-            const allMonths = ['April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December', 'January', 'February', 'March'];
-            
-            // To calculate "This Month Fee" vs "Previous Months Pending"
-            let targetMonthIndex = dueMonthFilter === 'All' ? new Date().getMonth() - 3 : allMonths.indexOf(dueMonthFilter);
-            if (targetMonthIndex < 0) targetMonthIndex += 12; // Handle Jan-Mar
-            
             const dyn = calculateDynamicDues(f, dueMonthFilter);
             
-            // Expected One-time minus Paid One-time
+            const prevSessionDues = dyn.prevBalance;
             const oneTimePending = dyn.pendingOneTime;
-            
-            // Monthly calculations
-            const monthlyFee = f.monthlyFeeAmount || 0;
-            const paidMonthly = dyn.paidTowardsMonthly;
-            
-            let prevMonthsExpected = 0;
-            if (targetMonthIndex > 0) {
-                 prevMonthsExpected = monthlyFee * targetMonthIndex;
-            }
-            // Previous arrears including old session dues + unpaid prev months
-            const prevPending = dyn.prevBalance + Math.max(0, prevMonthsExpected - paidMonthly);
-            
-            // This month's fee
-            const thisMonthExpected = monthlyFee;
-            let thisMonthPending = 0;
-            
-            if (paidMonthly >= prevMonthsExpected + thisMonthExpected) {
-                thisMonthPending = 0; // Fully paid up to this month
-            } else if (paidMonthly > prevMonthsExpected) {
-                thisMonthPending = (prevMonthsExpected + thisMonthExpected) - paidMonthly; // Partially paid this month
-            } else {
-                thisMonthPending = thisMonthExpected; // Not paid at all for this month
-            }
-
-            const totalAmountDue = prevPending + thisMonthPending;
+            const monthlyPending = dyn.pendingMonthly;
+            const totalOutstanding = dyn.totalPayableNow;
             
             let status = 'Unpaid';
-            let rowColor = 'FFFFFFFF'; // White default
+            let rowColor = 'FFFFFFFF';
             
-            if (totalAmountDue <= 0) {
+            if (totalOutstanding <= 0) {
                 status = f.isRT ? 'RT Student' : 'Paid';
                 rowColor = 'FFDCFCE7'; // Green (bg-green-100)
-            } else if (prevPending === 0 && thisMonthPending > 0) {
+            } else if (prevSessionDues === 0 && oneTimePending === 0) {
                 rowColor = 'FFFEEBC8'; // Yellow (bg-yellow-100)
             } else {
                 rowColor = 'FFFEE2E2'; // Red (bg-red-100)
             }
 
-            let description = '';
-            if (oneTimePending > 0) {
-                if (f.oneTimeBreakdown && f.oneTimeBreakdown.length > 0) {
-                    let remainingPaid = f.totalPaid || 0;
-                    const pendingList: string[] = [];
-                    for (const ot of f.oneTimeBreakdown) {
-                        if (remainingPaid >= ot.amount) {
-                            remainingPaid -= ot.amount;
-                        } else if (remainingPaid > 0) {
-                            pendingList.push(`${ot.name}-${ot.amount - remainingPaid}`);
-                            remainingPaid = 0;
-                        } else {
-                            pendingList.push(`${ot.name}-${ot.amount}`);
-                        }
-                    }
-                    description = pendingList.join(', ');
-                } else {
-                    description = `one time payment - ${oneTimePending}`;
-                }
-            }
-
-            if (f.isRT) {
-                description = description ? `${description} (RT Student)` : 'RT Student';
-            }
+            const description = dyn.pendingDetailsText;
 
             return {
                 ...f,
-                prevPending,
-                thisMonthPending,
-                totalAmountDue,
+                prevSessionDues,
+                oneTimePending,
+                monthlyPending,
+                totalOutstanding,
                 status,
                 rowColor,
                 description
@@ -1006,7 +1599,7 @@ const Fees: React.FC = () => {
 
         // Sort: Unpaid (higher dues) at top, Paid (0 or negative dues) at bottom
         enrichedData.sort((a, b) => {
-            return b.totalAmountDue - a.totalAmountDue;
+            return b.totalOutstanding - a.totalOutstanding;
         });
 
         enrichedData.forEach((f, index) => {
@@ -1015,12 +1608,12 @@ const Fees: React.FC = () => {
                 studentName: f.studentName || 'Unknown',
                 admNo: f.admissionNo || 'N/A',
                 class: f.className || 'Unknown',
-                prevPending: f.prevPending,
-                thisMonthFee: f.thisMonthPending,
-                totalAmountDue: f.totalAmountDue,
+                prevSessionDues: f.prevSessionDues,
+                oneTimePending: f.oneTimePending,
+                monthlyPending: f.monthlyPending,
+                totalOutstanding: f.totalOutstanding,
                 status: f.status,
-                description: f.description,
-                blank: ''
+                description: f.description
             });
 
             row.fill = {
@@ -1045,7 +1638,7 @@ const Fees: React.FC = () => {
 
         const buffer = await workbook.xlsx.writeBuffer();
         const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-        saveAs(blob, `Full_Details_${dueMonthFilter}_${new Date().toLocaleDateString()}.xlsx`);
+        saveAs(blob, `Full_Details_${dueMonthFilter}_${activeSessionStr}_${new Date().toLocaleDateString()}.xlsx`);
     };
 
     const exportPreviousDueExcel = () => {
@@ -1055,7 +1648,10 @@ const Fees: React.FC = () => {
             .filter(f => prevDueSearchQuery === '' || (f.studentName || '').toLowerCase().includes(prevDueSearchQuery.toLowerCase()));
 
         const headers = ['S.No.', 'Student Name', 'Father Name', 'Class', 'Previous Due (INR)'];
+        const activeSessionStr = localStorage.getItem('activeSession') || '2024-2025';
         const csvContent = [
+            `"Academic Session: ${activeSessionStr}"`,
+            "",
             headers.join(','),
             ...filtered.map((f, idx) => [
                 idx + 1,
@@ -1070,7 +1666,7 @@ const Fees: React.FC = () => {
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.setAttribute("href", url);
-        link.setAttribute("download", `Previous_Dues_${new Date().toLocaleDateString()}.csv`);
+        link.setAttribute("download", `Previous_Dues_${activeSessionStr}_${new Date().toLocaleDateString()}.csv`);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -1078,7 +1674,8 @@ const Fees: React.FC = () => {
 
     const fetchStudents = async () => {
         try {
-            const res = await axios.get('/erp-api/admin/students');
+            const session = localStorage.getItem('activeSession') || '2024-2025';
+            const res = await axios.get(`/erp-api/admin/students?session=${session}`);
             if (res.data && res.data.length > 0) {
                 setStudents(res.data);
             }
@@ -1110,20 +1707,23 @@ const Fees: React.FC = () => {
             const struct = feeStructure.find(s => s.className === selectedClass);
             if (struct && struct.fees) {
                 const currentStudent = students.find(s => s.admissionNo === admissionNo);
-                const isStudentRT = currentStudent?.isRT || false;
 
                 const subtotal = selectedFees.reduce((sum, feeName) => {
+                    if (feeName === 'Transport Fee') {
+                        const unpaidTransportMonths = selectedMonths.filter(m => !isTransportPaidForMonth(m));
+                        const fareVal = isTransportEnabled ? (Number(transportRows[0]?.price) || 0) : 0;
+                        const unpaidCount = isTransportYearly ? 12 : unpaidTransportMonths.length;
+                        return sum + (fareVal * unpaidCount);
+                    }
                     const head = feeHeads.find(h => h.name === feeName);
                     const isMonthly = head?.type === 'Monthly';
-                    const amount = (isStudentRT && isMonthly) ? 0 : (struct.fees[feeName] || 0);
+                    const isExempt = currentStudent && head ? isFeeExempt(currentStudent, head) : false;
+                    const amount = isExempt ? 0 : (struct.fees[feeName] || 0);
                     const multiplier = isMonthly ? selectedMonths.filter(m => !isHeadPaidForMonth(feeName, m)).length : 1;
                     return sum + (amount * multiplier);
                 }, 0);
                 
-                const transportMonthlyTotal = isTransportEnabled ? transportRows.reduce((sum, row) => sum + (Number(row.price) || 0), 0) : 0;
-                const unpaidTransportMonths = selectedMonths.filter(m => !isTransportPaidForMonth(m));
-                const transportTotal = isTransportYearly ? transportMonthlyTotal * 12 : (transportMonthlyTotal * unpaidTransportMonths.length);
-                const total = subtotal + transportTotal;
+                const total = subtotal;
                 const discVal = Number(discount) || 0;
                 const netPayable = (total + pendingDues - discVal).toString();
                 setTotalFee(total.toString());
@@ -1151,16 +1751,16 @@ const Fees: React.FC = () => {
         try {
             const struct = feeStructure.find(s => s.className === student.className);
             const currentStudent = students.find(s => s.admissionNo === admissionNo);
-            const isStudentRT = currentStudent?.isRT || false;
 
-            const breakdownParts = selectedFees.map(f => {
+            const breakdownParts = selectedFees.filter(f => f !== 'Transport Fee').map(f => {
                 const head = feeHeads.find(h => h.name === f);
                 const isMonthly = head?.type === 'Monthly';
-                const amount = (isStudentRT && isMonthly) ? 0 : (struct?.fees?.[f] || 0);
+                const isExempt = currentStudent && head ? isFeeExempt(currentStudent, head) : false;
+                const amount = isExempt ? 0 : (struct?.fees?.[f] || 0);
                 const unpaidCount = isMonthly ? selectedMonths.filter(m => !isHeadPaidForMonth(f, m)).length : 1;
                 return `${f}: ${amount * unpaidCount}`;
             });
-            if (isTransportEnabled) {
+            if (isTransportEnabled && selectedFees.includes('Transport Fee')) {
                 transportRows.forEach(r => {
                     if (r.name && r.price) {
                         const unpaidTransportCount = isTransportYearly ? 12 : selectedMonths.filter(m => !isTransportPaidForMonth(m)).length;
@@ -1173,6 +1773,15 @@ const Fees: React.FC = () => {
                 breakdownParts.push(`Previous Dues: ${pendingDues}`);
             }
 
+            const hasMonthly = selectedFees.some(f => {
+                if (f === 'Transport Fee') return false;
+                const head = feeHeads.find(h => h.name === f);
+                return head?.type === 'Monthly';
+            }) || (isTransportEnabled && selectedFees.includes('Transport Fee') && !isTransportYearly);
+
+            const feeHeadPrefix = hasMonthly ? `${selectedMonths.join(', ')} ==> ` : ' ==> ';
+            const feeHeadValue = `${feeHeadPrefix}${breakdownParts.join(' || ')}`;
+
             const payload = {
                 studentId: student.id,
                 admissionNo: student.admissionNo,
@@ -1180,7 +1789,7 @@ const Fees: React.FC = () => {
                 totalFee: Number(totalFee),
                 discount: Number(discount),
                 discountReason: isPending ? 'Requested Discount' : '',
-                feeHead: `${selectedMonths.join(', ')} ==> ${breakdownParts.join(' || ')}`,
+                feeHead: feeHeadValue,
                 paymentMode,
                 month: selectedMonths[0], // Primary month for grouping
                 year: new Date().getFullYear().toString(),
@@ -1195,10 +1804,11 @@ const Fees: React.FC = () => {
                 ...savedRecord,
                 paidAmount: savedRecord.amountPaid || savedRecord.paidAmount || 0,
                 id: savedRecord.id,
-                date: new Date(savedRecord.paymentDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
+                date: new Date(savedRecord.paymentDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
                 studentName: student.name,
                 admissionNo: student.admissionNo,
-                className: student.className
+                className: student.className,
+                sessionName: savedRecord.session?.name || null
             };
 
             
@@ -1230,6 +1840,7 @@ const Fees: React.FC = () => {
             setSelectedMonths([currentMonthNameReset]);
             setIsTransportEnabled(false);
             setIsTransportYearly(false);
+            setIsTransportFixed(false);
             setTransportRows([{ name: '', km: '', price: '', showDropdown: false }]);
             setPendingDues(0);
             setRemark('');
@@ -1242,6 +1853,43 @@ const Fees: React.FC = () => {
             setSubmitting(false);
         }
 
+    };
+ 
+    const handlePayPreviousYearDuesRedirect = (fee: any) => {
+        // Reset selected fees to avoid mix-up
+        setSelectedFees([]);
+        
+        // Switch to Fee Collection tab
+        setActiveTab('collection');
+        
+        // Populate search/selection details
+        setStudentName(fee.studentName);
+        setAdmissionNo(fee.admissionNo);
+        setFatherName(fee.fatherName || 'N/A');
+        setSelectedClass(fee.className);
+        
+        // Fetch student history, dues (populates pendingDues), and ledger
+        fetchStudentHistory(fee.id, fee.studentName);
+        
+        // Close search dropdown
+        setShowSearchDropdown(false);
+    };
+
+    const handlePayDuesRedirect = (fee: any, monthFilter: string) => {
+        // Switch to Fee Collection tab
+        setActiveTab('collection');
+        
+        // Populate search/selection details
+        setStudentName(fee.studentName);
+        setAdmissionNo(fee.admissionNo);
+        setFatherName(fee.fatherName || 'N/A');
+        setSelectedClass(fee.className);
+        
+        // Fetch student history, dues (populates pendingDues), and ledger with autoSelect enabled
+        fetchStudentHistory(fee.id, fee.studentName, true, fee, monthFilter);
+        
+        // Close search dropdown
+        setShowSearchDropdown(false);
     };
 
     const approveFee = async (id: string) => {
@@ -1277,9 +1925,10 @@ const Fees: React.FC = () => {
             const updatedRec = {
                 ...data,
                 paidAmount: data.amountPaid,
-                date: new Date(data.paymentDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
+                date: new Date(data.paymentDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
                 studentName: feeRecords.find(r => r.id === id)?.studentName || 'Student',
-                className: feeRecords.find(r => r.id === id)?.className || ''
+                className: feeRecords.find(r => r.id === id)?.className || '',
+                sessionName: data.session?.name || null
             };
             setFeeRecords(prev => prev.map(rec => rec.id === id ? updatedRec : rec));
             setSelectedReceipt(updatedRec);
@@ -1331,8 +1980,105 @@ const Fees: React.FC = () => {
 
     // handleAddConcession removed
 
+    const renderMonthlyFeeHeads = () => {
+        const struct = feeStructure.find(s => s.className === selectedClass);
+        const currentStudent = students.find(s => s.admissionNo === admissionNo);
+        
+        const headsToRender = feeHeads.filter(h => {
+            const amount = struct?.fees?.[h.name] || 0;
+            return h.type === 'Monthly' && amount > 0;
+        }).map(h => {
+            const isExempt = currentStudent ? isFeeExempt(currentStudent, h) : false;
+            const perMonthAmount = isExempt ? 0 : (struct?.fees?.[h.name] || 0);
+            const unpaidMonths = selectedMonths.filter(m => !isHeadPaidForMonth(h.name, m));
+            const amount = perMonthAmount * unpaidMonths.length;
+            const isSelected = selectedFees.includes(h.name);
+            const paid = isExempt ? true : (unpaidMonths.length === 0);
+            const partiallyPaid = !paid && unpaidMonths.length < selectedMonths.length;
+
+            return {
+                id: h.id,
+                name: h.name,
+                amount,
+                isSelected,
+                paid,
+                partiallyPaid,
+                isRTE: isExempt,
+                unpaidCount: unpaidMonths.length
+            };
+        });
+
+        const activeTransportFare = isTransportEnabled ? (Number(transportRows[0]?.price) || 0) : 0;
+        const activeTransportRoute = isTransportEnabled ? (transportRows[0]?.name || '') : '';
+        const showTransportFeeHead = isTransportEnabled && activeTransportFare > 0;
+
+        if (showTransportFeeHead) {
+            const unpaidTransportMonths = selectedMonths.filter(m => !isTransportPaidForMonth(m));
+            const amount = activeTransportFare * (isTransportYearly ? 12 : unpaidTransportMonths.length);
+            const isSelected = selectedFees.includes('Transport Fee');
+            const paid = unpaidTransportMonths.length === 0;
+            const partiallyPaid = !paid && unpaidTransportMonths.length < selectedMonths.length;
+
+            headsToRender.push({
+                id: 'transport-fee-item',
+                name: `Transport Fee (${activeTransportRoute || 'Bus'})`,
+                amount,
+                isSelected,
+                paid,
+                partiallyPaid,
+                isRTE: false,
+                unpaidCount: unpaidTransportMonths.length
+            });
+        }
+
+        return headsToRender.map(item => {
+            return (
+                <div 
+                    key={item.id}
+                    onClick={item.paid ? undefined : () => {
+                        const key = item.id === 'transport-fee-item' ? 'Transport Fee' : item.name;
+                        if (selectedFees.includes(key)) {
+                            setSelectedFees(selectedFees.filter(x => x !== key));
+                        } else {
+                            setSelectedFees([...selectedFees, key]);
+                        }
+                    }}
+                    style={{ 
+                        display: 'flex', 
+                        justifyContent: 'space-between', 
+                        alignItems: 'center', 
+                        padding: '0.85rem 1rem', 
+                        borderRadius: '12px', 
+                        background: item.paid ? '#f0fdf4' : item.isSelected ? '#eff6ff' : 'white',
+                        border: `1px solid ${item.paid ? '#bbf7d0' : item.isSelected ? '#bfdbfe' : '#e2e8f0'}`,
+                        cursor: item.paid ? 'default' : 'pointer',
+                        transition: '0.2s'
+                    }}
+                >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                        {item.paid ? <Check size={18} color="#166534" strokeWidth={3} /> : <input type="checkbox" checked={item.isSelected} readOnly style={{ width: '18px', height: '18px' }} />}
+                        <span style={{ fontWeight: '600', color: item.paid ? '#166534' : '#1e293b' }}>
+                            {item.name} {item.isRTE && <span style={{ marginLeft: '0.5rem', fontSize: '0.65rem', backgroundColor: '#e0f2fe', color: '#0369a1', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>{currentStudent?.isThirdChild ? 'Third Child Exempt' : 'RTE Exempt'}</span>}
+                        </span>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                         <div style={{ fontWeight: '800', color: item.paid ? '#166534' : '#1e293b' }}>₹{item.amount.toLocaleString()}</div>
+                         {item.isRTE ? (
+                             <span style={{ fontSize: '0.65rem', fontWeight: '800', color: '#166534', textTransform: 'uppercase' }}>{currentStudent?.isThirdChild ? 'Third Child Exempt' : 'RTE Exempt'}</span>
+                         ) : item.paid ? (
+                             <span style={{ fontSize: '0.65rem', fontWeight: '800', color: '#166534', textTransform: 'uppercase' }}>Already Paid</span>
+                         ) : item.partiallyPaid ? (
+                             <span style={{ fontSize: '0.65rem', fontWeight: '800', color: '#f59e0b', textTransform: 'uppercase' }}>{item.unpaidCount} Month(s) Remaining</span>
+                         ) : null}
+                     </div>
+                </div>
+            );
+        });
+    };
+
     return (
-        <div style={{ padding: '1rem' }}>
+        <>
+            <div style={{ padding: '1rem' }} className="no-print-area">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
                 <h1 style={{ fontSize: '1.875rem', fontWeight: 800, color: '#111827' }}>Accounts Module <span style={{fontSize: '0.7rem', color: '#94a3b8', fontWeight: 'normal'}}>v1.2-deploy-check</span></h1>
                 <div style={{ display: 'flex', gap: '0.4rem', background: '#f1f5f9', padding: '0.35rem', borderRadius: '10px', flexWrap: 'wrap', overflowX: 'auto' }}>
@@ -1342,7 +2088,7 @@ const Fees: React.FC = () => {
                         { id: 'approvals', label: 'Approvals' },
                         { id: 'heads', label: 'Fee Heads' },
                         { id: 'due', label: 'Due Fees' },
-                        { id: 'previous_due', label: 'Previous Dues' },
+                        { id: 'previous_due', label: 'Previous Year Dues' },
                         { id: 'structure', label: 'Fee Structure' },
                         { id: 'reports', label: 'Fee Reports' }
                     ].map(tab => {
@@ -1350,13 +2096,31 @@ const Fees: React.FC = () => {
                         // Principal or Admin only for Approvals
                         const isAuthorized = user?.role === 'PRINCIPAL' || user?.role === 'ADMIN';
                         if (tab.id === 'approvals' && !isAuthorized) return null;
-                        
-                        // Accountant only for Drafts
+                             // Accountant only for Drafts
                         if (tab.id === 'drafts' && user?.role !== 'ACCOUNTS') return null;
 
-                        
+                        const isDisabled = tab.id === 'heads';
+
                         return (
-                            <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} style={{ padding: '0.5rem 1rem', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: '700', fontSize: '0.85rem', backgroundColor: activeTab === tab.id ? 'white' : 'transparent', color: activeTab === tab.id ? '#2563eb' : '#64748b', boxShadow: activeTab === tab.id ? '0 2px 4px rgba(0,0,0,0.05)' : 'none', transition: '0.2s' }}>
+                            <button 
+                                key={tab.id} 
+                                onClick={() => !isDisabled && setActiveTab(tab.id as any)} 
+                                disabled={isDisabled}
+                                style={{ 
+                                    padding: '0.5rem 1rem', 
+                                    borderRadius: '8px', 
+                                    border: 'none', 
+                                    cursor: isDisabled ? 'not-allowed' : 'pointer', 
+                                    fontWeight: '700', 
+                                    fontSize: '0.85rem', 
+                                    backgroundColor: activeTab === tab.id ? 'white' : 'transparent', 
+                                    color: isDisabled ? '#cbd5e1' : (activeTab === tab.id ? '#2563eb' : '#64748b'), 
+                                    boxShadow: activeTab === tab.id ? '0 2px 4px rgba(0,0,0,0.05)' : 'none', 
+                                    opacity: isDisabled ? 0.6 : 1,
+                                    transition: '0.2s' 
+                                }}
+                                title={isDisabled ? "Fee Heads tab is disabled" : ""}
+                            >
                                 {tab.id === 'approvals' && (feeRecords.filter(r => r.status === 'PENDING').length > 0) ? (
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                                         {tab.label} <span style={{ backgroundColor: '#ef4444', color: 'white', fontSize: '0.7rem', padding: '0.1rem 0.4rem', borderRadius: '10px' }}>{feeRecords.filter(r => r.status === 'PENDING').length}</span>
@@ -1504,18 +2268,38 @@ const Fees: React.FC = () => {
                                         <button 
                                             onClick={() => {
                                                 const struct = feeStructure.find(s => s.className === selectedClass);
-                                                const unpaidHeads = feeHeads.filter(h => (struct?.fees?.[h.name] || 0) > 0 && !isFeePaid(h.name));
+                                                const unpaidHeads = feeHeads.filter(h => (struct?.fees?.[h.name] || 0) > 0 && !isFeePaid(h.name)).map(h => h.name);
+                                                
+                                                const activeTransportFare = isTransportEnabled ? (Number(transportRows[0]?.price) || 0) : 0;
+                                                const showTransportFeeHead = isTransportEnabled && activeTransportFare > 0;
+                                                if (showTransportFeeHead) {
+                                                    const unpaidTransportMonths = selectedMonths.filter(m => !isTransportPaidForMonth(m));
+                                                    if (unpaidTransportMonths.length > 0) {
+                                                        unpaidHeads.push('Transport Fee');
+                                                    }
+                                                }
+
                                                 if (selectedFees.length === unpaidHeads.length) {
                                                     setSelectedFees([]);
                                                 } else {
-                                                    setSelectedFees(unpaidHeads.map(h => h.name));
+                                                    setSelectedFees(unpaidHeads);
                                                 }
                                             }}
                                             style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem', borderRadius: '6px', border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', fontWeight: '600' }}
                                         >
                                             {(() => {
                                                 const struct = feeStructure.find(s => s.className === selectedClass);
-                                                const unpaidHeads = feeHeads.filter(h => (struct?.fees?.[h.name] || 0) > 0 && !isFeePaid(h.name));
+                                                const unpaidHeads = feeHeads.filter(h => (struct?.fees?.[h.name] || 0) > 0 && !isFeePaid(h.name)).map(h => h.name);
+                                                
+                                                const activeTransportFare = isTransportEnabled ? (Number(transportRows[0]?.price) || 0) : 0;
+                                                const showTransportFeeHead = isTransportEnabled && activeTransportFare > 0;
+                                                if (showTransportFeeHead) {
+                                                    const unpaidTransportMonths = selectedMonths.filter(m => !isTransportPaidForMonth(m));
+                                                    if (unpaidTransportMonths.length > 0) {
+                                                        unpaidHeads.push('Transport Fee');
+                                                    }
+                                                }
+                                                
                                                 return selectedFees.length === unpaidHeads.length ? 'Deselect All' : 'Select All Unpaid';
                                             })()}
                                         </button>
@@ -1543,12 +2327,6 @@ const Fees: React.FC = () => {
                                                          if (isSelected) {
                                                              const remaining = selectedMonths.filter(month => months.indexOf(month) < mIdx);
                                                              setSelectedMonths(remaining);
-                                                             if (remaining.length > 0) {
-                                                                 setSelectedMonth(remaining[remaining.length - 1]);
-                                                             } else {
-                                                                 const currentMonthName = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][new Date().getMonth()];
-                                                                 setSelectedMonth(currentMonthName);
-                                                             }
                                                          } else {
                                                              const newSelection = [];
                                                              for (let i = 0; i <= mIdx; i++) {
@@ -1557,7 +2335,6 @@ const Fees: React.FC = () => {
                                                                  }
                                                              }
                                                              setSelectedMonths(newSelection);
-                                                             setSelectedMonth(m);
                                                          }
                                                      }}
                                                     style={{ 
@@ -1606,56 +2383,7 @@ const Fees: React.FC = () => {
                                             Monthly Fees ({selectedMonths.length > 1 ? `${selectedMonths[0]} to ${selectedMonths[selectedMonths.length-1]}` : selectedMonths[0]})
                                         </p>
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                            {feeHeads.filter(h => {
-                                                const struct = feeStructure.find(s => s.className === selectedClass);
-                                                const amount = struct?.fees?.[h.name] || 0;
-                                                return h.type === 'Monthly' && amount > 0;
-                                            }).map(h => {
-                                                 const struct = feeStructure.find(s => s.className === selectedClass);
-                                                 const currentStudent = students.find(s => s.admissionNo === admissionNo);
-                                                 const isStudentRT = currentStudent?.isRT || false;
-                                                 const perMonthAmount = isStudentRT ? 0 : (struct?.fees?.[h.name] || 0);
-                                                 const unpaidMonths = selectedMonths.filter(m => !isHeadPaidForMonth(h.name, m));
-                                                 const amount = perMonthAmount * unpaidMonths.length;
-                                                 const isSelected = selectedFees.includes(h.name);
-                                                 const paid = isStudentRT ? true : (unpaidMonths.length === 0);
-                                                 const partiallyPaid = !paid && unpaidMonths.length < selectedMonths.length;
-
-                                                 return (
-                                                     <div 
-                                                         key={h.id}
-                                                         onClick={paid ? undefined : () => toggleFeeSelection(h.name)}
-                                                         style={{ 
-                                                             display: 'flex', 
-                                                             justifyContent: 'space-between', 
-                                                             alignItems: 'center', 
-                                                             padding: '0.85rem 1rem', 
-                                                             borderRadius: '12px', 
-                                                             background: paid ? '#f0fdf4' : isSelected ? '#eff6ff' : 'white',
-                                                             border: `1px solid ${paid ? '#bbf7d0' : isSelected ? '#bfdbfe' : '#e2e8f0'}`,
-                                                             cursor: paid ? 'default' : 'pointer',
-                                                             transition: '0.2s'
-                                                         }}
-                                                     >
-                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                                                             {paid ? <Check size={18} color="#166534" strokeWidth={3} /> : <input type="checkbox" checked={isSelected} readOnly style={{ width: '18px', height: '18px' }} />}
-                                                             <span style={{ fontWeight: '600', color: paid ? '#166534' : '#1e293b' }}>
-                                                                 {h.name} {isStudentRT && <span style={{ marginLeft: '0.5rem', fontSize: '0.65rem', backgroundColor: '#e0f2fe', color: '#0369a1', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>RTE Exempt</span>}
-                                                             </span>
-                                                         </div>
-                                                         <div style={{ textAlign: 'right' }}>
-                                                              <div style={{ fontWeight: '800', color: paid ? '#166534' : '#1e293b' }}>₹{amount.toLocaleString()}</div>
-                                                              {isStudentRT ? (
-                                                                  <span style={{ fontSize: '0.65rem', fontWeight: '800', color: '#166534', textTransform: 'uppercase' }}>RTE Exempt</span>
-                                                              ) : paid ? (
-                                                                  <span style={{ fontSize: '0.65rem', fontWeight: '800', color: '#166534', textTransform: 'uppercase' }}>Already Paid</span>
-                                                              ) : partiallyPaid ? (
-                                                                  <span style={{ fontSize: '0.65rem', fontWeight: '800', color: '#f59e0b', textTransform: 'uppercase' }}>{unpaidMonths.length} Month(s) Remaining</span>
-                                                              ) : null}
-                                                          </div>
-                                                     </div>
-                                                 );
-                                             })}
+                                            {renderMonthlyFeeHeads()}
                                         </div>
                                     </div>
 
@@ -1670,7 +2398,7 @@ const Fees: React.FC = () => {
                                                 const struct = feeStructure.find(s => s.className === selectedClass);
                                                 const amount = struct?.fees?.[h.name] || 0;
                                                 // Group Annual, One-time and Others together in the right section
-                                                return h.type !== 'Monthly' && amount > 0;
+                                                return h.type !== 'Monthly' && amount > 0 && !isFeeExempt(students.find(s => s.admissionNo === admissionNo), h);
                                             }).map(h => {
                                                 const struct = feeStructure.find(s => s.className === selectedClass);
                                                 const amount = struct?.fees?.[h.name] || 0;
@@ -1717,11 +2445,32 @@ const Fees: React.FC = () => {
                                                 type="checkbox" 
                                                 id="transport-toggle"
                                                 checked={isTransportEnabled} 
-                                                onChange={e => setIsTransportEnabled(e.target.checked)} 
+                                                onChange={e => {
+                                                    if (isTransportFixed) return;
+                                                    // Prevent checking and redirect
+                                                    e.preventDefault();
+                                                    const confirmRedirect = window.confirm(
+                                                        "To enable transport facility for this student, please assign a transport stop by editing the student in the Students tab.\n\nDo you want to go to the Students page now?"
+                                                    );
+                                                    if (confirmRedirect) {
+                                                        navigate('/admin/students', { state: { searchAdmissionNo: admissionNo } });
+                                                    }
+                                                }} 
                                                 style={{ width: '18px', height: '18px', cursor: 'pointer' }}
                                             />
                                         </div>
-                                        <label htmlFor="transport-toggle" style={{ fontWeight: '700', fontSize: '1.1rem', color: '#6b21a8', cursor: 'pointer' }}>
+                                        <label 
+                                            style={{ fontWeight: '700', fontSize: '1.1rem', color: '#6b21a8', cursor: 'pointer' }}
+                                            onClick={() => {
+                                                if (isTransportFixed) return;
+                                                const confirmRedirect = window.confirm(
+                                                    "To enable transport facility for this student, please assign a transport stop by editing the student in the Students tab.\n\nDo you want to go to the Students page now?"
+                                                );
+                                                if (confirmRedirect) {
+                                                    navigate('/admin/students', { state: { searchAdmissionNo: admissionNo } });
+                                                }
+                                            }}
+                                        >
                                             Enable Transport Facility
                                         </label>
                                     </div>
@@ -1752,31 +2501,34 @@ const Fees: React.FC = () => {
                                             <thead>
                                                 <tr>
                                                     <th style={{ textAlign: 'left', padding: '0 0.5rem', color: '#6d28d9', fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Route Name</th>
-                                                    <th style={{ textAlign: 'left', padding: '0 0.5rem', color: '#6d28d9', fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Transport Fee (₹)</th>
+                                                    <th style={{ textAlign: 'left', padding: '0 0.5rem', color: '#6d28d9', fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', width: '250px' }}>Transport Fee (₹)</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
                                                 {transportRows.map((row, idx) => (
                                                     <tr key={idx}>
-                                                        <td style={{ padding: '0 0.5rem', position: 'relative' }}>
+                                                        <td style={{ padding: '0 0.5rem', position: 'relative', verticalAlign: 'top' }}>
                                                             <div style={{ position: 'relative' }}>
                                                                 <input 
                                                                     type="text" 
                                                                     className="form-control" 
                                                                     placeholder="Search Route..." 
                                                                     value={row.name} 
+                                                                    readOnly={isTransportFixed}
                                                                     onChange={e => {
+                                                                        if (isTransportFixed) return;
                                                                         const newRows = [...transportRows];
                                                                         newRows[idx].name = e.target.value;
                                                                         newRows[idx].showDropdown = true;
                                                                         setTransportRows(newRows);
                                                                     }} 
                                                                     onFocus={() => {
+                                                                        if (isTransportFixed) return;
                                                                         const newRows = [...transportRows];
                                                                         newRows[idx].showDropdown = true;
                                                                         setTransportRows(newRows);
                                                                     }}
-                                                                    style={{ border: '1px solid #ddd6fe', borderRadius: '12px', background: '#fdfbff', padding: '0.8rem 1rem' }}
+                                                                    style={{ border: '1px solid #ddd6fe', borderRadius: '12px', background: isTransportFixed ? '#f1f5f9' : '#fdfbff', padding: '0.8rem 1rem' }}
                                                                 />
                                                                 {row.showDropdown && (
                                                                     <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100, backgroundColor: 'white', border: '1px solid #ddd6fe', borderRadius: '12px', marginTop: '4px', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', maxHeight: '250px', overflowY: 'auto' }}>
@@ -1805,7 +2557,7 @@ const Fees: React.FC = () => {
                                                                 )}
                                                             </div>
                                                         </td>
-                                                        <td style={{ padding: '0 0.5rem' }}>
+                                                        <td style={{ padding: '0 0.5rem', verticalAlign: 'top', width: '250px' }}>
                                                             <input 
                                                                 type="text" 
                                                                 className="form-control" 
@@ -1819,6 +2571,38 @@ const Fees: React.FC = () => {
                                                 ))}
                                             </tbody>
                                         </table>
+
+                                        {/* Month-wise status tiles */}
+                                        <div style={{ marginTop: '0.5rem', borderTop: '1px dashed #ddd6fe', paddingTop: '1rem' }}>
+                                            <div style={{ fontSize: '0.8rem', fontWeight: '700', color: '#6d28d9', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                                Transport Payment Status (Month-wise):
+                                            </div>
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                                                {['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar'].map(m => {
+                                                    const isPaid = isTransportPaidForMonth(m);
+                                                    return (
+                                                        <div 
+                                                            key={m} 
+                                                            style={{ 
+                                                                padding: '0.35rem 0.75rem', 
+                                                                borderRadius: '8px', 
+                                                                fontSize: '0.75rem', 
+                                                                fontWeight: '700', 
+                                                                textTransform: 'uppercase',
+                                                                border: `1px solid ${isPaid ? '#22c55e' : '#cbd5e1'}`,
+                                                                backgroundColor: isPaid ? '#dcfce7' : '#f1f5f9',
+                                                                color: isPaid ? '#15803d' : '#64748b',
+                                                                textAlign: 'center',
+                                                                minWidth: '45px',
+                                                                transition: 'all 0.2s ease-in-out'
+                                                            }}
+                                                        >
+                                                            {m}
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
                                     </div>
                                 )}
                             </div>
@@ -1848,7 +2632,13 @@ const Fees: React.FC = () => {
                                                 return (
                                                 <tr key={r.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                                                     <td style={{ padding: '0.75rem', color: '#2563eb', fontWeight: '700' }}>{r.receiptNo}</td>
-                                                    <td style={{ padding: '0.75rem', fontSize: '0.9rem' }}>{r.feeHead}</td>
+                                                    <td style={{ padding: '0.75rem', fontSize: '0.9rem' }}>
+                                                        {r.feeHead && r.feeHead.includes('==>') ? (
+                                                            r.feeHead.split('==>')[0].trim() === '' 
+                                                                ? r.feeHead.split('==>')[1].trim()
+                                                                : r.feeHead
+                                                        ) : r.feeHead}
+                                                    </td>
                                                     <td style={{ padding: '0.75rem', fontWeight: '800' }}>₹{r.paidAmount.toLocaleString()}</td>
                                                     <td style={{ padding: '0.75rem', fontWeight: '600', color: rawDue > 0 ? '#ef4444' : isAdvance ? '#22c55e' : '#64748b' }}>
                                                         {rawDue === 0 ? '-' : isAdvance ? `+₹${dueAmt.toLocaleString()} (Adv)` : `₹${dueAmt.toLocaleString()}`}
@@ -1891,20 +2681,22 @@ const Fees: React.FC = () => {
                                         <label style={{ fontSize: '0.85rem', color: '#7c2d12', fontWeight: 'bold' }}>Selected Fees:</label>
                                         <div style={{ background: 'white', padding: '1rem', borderRadius: '8px', border: '1px solid #fed7aa' }}>
                                             {selectedFees.length > 0 ? (
-                                                selectedFees.map(feeName => {
-                                                    const struct = feeStructure.find(s => s.className === selectedClass);
-                                                    const amount = struct?.fees?.[feeName] || 0;
-                                                    return (
-                                                        <div key={feeName} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.4rem 0', borderBottom: '1px dashed #fed7aa', fontSize: '0.9rem' }}>
-                                                            <span>{feeName}</span>
-                                                            <span style={{ fontWeight: 'bold' }}>₹{amount.toLocaleString()}</span>
-                                                        </div>
-                                                    );
-                                                })
-                                            ) : !isTransportEnabled && (
+                                                selectedFees
+                                                    .filter(feeName => feeName !== 'Transport Fee')
+                                                    .map(feeName => {
+                                                        const struct = feeStructure.find(s => s.className === selectedClass);
+                                                        const amount = struct?.fees?.[feeName] || 0;
+                                                        return (
+                                                            <div key={feeName} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.4rem 0', borderBottom: '1px dashed #fed7aa', fontSize: '0.9rem' }}>
+                                                                <span>{feeName}</span>
+                                                                <span style={{ fontWeight: 'bold' }}>₹{amount.toLocaleString()}</span>
+                                                            </div>
+                                                        );
+                                                    })
+                                            ) : (
                                                 <div style={{ textAlign: 'center', color: '#9a3412', fontSize: '0.875rem' }}>No fees selected. Click on amounts above.</div>
                                             )}
-                                            {isTransportEnabled && transportRows.map((row, idx) => (
+                                            {isTransportEnabled && selectedFees.includes('Transport Fee') && transportRows.map((row, idx) => (
                                                 row.price && (
                                                     <div key={`trans-${idx}`} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.4rem 0', borderBottom: '1px dashed #fed7aa', fontSize: '0.9rem', color: '#9333ea' }}>
                                                         <span style={{ fontWeight: '500' }}>Transport: {row.name || `Route ${idx+1}`} {isTransportYearly ? '(Yearly)' : '(Monthly)'}</span>
@@ -2236,17 +3028,21 @@ const Fees: React.FC = () => {
                                     </div>
                                 </div>
                                 <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
-                                    <label style={{ fontSize: '0.8rem', fontWeight: '700', color: '#64748b' }}>Select Month</label>
+                                    <label style={{ fontSize: '0.8rem', fontWeight: '700', color: dueFeeTypeFilter === 'One-time Only' ? '#94a3b8' : '#64748b' }}>
+                                        Select Month {dueFeeTypeFilter === 'One-time Only' && <span style={{ fontWeight: '400', fontSize: '0.7rem', color: '#f59e0b' }}>⚠ N/A for One-time fees</span>}
+                                    </label>
                                     <select 
                                         className="form-control" 
-                                        value={dueMonthFilter}
+                                        value={dueFeeTypeFilter === 'One-time Only' ? 'All' : dueMonthFilter}
                                         onChange={(e) => setDueMonthFilter(e.target.value)}
+                                        disabled={dueFeeTypeFilter === 'One-time Only'}
+                                        style={{ opacity: dueFeeTypeFilter === 'One-time Only' ? 0.45 : 1, cursor: dueFeeTypeFilter === 'One-time Only' ? 'not-allowed' : 'pointer', backgroundColor: dueFeeTypeFilter === 'One-time Only' ? '#f1f5f9' : '' }}
                                     >
                                         <option value="All">All Pending (Full Session)</option>
                                         {['April','May','June','July','August','September','October','November','December','January','February','March'].map(m => <option key={m} value={m}>{m}</option>)}
                                     </select>
                                 </div>
-                                <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
+                                <div className="form-group" style={{ marginBottom: 0, flex: 1, minWidth: '150px' }}>
                                     <label style={{ fontSize: '0.8rem', fontWeight: '700', color: '#64748b' }}>Student Type</label>
                                     <select 
                                         className="form-control" 
@@ -2254,8 +3050,34 @@ const Fees: React.FC = () => {
                                         onChange={(e) => setDueRtFilter(e.target.value)}
                                     >
                                         <option value="All">All Students</option>
-                                    <option value="RT">RT Students</option>
+                                        <option value="RT">RT Students</option>
                                         <option value="Non-RT">Non-RT Students</option>
+                                    </select>
+                                </div>
+                                <div className="form-group" style={{ marginBottom: 0, flex: 1, minWidth: '150px' }}>
+                                    <label style={{ fontSize: '0.8rem', fontWeight: '700', color: '#64748b' }}>Payment Status</label>
+                                    <select 
+                                        className="form-control" 
+                                        value={dueStatusFilter}
+                                        onChange={(e) => setDueStatusFilter(e.target.value)}
+                                    >
+                                        <option value="All">All Statuses</option>
+                                        <option value="Paid">Fully Paid</option>
+                                        <option value="Unpaid">Fully Unpaid</option>
+                                        <option value="Partially Paid">Partially Paid</option>
+                                        <option value="Any Outstanding">Any Outstanding</option>
+                                    </select>
+                                </div>
+                                <div className="form-group" style={{ marginBottom: 0, flex: 1, minWidth: '160px' }}>
+                                    <label style={{ fontSize: '0.8rem', fontWeight: '700', color: '#64748b' }}>Fee Component</label>
+                                    <select 
+                                        className="form-control" 
+                                        value={dueFeeTypeFilter}
+                                        onChange={(e) => setDueFeeTypeFilter(e.target.value)}
+                                    >
+                                        <option value="All">All Fees</option>
+                                        <option value="Monthly Only">Monthly Fees Only</option>
+                                        <option value="One-time Only">One-Time / Annual Fees Only</option>
                                     </select>
                                 </div>
                                 <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -2273,6 +3095,13 @@ const Fees: React.FC = () => {
                                     >
                                         <Download size={16} /> Full Details
                                     </button>
+                                    <button 
+                                        onClick={printDuesReport}
+                                        className="btn-primary" 
+                                        style={{ padding: '0.6rem 1.2rem', width: 'auto', backgroundColor: '#1e293b', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+                                    >
+                                        🖨️ Print Report (PDF)
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -2281,26 +3110,7 @@ const Fees: React.FC = () => {
                             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                             <thead>
                                 <tr style={{ backgroundColor: '#f1f5f9', textAlign: 'left', position: 'sticky', top: 0, zIndex: 2 }}>
-                                    <th style={{ padding: '1rem', color: '#475569', fontSize: '0.8rem', fontWeight: '700' }}>Student Details ({(
-                                        dueFees
-                                            .filter(f => dueClassFilter === 'All' || f.className?.trim() === dueClassFilter.trim())
-                                            .filter(f => {
-                                                if (dueRtFilter === 'All') return true;
-                                                if (dueRtFilter === 'RT') return !!f.isRT;
-                                                return !f.isRT;
-                                            })
-                                            .filter(f => {
-                                                if (dueMonthFilter === 'All') return true;
-                                                return (f.pendingMonths || []).includes(dueMonthFilter);
-                                            })
-                                            .filter(f => {
-                                                if (dueSearchQuery === '') return true;
-                                                const query = dueSearchQuery.toLowerCase();
-                                                return (f.studentName || '').toLowerCase().includes(query) || 
-                                                       (f.admissionNo || '').toLowerCase().includes(query) ||
-                                                       (f.fatherName || '').toLowerCase().includes(query);
-                                            })
-                                    ).length})</th>
+                                    <th style={{ padding: '1rem', color: '#475569', fontSize: '0.8rem', fontWeight: '700' }}>Student Details ({getFilteredDues(dueFees).length})</th>
                                     <th style={{ padding: '1rem', color: '#475569', fontSize: '0.8rem', fontWeight: '700' }}>Class</th>
                                     {dueMonthFilter !== 'All' ? (
                                         <>
@@ -2319,24 +3129,7 @@ const Fees: React.FC = () => {
                             </thead>
                             <tbody>
                                 {(() => {
-                                    const filtered = dueFees
-                                        .filter(f => dueClassFilter === 'All' || f.className?.trim() === dueClassFilter.trim())
-                                        .filter(f => {
-                                            if (dueRtFilter === 'All') return true;
-                                            if (dueRtFilter === 'RT') return !!f.isRT;
-                                            return !f.isRT;
-                                        })
-                                        .filter(f => {
-                                            if (dueMonthFilter === 'All') return true;
-                                            return (f.pendingMonths || []).includes(dueMonthFilter);
-                                        })
-                                        .filter(f => {
-                                            if (dueSearchQuery === '') return true;
-                                            const query = dueSearchQuery.toLowerCase();
-                                            return (f.studentName || '').toLowerCase().includes(query) || 
-                                                   (f.admissionNo || '').toLowerCase().includes(query) ||
-                                                   (f.fatherName || '').toLowerCase().includes(query);
-                                        });
+                                    const filtered = getFilteredDues(dueFees);
                                     
                                     if (filtered.length === 0) {
                                         return (
@@ -2447,6 +3240,12 @@ const Fees: React.FC = () => {
                                                                 View Details
                                                             </button>
                                                             <button
+                                                                onClick={() => handlePayDuesRedirect(fee, dueMonthFilter)}
+                                                                style={{ background: '#10b981', color: 'white', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', marginRight: '0.5rem', fontWeight: '700' }}
+                                                            >
+                                                                Pay Now
+                                                            </button>
+                                                            <button
                                                                 disabled
                                                                 title="WhatsApp reminder — coming soon"
                                                                 style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '0.4rem 0.7rem', borderRadius: '6px', cursor: 'not-allowed', opacity: 0.55, display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
@@ -2494,6 +3293,13 @@ const Fees: React.FC = () => {
                                                 const query = dueSearchQuery.toLowerCase();
                                                 return (d.studentName || '').toLowerCase().includes(query) ||
                                                        (d.fatherName || '').toLowerCase().includes(query);
+                                            })
+                                            .filter(d => {
+                                                if (dueStatusFilter === 'Paid') return d.pending === 0;
+                                                if (dueStatusFilter === 'Unpaid') return d.totalPaid === 0 && d.monthlyFare > 0;
+                                                if (dueStatusFilter === 'Partially Paid') return d.totalPaid > 0 && d.pending > 0;
+                                                if (dueStatusFilter === 'Any Outstanding') return d.pending > 0;
+                                                return true;
                                             })
                                             .map((due: any) => (
                                                 <tr key={due.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
@@ -2549,12 +3355,12 @@ const Fees: React.FC = () => {
                     <div className="table-header" style={{ background: 'linear-gradient(to right, #f8fafc, #ffffff)', padding: '1.5rem' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                             <div>
-                                <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#111827' }}>Students with Previous Session Dues</h2>
+                                <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#111827' }}>Students with Previous Year Dues</h2>
                                 <p style={{ fontSize: '0.875rem', color: '#6b7280', marginTop: '0.25rem' }}>List of students carrying dues from previous year</p>
                             </div>
                             <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
                                 <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#1e293b' }}>
-                                    Total Students: {dueFees.filter(f => (f.previousSessionDue || 0) > 0).filter(f => prevDueClassFilter === 'All' || f.className === prevDueClassFilter).length}
+                                    Total Students: {dueFees.filter(f => (f.prevDuePending !== undefined ? f.prevDuePending : f.previousSessionDue || 0) > 0).filter(f => prevDueClassFilter === 'All' || f.className === prevDueClassFilter).length}
                                 </span>
                             </div>
                         </div>
@@ -2595,36 +3401,41 @@ const Fees: React.FC = () => {
                                 <th style={{ padding: '1rem 1.5rem' }}>S.No.</th>
                                 <th style={{ padding: '1rem 1.5rem' }}>Student Name</th>
                                 <th style={{ padding: '1rem 1.5rem' }}>Class</th>
-                                <th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Previous Due (₹)</th>
+                                <th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Original Due (₹)</th>
+                                <th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Remaining Due (₹)</th>
                                 <th style={{ padding: '1rem 1.5rem', textAlign: 'center' }}>Action</th>
                             </tr>
                         </thead>
                         <tbody>
                             {dueFees
-                                .filter(f => (f.previousSessionDue || 0) > 0)
+                                .filter(f => (f.prevDuePending !== undefined ? f.prevDuePending : f.previousSessionDue || 0) > 0)
                                 .filter(f => prevDueClassFilter === 'All' || f.className === prevDueClassFilter)
                                 .filter(f => prevDueSearchQuery === '' || (f.studentName || '').toLowerCase().includes(prevDueSearchQuery.toLowerCase()))
-                                .map((fee, index) => (
-                                    <tr key={fee.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                                        <td style={{ padding: '1rem 1.5rem', fontWeight: '600', color: '#64748b' }}>{index + 1}</td>
-                                        <td style={{ padding: '1rem 1.5rem', fontWeight: '600', color: '#1e293b' }}>{fee.studentName}</td>
-                                        <td style={{ padding: '1rem 1.5rem' }}>
-                                            <span style={{ background: '#e0e7ff', color: '#4338ca', padding: '0.25rem 0.6rem', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '700' }}>
-                                                {fee.className}
-                                            </span>
-                                        </td>
-                                        <td style={{ padding: '1rem 1.5rem', textAlign: 'right', color: '#ef4444', fontWeight: '800' }}>₹{(fee.previousSessionDue || 0).toLocaleString()}</td>
-                                        <td style={{ padding: '1rem 1.5rem', textAlign: 'center' }}>
-                                            <button
-                                                className="btn-primary"
-                                                style={{ width: 'auto', padding: '0.4rem 1rem', fontSize: '0.75rem', backgroundColor: '#4f46e5', borderRadius: '6px' }}
-                                                onClick={() => alert(`Reminder sent to ${fee.studentName}`)}
-                                            >
-                                                Send Reminder
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))}
+                                .map((fee, index) => {
+                                    const remainingDue = (fee.prevDuePending !== undefined ? fee.prevDuePending : fee.previousSessionDue) || 0;
+                                    return (
+                                        <tr key={fee.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                            <td style={{ padding: '1rem 1.5rem', fontWeight: '600', color: '#64748b' }}>{index + 1}</td>
+                                            <td style={{ padding: '1rem 1.5rem', fontWeight: '600', color: '#1e293b' }}>{fee.studentName}</td>
+                                            <td style={{ padding: '1rem 1.5rem' }}>
+                                                <span style={{ background: '#e0e7ff', color: '#4338ca', padding: '0.25rem 0.6rem', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '700' }}>
+                                                    {fee.className}
+                                                </span>
+                                            </td>
+                                            <td style={{ padding: '1rem 1.5rem', textAlign: 'right', color: '#64748b', fontWeight: '600' }}>₹{(fee.previousSessionDue || 0).toLocaleString()}</td>
+                                            <td style={{ padding: '1rem 1.5rem', textAlign: 'right', color: '#ef4444', fontWeight: '800' }}>₹{remainingDue.toLocaleString()}</td>
+                                            <td style={{ padding: '1rem 1.5rem', textAlign: 'center' }}>
+                                                <button
+                                                    className="btn-primary"
+                                                    style={{ width: 'auto', padding: '0.4rem 1.2rem', fontSize: '0.75rem', backgroundColor: '#10b981', color: 'white', border: 'none', borderRadius: '6px', fontWeight: '700', cursor: 'pointer' }}
+                                                    onClick={() => handlePayPreviousYearDuesRedirect(fee)}
+                                                >
+                                                    Pay Dues
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
                         </tbody>
                     </table>
                     </div>
@@ -2912,6 +3723,7 @@ const Fees: React.FC = () => {
                 <div style={{ animation: 'fadeIn 0.4s ease' }}>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
                         {/* Today's Card */}
+                        {/* Today's Card */}
                         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-5 hover:shadow-md transition-all">
                             <div className="w-14 h-14 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center text-2xl">
                                 <TrendingUp size={28} />
@@ -2919,7 +3731,7 @@ const Fees: React.FC = () => {
                             <div>
                                 <p className="text-slate-500 text-sm font-medium">Today's Collection</p>
                                 <h3 className="text-2xl font-bold text-slate-900 mt-1">
-                                    ₹ {reportData.daily.filter(d => d.date === new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })).reduce((s, d) => s + d.paidAmount, 0).toLocaleString()}
+                                    ₹ {reportData.daily.filter(d => d.date === new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })).reduce((s, d) => s + d.paidAmount, 0).toLocaleString('en-IN')}
                                 </h3>
                             </div>
                         </div>
@@ -2932,7 +3744,7 @@ const Fees: React.FC = () => {
                             <div>
                                 <p className="text-slate-500 text-sm font-medium">Selected Month ({reportFilterMonth})</p>
                                 <h3 className="text-2xl font-bold text-slate-900 mt-1">
-                                    ₹ {(reportData.monthly.find(m => m.month === reportFilterMonth)?.total || 0).toLocaleString()}
+                                    ₹ {(reportData.monthly.find(m => m.month === reportFilterMonth)?.total || 0).toLocaleString('en-IN')}
                                 </h3>
                             </div>
                         </div>
@@ -2945,8 +3757,11 @@ const Fees: React.FC = () => {
                             <div>
                                 <p className="text-slate-500 text-sm font-medium">Total Yearly Collection</p>
                                 <h3 className="text-2xl font-bold text-slate-900 mt-1">
-                                    ₹ {reportData.monthly.reduce((s, m) => s + m.total, 0).toLocaleString()}
+                                    ₹ {reportData.monthly.reduce((s, m) => s + m.total, 0).toLocaleString('en-IN')}
                                 </h3>
+                                <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '6px', fontWeight: '500', lineHeight: '1.2' }}>
+                                    * Cumulative collection from session start (April) to present day
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -2954,9 +3769,7 @@ const Fees: React.FC = () => {
                     <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', background: '#f8fafc', padding: '0.75rem', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                         {[
                             { id: 'daily', label: 'Daily Collection', disabled: false },
-                            { id: 'monthly', label: 'Monthly Collection', disabled: false },
-                            { id: 'class', label: 'Class-wise Fee', disabled: false },
-                            { id: 'pending', label: 'Pending Fee Report', disabled: false }
+                            { id: 'monthly', label: 'Monthly Collection', disabled: false }
                         ].map(r => (
                             <button
                                 key={r.id}
@@ -3101,8 +3914,25 @@ const Fees: React.FC = () => {
                                     </div>
                                 )}
                             </h2>
-                            <div style={{ display: 'flex', gap: '1rem' }}>
-
+                            <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                                {activeReport === 'daily' && (
+                                    <input 
+                                        type="text" 
+                                        placeholder="Search Receipt No..." 
+                                        value={receiptSearchQuery}
+                                        onChange={(e) => setReceiptSearchQuery(e.target.value)}
+                                        style={{ 
+                                            padding: '0.4rem 0.8rem', 
+                                            borderRadius: '8px', 
+                                            border: '1px solid #cbd5e1', 
+                                            fontSize: '0.85rem', 
+                                            width: '220px',
+                                            outline: 'none',
+                                            transition: 'border-color 0.2s'
+                                        }}
+                                        className="focus:border-indigo-500"
+                                    />
+                                )}
                                 <button onClick={exportToPDF} className="btn-primary" style={{ width: 'auto', padding: '0.5rem 1.5rem', backgroundColor: '#ec4899' }}>Export PDF</button>
                             </div>
                         </div>
@@ -3120,9 +3950,17 @@ const Fees: React.FC = () => {
                              </thead>
                              <tbody>
                                  {activeReport === 'daily' && (() => {
-                                     const todayData = reportData.daily.filter(d => d.date === new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }));
-                                     if (todayData.length === 0) return <tr><td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8', fontStyle: 'italic' }}>No collections today.</td></tr>;
-                                     return todayData.map((d, i) => (
+                                     const query = receiptSearchQuery.trim().toLowerCase();
+                                     const filteredData = query !== ''
+                                         ? reportData.daily.filter(d => 
+                                             (d.receiptNo || '').toLowerCase().includes(query) ||
+                                             (d.studentName || '').toLowerCase().includes(query) ||
+                                             (d.admissionNo || '').toLowerCase().includes(query)
+                                           )
+                                         : reportData.daily.filter(d => d.date === new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }));
+                                     
+                                     if (filteredData.length === 0) return <tr><td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8', fontStyle: 'italic' }}>{query !== '' ? 'No receipt found matching search query.' : 'No collections today.'}</td></tr>;
+                                     return filteredData.map((d, i) => (
                                          <tr key={i}>
                                              <td style={{ padding: '1rem 1.5rem' }}>{d.date}</td>
                                              <td style={{ padding: '1rem 1.5rem', fontWeight: '600' }}>{d.studentName}</td>
@@ -3298,6 +4136,7 @@ const Fees: React.FC = () => {
                                 <img src="/erp/bips-logo.png" alt="School Logo" style={{ width: '55px', height: '55px', objectFit: 'contain', display: 'block', margin: '0 auto 4px auto' }} />
                                 <span style={{ fontSize: '13px' }}>BIPS ERP</span><br/>
                                 Official Fee Receipt<br/>
+                                Session: {selectedReceipt?.session?.name || selectedReceipt?.sessionName || localStorage.getItem('activeSession') || '2026-2027'}<br/>
                                 {copyType}<br/>
                             </div>
                             <br/>
@@ -3362,7 +4201,7 @@ const Fees: React.FC = () => {
                             {/* Print Controls (Hidden on print) */}
                             <div className="no-print" style={{ marginTop: '1rem', display: 'flex', justifyContent: 'center', gap: '1rem' }}>
                                 <button 
-                                    onClick={() => window.print()} 
+                                    onClick={() => { document.body.classList.add('printing-receipt'); window.print(); }} 
                                     style={{ backgroundColor: '#1e293b', color: 'white', border: 'none', padding: '0.8rem 1.5rem', borderRadius: '8px', cursor: 'pointer', fontWeight: '700', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.5rem', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}
                                 >
                                     🖨️ Print Receipt
@@ -3375,277 +4214,933 @@ const Fees: React.FC = () => {
                                 </button>
                             </div>
                         </div>
-                        <style>{`
-                            @media print {
-                                .no-print { display: none !important; }
-                                body, html { 
-                                    background: white !important; 
-                                    margin: 0 !important; 
-                                    padding: 0 !important; 
-                                    height: 100vh !important;
-                                    overflow: hidden !important;
-                                }
-                                body * { visibility: hidden; }
-                                #receipt-modal-overlay {
-                                    position: absolute !important;
-                                    top: 0 !important; left: 0 !important;
-                                    margin: 0 !important; padding: 0 !important;
-                                    display: flex !important;
-                                    visibility: visible !important;
-                                    background: transparent !important;
-                                    overflow: visible !important;
-                                }
-                                #receipt-modal-overlay * {
-                                    visibility: visible;
-                                }
-                                #printable-receipt-wrapper {
-                                    position: relative !important;
-                                    margin: 0 !important;
-                                    padding: 0 !important;
-                                }
-                                #printable-receipt { 
-                                    position: relative !important; 
-                                    width: 297mm !important; 
-                                    height: auto !important;
-                                    max-height: 210mm !important;
-                                    padding: 0 !important;
-                                    margin: 0 !important; 
-                                    box-shadow: none !important; 
-                                    overflow: hidden !important;
-                                    page-break-after: avoid !important;
-                                    page-break-inside: avoid !important;
-                                }
-                                @page { size: A4 landscape; margin: 0; }
-                            }
-                        `}</style>
                     </div>
                 );
             })()}
 
             {/* History & Due Breakdown Modal */}
             {showHistoryModal && selectedStudentForHistory && (
-                <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1100, padding: '1.5rem', backdropFilter: 'blur(8px)' }}>
-                    <div style={{ backgroundColor: 'white', borderRadius: '20px', width: '100%', maxWidth: '1000px', maxHeight: '95vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)' }}>
+                <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.75)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1100, padding: '1.5rem', backdropFilter: 'blur(10px)' }}>
+                    <div style={{ backgroundColor: 'white', borderRadius: '24px', width: '100%', maxWidth: '1100px', maxHeight: '92vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)', border: '1px solid #e2e8f0' }}>
+                        
+                        {/* Modal Header */}
                         <div style={{ padding: '1.5rem 2rem', background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <div>
-                                <h2 style={{ fontSize: '1.5rem', fontWeight: '800', letterSpacing: '-0.025em' }}>Student Fee Dashboard</h2>
-                                <div style={{ display: 'flex', gap: '1rem', marginTop: '0.4rem', alignItems: 'center' }}>
-                                    <span style={{ fontSize: '0.9rem', color: '#cbd5e1', fontWeight: '500' }}>{selectedStudentForHistory.studentName}</span>
-                                    <div style={{ width: '4px', height: '4px', borderRadius: '50%', background: '#64748b' }} />
+                                <h2 style={{ fontSize: '1.5rem', fontWeight: '800', letterSpacing: '-0.025em', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <TrendingUp size={24} color="#38bdf8" /> Student Financial Ledger
+                                </h2>
+                                <div style={{ display: 'flex', gap: '1rem', marginTop: '0.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                                    <span style={{ fontSize: '0.95rem', color: '#f8fafc', fontWeight: '700' }}>{selectedStudentForHistory.studentName}</span>
+                                    <div style={{ width: '4px', height: '4px', borderRadius: '50%', background: '#94a3b8' }} />
                                     <span style={{ fontSize: '0.9rem', color: '#cbd5e1', fontWeight: '500' }}>Class: {selectedStudentForHistory.className}</span>
-                                    <div style={{ width: '4px', height: '4px', borderRadius: '50%', background: '#64748b' }} />
+                                    <div style={{ width: '4px', height: '4px', borderRadius: '50%', background: '#94a3b8' }} />
                                     <span style={{ fontSize: '0.9rem', color: '#cbd5e1', fontWeight: '500' }}>Adm No: {selectedStudentForHistory.admissionNo}</span>
+                                    {selectedStudentForHistory.isRT && (
+                                        <>
+                                            <div style={{ width: '4px', height: '4px', borderRadius: '50%', background: '#94a3b8' }} />
+                                            <span style={{ fontSize: '0.75rem', backgroundColor: '#ecfdf5', color: '#059669', padding: '0.2rem 0.6rem', borderRadius: '20px', fontWeight: 'bold' }}>RTE Student</span>
+                                        </>
+                                    )}
                                 </div>
                             </div>
-                            <button onClick={() => setShowHistoryModal(false)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: 'white', width: '40px', height: '40px', borderRadius: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem', transition: '0.2s' }}>×</button>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                {studentLedger && (
+                                    <>
+                                        <button 
+                                            onClick={() => downloadStudentStatementExcel(studentLedger)}
+                                            className="btn-primary" 
+                                            style={{ 
+                                                padding: '0.6rem 1.2rem', 
+                                                width: 'auto', 
+                                                backgroundColor: '#059669', 
+                                                fontSize: '0.85rem', 
+                                                display: 'flex', 
+                                                alignItems: 'center', 
+                                                gap: '0.4rem',
+                                                borderRadius: '10px',
+                                                border: 'none',
+                                                color: 'white',
+                                                fontWeight: '700',
+                                                cursor: 'pointer',
+                                                boxShadow: '0 4px 6px -1px rgba(5,150,105,0.3)'
+                                            }}
+                                        >
+                                            <Download size={16} /> Download Statement (Excel)
+                                        </button>
+                                        <button 
+                                            onClick={printStudentStatement}
+                                            className="btn-primary" 
+                                            style={{ 
+                                                padding: '0.6rem 1.2rem', 
+                                                width: 'auto', 
+                                                backgroundColor: '#1e293b', 
+                                                fontSize: '0.85rem', 
+                                                display: 'flex', 
+                                                alignItems: 'center', 
+                                                gap: '0.4rem',
+                                                borderRadius: '10px',
+                                                border: 'none',
+                                                color: 'white',
+                                                fontWeight: '700',
+                                                cursor: 'pointer',
+                                                boxShadow: '0 4px 6px -1px rgba(30,41,59,0.3)'
+                                            }}
+                                        >
+                                            🖨️ Print Statement (PDF)
+                                        </button>
+                                    </>
+                                )}
+                                <button onClick={() => setShowHistoryModal(false)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: 'white', width: '40px', height: '40px', borderRadius: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem', transition: '0.2s', fontWeight: 'bold' }}>×</button>
+                            </div>
                         </div>
 
-                        <div style={{ padding: '2rem', overflowY: 'auto', flex: 1, backgroundColor: '#f8fafc' }}>
-                            {/* 1. Quick Stats & Month Tracker */}
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '1.5rem', marginBottom: '2rem' }}>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                                    <div style={{ background: 'white', padding: '1.25rem', borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
-                                        <p style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase', marginBottom: '0.5rem' }}>Pending Balance</p>
-                                        <p style={{ fontSize: '1.75rem', fontWeight: '900', color: '#ef4444' }}>₹{selectedStudentForHistory.pending.toLocaleString()}</p>
-                                    </div>
-                                    <div style={{ background: 'white', padding: '1.25rem', borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                                            <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: '600' }}>Total Expected:</span>
-                                            <span style={{ fontSize: '0.8rem', fontWeight: '800' }}>₹{(selectedStudentForHistory.totalExpected || 0).toLocaleString()}</span>
-                                        </div>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                            <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: '600' }}>Total Paid:</span>
-                                            <span style={{ fontSize: '0.8rem', fontWeight: '800', color: '#10b981' }}>₹{(selectedStudentForHistory.totalPaid || 0).toLocaleString()}</span>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div style={{ background: 'white', padding: '1.5rem', borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
-                                    <p style={{ fontSize: '0.85rem', fontWeight: '800', color: '#1e293b', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                        <Calendar size={16} color="#4f46e5" /> Session Payment Tracker (2024-25)
-                                    </p>
-                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '0.75rem' }}>
-                                        {['April','May','June','July','August','September','October','November','December','January','February','March'].map(m => {
-                                            const paid = isMonthPaid(m);
-                                            return (
-                                                <div key={m} style={{ 
-                                                    textAlign: 'center', 
-                                                    padding: '0.6rem 0.4rem', 
-                                                    borderRadius: '12px', 
-                                                    background: paid ? '#f0fdf4' : '#f8fafc',
-                                                    border: `1px solid ${paid ? '#bbf7d0' : '#e2e8f0'}`,
-                                                    transition: '0.2s'
-                                                }}>
-                                                    <div style={{ fontSize: '0.65rem', fontWeight: '800', color: paid ? '#166534' : '#64748b' }}>{m.substring(0, 3)}</div>
-                                                    <div style={{ marginTop: '0.25rem' }}>
-                                                        {paid ? <Check size={12} color="#166534" strokeWidth={4} /> : <div style={{ height: '12px' }} />}
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
+                        {loadingLedger || !studentLedger ? (
+                            <div style={{ padding: '4rem', textAlign: 'center', color: '#64748b', fontSize: '1.1rem', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: '1rem' }}>
+                                <div style={{ border: '4px solid #f3f3f3', borderTop: '4px solid #4f46e5', borderRadius: '50%', width: '40px', height: '40px', animation: 'spin 1s linear infinite' }} />
+                                <span>Loading ledger data...</span>
+                                <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
                             </div>
-
-                            {/* 2. Fee Heads Breakdown */}
-                            {/* 2. Fee Heads Breakdown (Detailed Structure) */}
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem', marginBottom: '2rem' }}>
+                        ) : (
+                            <div style={{ padding: '2rem', overflowY: 'auto', flex: 1, backgroundColor: '#f8fafc', display: 'flex', flexDirection: 'column', gap: '2rem' }} className="custom-scrollbar">
+                                
+                                {/* 1. Zoho Statement of Accounts Cards */}
                                 <div>
-                                    <h4 style={{ fontSize: '1rem', fontWeight: '800', color: '#4f46e5', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                                        <div style={{ width: '10px', height: '10px', borderRadius: '3px', background: '#4f46e5' }} /> 
-                                        Monthly Fees Structure
-                                    </h4>
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                                        {feeHeads.filter(h => {
-                                            const struct = feeStructure.find(s => s.className === selectedStudentForHistory.className);
-                                            return h.type === 'Monthly' && (struct?.fees?.[h.name] || 0) > 0;
-                                        }).map(h => {
-                                            const struct = feeStructure.find(s => s.className === selectedStudentForHistory.className);
-                                            const amount = (struct?.fees?.[h.name] || 0);
-                                            const everPaid = studentHistory.some(r => r.feeHead.toLowerCase().includes(h.name.toLowerCase()) && r.status === 'APPROVED');
-                                            
-                                            return (
-                                                <div 
-                                                    key={h.id} 
-                                                    style={{ 
-                                                        display: 'flex', 
-                                                        justifyContent: 'space-between', 
-                                                        alignItems: 'center', 
-                                                        padding: '1rem', 
-                                                        borderRadius: '14px', 
-                                                        background: everPaid ? '#f0fdf4' : 'white', 
-                                                        border: `1px solid ${everPaid ? '#bbf7d0' : '#e2e8f0'}`,
-                                                        boxShadow: everPaid ? 'none' : '0 2px 4px rgba(0,0,0,0.02)'
-                                                    }}
-                                                >
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                                                        <div style={{ 
-                                                            width: '24px', 
-                                                            height: '24px', 
-                                                            borderRadius: '6px', 
-                                                            background: everPaid ? '#dcfce7' : '#f1f5f9',
-                                                            display: 'flex',
-                                                            alignItems: 'center',
-                                                            justifyContent: 'center'
-                                                        }}>
-                                                            {everPaid ? <Check size={14} color="#166534" strokeWidth={3} /> : <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#94a3b8' }} />}
-                                                        </div>
-                                                        <span style={{ fontSize: '0.9rem', fontWeight: '700', color: everPaid ? '#166534' : '#1e293b' }}>{h.name}</span>
-                                                    </div>
-                                                    <div style={{ textAlign: 'right' }}>
-                                                        <div style={{ fontWeight: '800', fontSize: '0.9rem', color: everPaid ? '#166534' : '#1e293b' }}>₹{amount.toLocaleString()}</div>
-                                                        {everPaid && <span style={{ fontSize: '0.65rem', fontWeight: '800', color: '#166534', textTransform: 'uppercase' }}>History Recorded</span>}
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
+                                    <h3 style={{ fontSize: '1.05rem', fontWeight: '800', color: '#1e293b', marginBottom: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Account Summary</h3>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem' }}>
+                                        
+                                        <div style={{ background: 'linear-gradient(to bottom right, #ffffff, #f1f5f9)', padding: '1.25rem', borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.02)' }}>
+                                            <p style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase', marginBottom: '0.4rem' }}>Previous Dues</p>
+                                            <p style={{ fontSize: '1.5rem', fontWeight: '900', color: '#ef4444' }}>₹{formatAmount(studentLedger.summary.previousDuesPending)}</p>
+                                            <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.4rem', display: 'flex', justifyContent: 'space-between' }}>
+                                                <span>Billed: ₹{formatAmount(studentLedger.summary.previousSessionDue)}</span>
+                                                <span style={{ color: '#059669' }}>Paid: ₹{formatAmount(studentLedger.summary.previousDuesPaid)}</span>
+                                            </div>
+                                        </div>
+
+                                        <div style={{ background: 'linear-gradient(to bottom right, #ffffff, #f1f5f9)', padding: '1.25rem', borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.02)' }}>
+                                            <p style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase', marginBottom: '0.4rem' }}>One-Time / Annual</p>
+                                            <p style={{ fontSize: '1.5rem', fontWeight: '900', color: studentLedger.summary.oneTimePending > 0 ? '#f59e0b' : '#059669' }}>₹{formatAmount(studentLedger.summary.oneTimePending)}</p>
+                                            <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.4rem', display: 'flex', justifyContent: 'space-between' }}>
+                                                <span>Billed: ₹{formatAmount(studentLedger.summary.expectedOneTime)}</span>
+                                                <span style={{ color: '#059669' }}>Paid: ₹{formatAmount(studentLedger.summary.oneTimePaid)}</span>
+                                            </div>
+                                        </div>
+
+                                        <div style={{ background: 'linear-gradient(to bottom right, #ffffff, #f1f5f9)', padding: '1.25rem', borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.02)' }}>
+                                            <p style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase', marginBottom: '0.4rem' }}>Monthly Fees (To Date)</p>
+                                            <p style={{ fontSize: '1.5rem', fontWeight: '900', color: studentLedger.summary.monthlyPending > 0 ? '#ef4444' : '#059669' }}>₹{formatAmount(studentLedger.summary.monthlyPending)}</p>
+                                            <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.4rem', display: 'flex', justifyContent: 'space-between' }}>
+                                                <span>Billed: ₹{formatAmount(studentLedger.summary.expectedMonthlyUpToNow)}</span>
+                                                <span style={{ color: '#059669' }}>Paid: ₹{formatAmount(studentLedger.summary.monthlyPaid)}</span>
+                                            </div>
+                                        </div>
+
+                                        <div style={{ background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)', padding: '1.25rem', borderRadius: '16px', border: '1px solid #bfdbfe', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+                                            <p style={{ fontSize: '0.75rem', color: '#1e40af', fontWeight: '800', textTransform: 'uppercase', marginBottom: '0.4rem' }}>Total Outstanding</p>
+                                            <p style={{ fontSize: '1.75rem', fontWeight: '950', color: studentLedger.summary.netOutstanding > 0 ? '#ef4444' : '#059669' }}>₹{formatAmount(studentLedger.summary.netOutstanding)}</p>
+                                            <div style={{ fontSize: '0.75rem', color: '#1e40af', marginTop: '0.4rem', display: 'flex', justifyContent: 'space-between' }}>
+                                                <span>Expected Yr: ₹{formatAmount(studentLedger.summary.totalExpectedWholeYear)}</span>
+                                                <span>Paid All: ₹{formatAmount(studentLedger.summary.totalPaidAllTime)}</span>
+                                            </div>
+                                        </div>
+
                                     </div>
                                 </div>
-                                <div>
-                                    <h4 style={{ fontSize: '1rem', fontWeight: '800', color: '#ea580c', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                                        <div style={{ width: '10px', height: '10px', borderRadius: '3px', background: '#ea580c' }} /> 
-                                        Annual & One-time Structure
-                                    </h4>
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                                        {feeHeads.filter(h => {
-                                            const struct = feeStructure.find(s => s.className === selectedStudentForHistory.className);
-                                            return h.type !== 'Monthly' && (struct?.fees?.[h.name] || 0) > 0;
-                                        }).map(h => {
-                                            const struct = feeStructure.find(s => s.className === selectedStudentForHistory.className);
-                                            const amount = (struct?.fees?.[h.name] || 0);
-                                            const everPaid = studentHistory.some(r => r.feeHead.toLowerCase().includes(h.name.toLowerCase()) && r.status === 'APPROVED');
-                                            
-                                            return (
-                                                <div 
-                                                    key={h.id} 
-                                                    style={{ 
-                                                        display: 'flex', 
-                                                        justifyContent: 'space-between', 
-                                                        alignItems: 'center', 
-                                                        padding: '1rem', 
-                                                        borderRadius: '14px', 
-                                                        background: everPaid ? '#fff7ed' : 'white', 
-                                                        border: `1px solid ${everPaid ? '#fed7aa' : '#e2e8f0'}`,
-                                                        boxShadow: everPaid ? 'none' : '0 2px 4px rgba(0,0,0,0.02)'
-                                                    }}
-                                                >
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                                                        <div style={{ 
-                                                            width: '24px', 
-                                                            height: '24px', 
-                                                            borderRadius: '6px', 
-                                                            background: everPaid ? '#ffedd5' : '#f1f5f9',
-                                                            display: 'flex',
-                                                            alignItems: 'center',
-                                                            justifyContent: 'center'
-                                                        }}>
-                                                            {everPaid ? <Check size={14} color="#9a3412" strokeWidth={3} /> : <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#94a3b8' }} />}
-                                                        </div>
-                                                        <span style={{ fontSize: '0.9rem', fontWeight: '700', color: everPaid ? '#9a3412' : '#1e293b' }}>{h.name}</span>
-                                                    </div>
-                                                    <div style={{ textAlign: 'right' }}>
-                                                        <div style={{ fontWeight: '800', fontSize: '0.9rem', color: everPaid ? '#9a3412' : '#1e293b' }}>₹{amount.toLocaleString()}</div>
-                                                        {everPaid && <span style={{ fontSize: '0.65rem', fontWeight: '800', color: '#9a3412', textTransform: 'uppercase' }}>Fully Paid</span>}
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            </div>
 
-                            {/* 3. Transaction History Table */}
-                            <h4 style={{ fontSize: '0.9rem', fontWeight: '800', color: '#1e293b', marginBottom: '1rem' }}>Transaction History</h4>
-                            <div style={{ background: 'white', borderRadius: '16px', border: '1px solid #e2e8f0', overflowY: 'auto', maxHeight: '400px' }}>
-                                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                                    <thead>
-                                        <tr style={{ textAlign: 'left', background: '#f1f5f9', color: '#475569', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', position: 'sticky', top: 0, zIndex: 1 }}>
-                                            <th style={{ padding: '1rem' }}>Receipt</th>
-                                            <th style={{ padding: '1rem' }}>Fees Covered</th>
-                                            <th style={{ padding: '1rem', textAlign: 'right' }}>Amount</th>
-                                            <th style={{ padding: '1rem' }}>Date</th>
-                                            <th style={{ padding: '1rem' }}>Status</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {studentHistory.length > 0 ? (
-                                            studentHistory.map(r => (
-                                                <tr key={r.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                                                    <td style={{ padding: '1rem', fontWeight: '700', color: '#2563eb', fontSize: '0.85rem' }}>{r.receiptNo}</td>
-                                                    <td style={{ padding: '1rem', fontSize: '0.8rem', color: '#475569', maxWidth: '300px' }}>
-                                                        {r.feeHead.includes('==>') ? r.feeHead.split('==>')[1].trim() : r.feeHead}
-                                                    </td>
-                                                    <td style={{ padding: '1rem', fontWeight: '800', textAlign: 'right', fontSize: '0.85rem' }}>₹{r.paidAmount.toLocaleString()}</td>
-                                                    <td style={{ padding: '1rem', fontSize: '0.8rem', color: '#64748b' }}>{r.date}</td>
-                                                    <td style={{ padding: '1rem' }}>
-                                                        <span style={{ 
-                                                            fontSize: '0.6rem', 
-                                                            fontWeight: '900', 
-                                                            padding: '0.2rem 0.5rem', 
-                                                            borderRadius: '10px',
-                                                            backgroundColor: r.status === 'APPROVED' ? '#dcfce7' : r.status === 'PENDING' ? '#fef9c3' : '#fee2e2',
-                                                            color: r.status === 'APPROVED' ? '#166534' : r.status === 'PENDING' ? '#854d0e' : '#991b1b'
-                                                        }}>{r.status}</span>
-                                                    </td>
+                                {/* 2. Monthly Fee Grid Matrix */}
+                                <div>
+                                    <h3 style={{ fontSize: '1.05rem', fontWeight: '800', color: '#1e293b', marginBottom: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                        <CalendarDays size={18} color="#4f46e5" /> Monthly Dues Status Grid
+                                    </h3>
+                                    <div style={{ background: 'white', borderRadius: '16px', border: '1px solid #e2e8f0', overflowX: 'auto', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.02)' }}>
+                                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                                            <thead>
+                                                <tr style={{ background: '#f1f5f9', borderBottom: '2px solid #e2e8f0', color: '#475569', textAlign: 'center', fontWeight: 'bold' }}>
+                                                    <th style={{ padding: '0.75rem 1rem', textAlign: 'left' }}>Fee Head</th>
+                                                    {['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar'].map(m => (
+                                                        <th key={m} style={{ padding: '0.75rem 0.5rem' }}>{m}</th>
+                                                    ))}
                                                 </tr>
-                                            ))
-                                        ) : (
-                                            <tr>
-                                                <td colSpan={5} style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8', fontSize: '0.9rem' }}>No transaction history found.</td>
-                                            </tr>
-                                        )}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
+                                            </thead>
+                                            <tbody>
+                                                {/* Tuition / other Monthly Heads */}
+                                                {(() => {
+                                                    const classStruct = feeStructure.find(s => s.className === selectedStudentForHistory.className);
+                                                    const activeMonthlyHeads = feeHeads.filter(h => h.type === 'Monthly' && (classStruct?.fees?.[h.name] || 0) > 0);
+                                                    
+                                                    const rows = activeMonthlyHeads.map(h => ({ name: h.name, isTransport: false }));
+                                                    if (selectedStudentForHistory.monthlyFare > 0 || (studentLedger.student?.transportFare || 0) > 0) {
+                                                        rows.push({ name: `Transport (${studentLedger.student?.transportStop || 'Bus'})`, isTransport: true });
+                                                    }
 
-                        <div style={{ padding: '1.5rem 2rem', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', background: '#f8fafc' }}>
-                            <button onClick={() => setShowHistoryModal(false)} style={{ padding: '0.75rem 2rem', background: '#1e293b', color: 'white', border: 'none', borderRadius: '12px', fontWeight: '700', cursor: 'pointer', transition: '0.2s' }}>Close Dashboard</button>
+                                                    if (rows.length === 0) {
+                                                        return <tr><td colSpan={13} style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>No monthly heads defined.</td></tr>;
+                                                    }
+
+                                                    return rows.map((row, rIdx) => (
+                                                        <tr key={rIdx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                                            <td style={{ padding: '0.75rem 1rem', fontWeight: '700', color: '#334155' }}>{row.name}</td>
+                                                            {studentLedger.monthlyStatus.map((ms: any, mIdx: number) => {
+                                                                const matchingHead = ms.heads.find((h: any) => 
+                                                                    row.isTransport ? h.name === 'Transport Fee' : h.name === row.name
+                                                                );
+                                                                
+                                                                const expected = matchingHead?.expected || 0;
+                                                                const paid = matchingHead?.paid || 0;
+                                                                const pending = matchingHead?.pending || 0;
+                                                                
+                                                                let bg = 'transparent';
+                                                                let content = <span style={{ color: '#94a3b8' }}>-</span>;
+
+                                                                if (expected > 0) {
+                                                                    if (paid >= expected) {
+                                                                        bg = '#f0fdf4';
+                                                                        content = <span style={{ color: '#166534', fontWeight: 'bold' }}>₹{formatAmount(paid)}</span>;
+                                                                    } else if (paid > 0) {
+                                                                        bg = '#fffbeb';
+                                                                        content = (
+                                                                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                                                                <span style={{ color: '#b45309', fontWeight: 'bold' }}>₹{formatAmount(paid)}</span>
+                                                                                <span style={{ fontSize: '0.65rem', color: '#ef4444' }}>Due ₹{formatAmount(pending)}</span>
+                                                                            </div>
+                                                                        );
+                                                                    } else if (ms.isElapsed) {
+                                                                        bg = '#fef2f2';
+                                                                        content = <span style={{ color: '#ef4444', fontWeight: 'bold' }}>₹{formatAmount(expected)}</span>;
+                                                                    } else {
+                                                                        content = <span style={{ color: '#64748b' }}>₹{formatAmount(expected)}</span>;
+                                                                    }
+                                                                } else if (selectedStudentForHistory.isRT && !row.isTransport) {
+                                                                    content = <span style={{ color: '#64748b', fontSize: '0.75rem', fontStyle: 'italic' }}>RTE</span>;
+                                                                }
+
+                                                                return (
+                                                                    <td key={mIdx} style={{ padding: '0.5rem', textAlign: 'center', backgroundColor: bg }}>
+                                                                        {content}
+                                                                    </td>
+                                                                );
+                                                            })}
+                                                        </tr>
+                                                    ));
+                                                })()}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+
+                                {/* 3. One-Time / Annual Table */}
+                                {studentLedger.oneTimeStatus.length > 0 && (
+                                    <div>
+                                        <h3 style={{ fontSize: '1.05rem', fontWeight: '800', color: '#1e293b', marginBottom: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>One-Time & Annual Fees Ledger</h3>
+                                        <div style={{ background: 'white', borderRadius: '16px', border: '1px solid #e2e8f0', overflowX: 'auto', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.02)' }}>
+                                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                                                <thead>
+                                                    <tr style={{ background: '#f1f5f9', borderBottom: '2px solid #e2e8f0', color: '#475569', textAlign: 'left' }}>
+                                                        <th style={{ padding: '0.75rem 1rem' }}>Fee Head</th>
+                                                        <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Expected</th>
+                                                        <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Paid</th>
+                                                        <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Balance Due</th>
+                                                        <th style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>Status</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {studentLedger.oneTimeStatus.map((ot: any, idx: number) => (
+                                                        <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                                            <td style={{ padding: '0.75rem 1rem', fontWeight: '700', color: '#334155' }}>{ot.name}</td>
+                                                            <td style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>₹{formatAmount(ot.expected)}</td>
+                                                            <td style={{ padding: '0.75rem 1rem', textAlign: 'right', color: '#059669', fontWeight: '700' }}>₹{formatAmount(ot.paid)}</td>
+                                                            <td style={{ padding: '0.75rem 1rem', textAlign: 'right', color: ot.pending > 0 ? '#ef4444' : '#059669', fontWeight: '700' }}>₹{formatAmount(ot.pending)}</td>
+                                                            <td style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>
+                                                                <span style={{ 
+                                                                    fontSize: '0.7rem', 
+                                                                    padding: '0.2rem 0.5rem', 
+                                                                    borderRadius: '20px', 
+                                                                    fontWeight: 'bold',
+                                                                    backgroundColor: ot.pending === 0 ? '#dcfce7' : '#fee2e2',
+                                                                    color: ot.pending === 0 ? '#15803d' : '#b91c1c'
+                                                                }}>
+                                                                    {ot.pending === 0 ? 'Paid' : 'Pending'}
+                                                                </span>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* 4. Detailed Transaction Receipts History */}
+                                <div>
+                                    <h3 style={{ fontSize: '1.05rem', fontWeight: '800', color: '#1e293b', marginBottom: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Chronological Statement of Transactions</h3>
+                                    <div style={{ background: 'white', borderRadius: '16px', border: '1px solid #e2e8f0', overflowY: 'auto', maxHeight: '350px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.02)' }}>
+                                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                                            <thead>
+                                                <tr style={{ textAlign: 'left', background: '#f1f5f9', color: '#475569', fontWeight: 'bold', position: 'sticky', top: 0, zIndex: 1, borderBottom: '2px solid #e2e8f0' }}>
+                                                    <th style={{ padding: '0.75rem 1rem' }}>Receipt No</th>
+                                                    <th style={{ padding: '0.75rem 1rem' }}>Date</th>
+                                                    <th style={{ padding: '0.75rem 1rem' }}>Description / Items</th>
+                                                    <th style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>Paid (₹)</th>
+                                                    <th style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>Status</th>
+                                                    <th style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {studentLedger.payments.length > 0 ? (
+                                                    studentLedger.payments.map((r: any) => (
+                                                        <tr key={r.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                                            <td style={{ padding: '0.75rem 1rem', fontWeight: '800', color: '#2563eb' }}>{r.receiptNo}</td>
+                                                            <td style={{ padding: '0.75rem 1rem', color: '#64748b' }}>
+                                                                {new Date(r.paymentDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                                            </td>
+                                                            <td style={{ padding: '0.75rem 1rem', color: '#475569', maxWidth: '300px', whiteSpace: 'normal', wordBreak: 'break-all' }}>
+                                                                {r.feeHead.includes('==>') ? r.feeHead.split('==>')[1].trim() : r.feeHead}
+                                                            </td>
+                                                            <td style={{ padding: '0.75rem 1rem', fontWeight: '800', textAlign: 'right', color: '#059669' }}>
+                                                                ₹{r.amountPaid.toLocaleString()}
+                                                            </td>
+                                                            <td style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>
+                                                                <span style={{ 
+                                                                    fontSize: '0.65rem', 
+                                                                    fontWeight: '800', 
+                                                                    padding: '0.2rem 0.5rem', 
+                                                                    borderRadius: '20px',
+                                                                    backgroundColor: r.status === 'APPROVED' ? '#dcfce7' : r.status === 'PENDING' ? '#fef9c3' : '#fee2e2',
+                                                                    color: r.status === 'APPROVED' ? '#166534' : r.status === 'PENDING' ? '#854d0e' : '#991b1b'
+                                                                }}>{r.status}</span>
+                                                            </td>
+                                                            <td style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>
+                                                                <button 
+                                                                    onClick={() => { 
+                                                                        setSelectedReceipt({
+                                                                            ...r,
+                                                                            paidAmount: r.amountPaid,
+                                                                            studentName: selectedStudentForHistory.studentName,
+                                                                            admissionNo: selectedStudentForHistory.admissionNo,
+                                                                            className: selectedStudentForHistory.className,
+                                                                            date: new Date(r.paymentDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+                                                                            sessionName: r.session?.name || null
+                                                                        }); 
+                                                                        setShowReceipt(true); 
+                                                                    }}
+                                                                    style={{ padding: '0.3rem 0.7rem', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' }}
+                                                                >
+                                                                    Receipt
+                                                                </button>
+                                                            </td>
+                                                        </tr>
+                                                    ))
+                                                ) : (
+                                                    <tr>
+                                                        <td colSpan={6} style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8', fontSize: '0.9rem' }}>No approved transaction statement found.</td>
+                                                    </tr>
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+
+                            </div>
+                        )}
+
+                        {/* Modal Footer */}
+                        <div style={{ padding: '1.25rem 2rem', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', background: '#f8fafc' }}>
+                            <button onClick={() => setShowHistoryModal(false)} style={{ padding: '0.65rem 2rem', background: '#1e293b', color: 'white', border: 'none', borderRadius: '12px', fontWeight: '700', cursor: 'pointer', transition: '0.2s' }}>Close Statement</button>
                         </div>
                     </div>
                 </div>
             )}
-        </div>
+            </div>
+
+            {studentLedger && (
+                <div id="statement-print-overlay" style={{ display: 'none', backgroundColor: '#fff', padding: '2rem', width: '210mm', minHeight: '297mm', color: '#1e293b', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+                    {/* Header */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '3px solid #1e293b', paddingBottom: '1.5rem', marginBottom: '2rem' }}>
+                        <div>
+                            <h1 style={{ fontSize: '2rem', fontWeight: '800', color: '#1e293b', margin: 0, textTransform: 'uppercase' }}>BIPS SENIOR SECONDARY SCHOOL</h1>
+                            <p style={{ fontSize: '0.9rem', color: '#64748b', margin: '4px 0 0 0', fontWeight: '500' }}>Affiliated to CBSE, New Delhi | School Code: 2024-25</p>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#0f172a', letterSpacing: '0.05em' }}>STATEMENT OF ACCOUNT</div>
+                            <div style={{ fontSize: '0.85rem', color: '#64748b', marginTop: '4px' }}>Date: {new Date().toLocaleDateString('en-GB')}</div>
+                            <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#4a90e2', marginTop: '4px' }}>Session: {localStorage.getItem('activeSession') || '2024-2025'}</div>
+                        </div>
+                    </div>
+
+                    {/* Profiles */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem', marginBottom: '2.5rem', backgroundColor: '#f8fafc', padding: '1.5rem', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                        <div>
+                            <h3 style={{ fontSize: '0.9rem', color: '#475569', textTransform: 'uppercase', margin: '0 0 0.75rem 0', letterSpacing: '0.05em', borderBottom: '1px solid #cbd5e1', paddingBottom: '4px' }}>Student Profile</h3>
+                            <table style={{ width: '100%', fontSize: '0.85rem', borderCollapse: 'collapse' }}>
+                                <tbody>
+                                    <tr>
+                                        <td style={{ padding: '4px 0', color: '#64748b', fontWeight: '500', width: '110px' }}>Student Name</td>
+                                        <td style={{ padding: '4px 0', fontWeight: '700', color: '#1e293b' }}>{studentLedger.student?.name}</td>
+                                    </tr>
+                                    <tr>
+                                        <td style={{ padding: '4px 0', color: '#64748b', fontWeight: '500' }}>Admission No</td>
+                                        <td style={{ padding: '4px 0', fontWeight: '700', color: '#1e293b' }}>{studentLedger.student?.admissionNo}</td>
+                                    </tr>
+                                    <tr>
+                                        <td style={{ padding: '4px 0', color: '#64748b', fontWeight: '500' }}>Class / Section</td>
+                                        <td style={{ padding: '4px 0', fontWeight: '700', color: '#1e293b' }}>{studentLedger.student?.className}</td>
+                                    </tr>
+                                    <tr>
+                                        <td style={{ padding: '4px 0', color: '#64748b', fontWeight: '500' }}>Father's Name</td>
+                                        <td style={{ padding: '4px 0', fontWeight: '700', color: '#1e293b' }}>{studentLedger.student?.fatherName || 'N/A'}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div>
+                            <h3 style={{ fontSize: '0.9rem', color: '#475569', textTransform: 'uppercase', margin: '0 0 0.75rem 0', letterSpacing: '0.05em', borderBottom: '1px solid #cbd5e1', paddingBottom: '4px' }}>Statement Details</h3>
+                            <table style={{ width: '100%', fontSize: '0.85rem', borderCollapse: 'collapse' }}>
+                                <tbody>
+                                    <tr>
+                                        <td style={{ padding: '4px 0', color: '#64748b', fontWeight: '500', width: '110px' }}>Statement Period</td>
+                                        <td style={{ padding: '4px 0', fontWeight: '700', color: '#1e293b' }}>April 2024 - March 2025</td>
+                                    </tr>
+                                    <tr>
+                                        <td style={{ padding: '4px 0', color: '#64748b', fontWeight: '500' }}>Transport Route</td>
+                                        <td style={{ padding: '4px 0', fontWeight: '700', color: '#1e293b' }}>{studentLedger.student?.transportStop !== 'N/A' ? studentLedger.student?.transportStop : 'None (Self)'}</td>
+                                    </tr>
+                                    <tr>
+                                        <td style={{ padding: '4px 0', color: '#64748b', fontWeight: '500' }}>Transport Fare</td>
+                                        <td style={{ padding: '4px 0', fontWeight: '700', color: '#1e293b' }}>{studentLedger.student?.transportFare > 0 ? `₹${studentLedger.student?.transportFare}/month` : '₹0'}</td>
+                                    </tr>
+                                    <tr>
+                                        <td style={{ padding: '4px 0', color: '#64748b', fontWeight: '500' }}>RTE Status</td>
+                                        <td style={{ padding: '4px 0', fontWeight: '700', color: '#1e293b' }}>{studentLedger.student?.isRT ? 'Yes (Exempt)' : 'No (Regular)'}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    {/* Summary Row */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '2.5rem' }}>
+                        <div style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '1rem', textAlign: 'center', backgroundColor: '#f1f5f9' }}>
+                            <div style={{ fontSize: '0.75rem', fontWeight: '700', color: '#475569', textTransform: 'uppercase', marginBottom: '4px' }}>Yearly Expected</div>
+                            <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#1e293b' }}>₹{studentLedger.summary?.totalExpectedWholeYear?.toLocaleString()}</div>
+                        </div>
+                        <div style={{ border: '1px solid #bbf7d0', borderRadius: '8px', padding: '1rem', textAlign: 'center', backgroundColor: '#f0fdf4' }}>
+                            <div style={{ fontSize: '0.75rem', fontWeight: '700', color: '#166534', textTransform: 'uppercase', marginBottom: '4px' }}>Total Paid</div>
+                            <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#166534' }}>₹{studentLedger.summary?.totalPaidAllTime?.toLocaleString()}</div>
+                        </div>
+                        <div style={{ border: '1px solid #fed7aa', borderRadius: '8px', padding: '1rem', textAlign: 'center', backgroundColor: '#fff7ed' }}>
+                            <div style={{ fontSize: '0.75rem', fontWeight: '700', color: '#c2410c', textTransform: 'uppercase', marginBottom: '4px' }}>Concessions</div>
+                            <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#c2410c' }}>
+                                ₹{(() => {
+                                    const totalConcessions = studentLedger.payments?.reduce((sum: number, p: any) => sum + (p.discount || 0), 0) || 0;
+                                    return totalConcessions.toLocaleString();
+                                })()}
+                            </div>
+                        </div>
+                        <div style={{ border: '1px solid #fecaca', borderRadius: '8px', padding: '1rem', textAlign: 'center', backgroundColor: '#fef2f2' }}>
+                            <div style={{ fontSize: '0.75rem', fontWeight: '700', color: '#991b1b', textTransform: 'uppercase', marginBottom: '4px' }}>Net Outstanding</div>
+                            <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#991b1b' }}>₹{studentLedger.summary?.netOutstanding?.toLocaleString()}</div>
+                        </div>
+                    </div>
+
+                    {/* Table */}
+                    <h3 style={{ fontSize: '1rem', fontWeight: '700', color: '#1e293b', margin: '0 0 1rem 0' }}>Transaction Ledger Details</h3>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+                        <thead>
+                            <tr style={{ backgroundColor: '#1e293b', color: 'white', textAlign: 'left' }}>
+                                <th style={{ padding: '8px 12px', border: '1px solid #1e293b' }}>Date</th>
+                                <th style={{ padding: '8px 12px', border: '1px solid #1e293b' }}>Particulars / Description</th>
+                                <th style={{ padding: '8px 12px', border: '1px solid #1e293b', textAlign: 'center' }}>Receipt No</th>
+                                <th style={{ padding: '8px 12px', border: '1px solid #1e293b' }}>Type</th>
+                                <th style={{ padding: '8px 12px', border: '1px solid #1e293b', textAlign: 'right' }}>Debit (Dr.)</th>
+                                <th style={{ padding: '8px 12px', border: '1px solid #1e293b', textAlign: 'right' }}>Credit (Cr.)</th>
+                                <th style={{ padding: '8px 12px', border: '1px solid #1e293b', textAlign: 'right' }}>Running Bal</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {(() => {
+                                interface PrintLedgerEvent {
+                                    date: Date;
+                                    dateStr: string;
+                                    description: string;
+                                    receiptNo: string;
+                                    type: string;
+                                    debit: number;
+                                    credit: number;
+                                    discount: number;
+                                }
+                                
+                                const events: PrintLedgerEvent[] = [];
+
+                                if (studentLedger.summary?.previousSessionDue > 0) {
+                                    events.push({
+                                        date: new Date('2024-04-01T00:00:00.000Z'),
+                                        dateStr: '01/04/2024',
+                                        description: 'Previous Academic Session Pending Dues (Opening Balance)',
+                                        receiptNo: '-',
+                                        type: 'Opening Dues',
+                                        debit: studentLedger.summary?.previousSessionDue,
+                                        credit: 0,
+                                        discount: 0
+                                    });
+                                }
+
+                                studentLedger.oneTimeStatus?.forEach((ot: any) => {
+                                    events.push({
+                                        date: new Date('2024-04-01T00:01:00.000Z'),
+                                        dateStr: '01/04/2024',
+                                        description: `Billed: ${ot.name}`,
+                                        receiptNo: '-',
+                                        type: 'One-Time Fee',
+                                        debit: ot.amount,
+                                        credit: 0,
+                                        discount: 0
+                                    });
+                                });
+
+                                const months = ['April','May','June','July','August','September','October','November','December','January','February','March'];
+                                const struct = feeStructure.find((s: any) => s.className === studentLedger.student?.className);
+                                const regularMonthlyFee = feeHeads.filter((h: any) => h.type === 'Monthly' && (struct?.fees?.[h.name] || 0) > 0);
+                                
+                                months.forEach((m, mIndex) => {
+                                    const year = mIndex < 9 ? 2024 : 2025;
+                                    const monthNumber = mIndex < 9 ? mIndex + 3 : mIndex - 9;
+                                    const billingDate = new Date(year, monthNumber, 1);
+                                    
+                                    regularMonthlyFee.forEach((f: any) => {
+                                        const amount = studentLedger.student?.isRT ? 0 : (struct?.fees?.[f.name] || 0);
+                                        if (amount > 0) {
+                                            events.push({
+                                                date: billingDate,
+                                                dateStr: `01/${(monthNumber + 1).toString().padStart(2, '0')}/${year}`,
+                                                description: `Billed: Monthly ${f.name} (${m})`,
+                                                receiptNo: '-',
+                                                type: 'Monthly Fee',
+                                                debit: amount,
+                                                credit: 0,
+                                                discount: 0
+                                            });
+                                        }
+                                    });
+
+                                    if (studentLedger.student?.transportFare > 0) {
+                                        events.push({
+                                            date: new Date(year, monthNumber, 1, 0, 1),
+                                            dateStr: `01/${(monthNumber + 1).toString().padStart(2, '0')}/${year}`,
+                                            description: `Billed: Monthly Transport Fare (${m})`,
+                                            receiptNo: '-',
+                                            type: 'Transport Fee',
+                                            debit: studentLedger.student?.transportFare,
+                                            credit: 0,
+                                            discount: 0
+                                        });
+                                    }
+                                });
+
+                                studentLedger.payments?.forEach((p: any) => {
+                                    const payDate = new Date(p.paymentDate);
+                                    const day = payDate.getDate().toString().padStart(2, '0');
+                                    const month = (payDate.getMonth() + 1).toString().padStart(2, '0');
+                                    const yr = payDate.getFullYear();
+                                    
+                                    events.push({
+                                        date: payDate,
+                                        dateStr: `${day}/${month}/${yr}`,
+                                        description: `Payment Received | Mode: ${p.paymentMode || 'Cash'} ${p.remark ? `(${p.remark})` : ''}`,
+                                        receiptNo: p.receiptNo || 'N/A',
+                                        type: 'Receipt Credit',
+                                        debit: 0,
+                                        credit: p.amountPaid || 0,
+                                        discount: p.discount || 0
+                                    });
+                                });
+
+                                events.sort((a, b) => a.date.getTime() - b.date.getTime());
+
+                                let runningBal = 0;
+                                return events.map((evt, idx) => {
+                                    runningBal += evt.debit - evt.credit - evt.discount;
+                                    const isPaidRow = evt.credit > 0;
+                                    
+                                    return (
+                                        <tr key={idx} style={{ backgroundColor: isPaidRow ? '#f0fdf4' : idx % 2 === 0 ? '#f8fafc' : 'white', borderBottom: '1px solid #e2e8f0' }}>
+                                            <td style={{ padding: '8px 12px', border: '1px solid #e2e8f0' }}>{evt.dateStr}</td>
+                                            <td style={{ padding: '8px 12px', border: '1px solid #e2e8f0', fontWeight: isPaidRow ? '600' : 'normal' }}>{evt.description}</td>
+                                            <td style={{ padding: '8px 12px', border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: '500' }}>{evt.receiptNo}</td>
+                                            <td style={{ padding: '8px 12px', border: '1px solid #e2e8f0', color: '#64748b' }}>{evt.type}</td>
+                                            <td style={{ padding: '8px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '500' }}>{evt.debit > 0 ? `₹${evt.debit.toLocaleString()}` : '-'}</td>
+                                            <td style={{ padding: '8px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '600', color: '#15803d' }}>{evt.credit > 0 ? `₹${evt.credit.toLocaleString()}` : evt.discount > 0 ? `₹${evt.discount.toLocaleString()} (Disc)` : '-'}</td>
+                                            <td style={{ padding: '8px 12px', border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: '700', color: runningBal > 0 ? '#b91c1c' : '#15803d' }}>₹{runningBal.toLocaleString()}</td>
+                                        </tr>
+                                    );
+                                });
+                            })()}
+                        </tbody>
+                    </table>
+
+                    {/* Footer Disclaimer & Signatures */}
+                    <div style={{ marginTop: '3.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', fontSize: '0.8rem' }}>
+                        <div>
+                            <p style={{ color: '#64748b', fontStyle: 'italic', margin: 0 }}>* This is a system-generated official account ledger statement and does not require a physical signature.</p>
+                        </div>
+                        <div style={{ textAlign: 'center', borderTop: '1px solid #94a3b8', width: '220px', paddingTop: '8px' }}>
+                            <strong style={{ color: '#1e293b' }}>Authorized Signatory</strong>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {dueView === 'general' ? (
+                <div id="dues-report-print-overlay" style={{ display: 'none', backgroundColor: '#fff', padding: '2rem', width: '297mm', minHeight: '210mm', color: '#1e293b', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+                    {/* Header */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '3px solid #1e293b', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
+                        <div>
+                            <h1 style={{ fontSize: '1.75rem', fontWeight: '800', color: '#1e293b', margin: 0, textTransform: 'uppercase' }}>BIPS SENIOR SECONDARY SCHOOL</h1>
+                            <p style={{ fontSize: '0.85rem', color: '#64748b', margin: '2px 0 0 0', fontWeight: '500' }}>OFFICIAL FEES OUTSTANDING REPORT</p>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: '0.85rem', color: '#64748b' }}>Generated on: {new Date().toLocaleString('en-GB')}</div>
+                            <div style={{ fontSize: '0.85rem', color: '#64748b', marginTop: '2px' }}>Academic Session: {localStorage.getItem('activeSession') || '2024-2025'}</div>
+                        </div>
+                    </div>
+
+                    {/* Applied Filters Info */}
+                    <div style={{ backgroundColor: '#f8fafc', padding: '1rem 1.5rem', borderRadius: '8px', border: '1px solid #e2e8f0', display: 'flex', flexWrap: 'wrap', gap: '2rem', marginBottom: '1.5rem', fontSize: '0.85rem' }}>
+                        <div><span style={{ color: '#64748b', fontWeight: '500' }}>Class:</span> <strong style={{ color: '#1e293b' }}>{dueClassFilter}</strong></div>
+                        <div><span style={{ color: '#64748b', fontWeight: '500' }}>Month Filter:</span> <strong style={{ color: '#1e293b' }}>{dueMonthFilter === 'All' ? 'All Months (Full Session)' : dueMonthFilter}</strong></div>
+                        <div><span style={{ color: '#64748b', fontWeight: '500' }}>Student Type:</span> <strong style={{ color: '#1e293b' }}>{dueRtFilter === 'All' ? 'All Students' : dueRtFilter}</strong></div>
+                        <div><span style={{ color: '#64748b', fontWeight: '500' }}>Payment Status:</span> <strong style={{ color: '#1e293b' }}>{dueStatusFilter === 'All' ? 'All Statuses' : dueStatusFilter}</strong></div>
+                        <div><span style={{ color: '#64748b', fontWeight: '500' }}>Component:</span> <strong style={{ color: '#1e293b' }}>{dueFeeTypeFilter}</strong></div>
+                    </div>
+
+                    {/* Summary Metrics */}
+                    {(() => {
+                        const filtered = getFilteredDues(dueFees);
+                        
+                        let totalExpected = 0;
+                        let totalPaid = 0;
+                        let totalPending = 0;
+
+                        filtered.forEach(f => {
+                            const dyn = calculateDynamicDues(f, dueMonthFilter);
+                            
+                            if (dueFeeTypeFilter === 'Monthly Only') {
+                                totalExpected += dyn.cumulativeMonthlyExpected;
+                                totalPaid += f.actualMonthlyPaid || 0;
+                                totalPending += dyn.pendingMonthly;
+                            } else if (dueFeeTypeFilter === 'One-time Only') {
+                                totalExpected += dyn.expectedOneTime;
+                                totalPaid += f.actualOneTimePaid || 0;
+                                totalPending += dyn.pendingOneTime;
+                            } else {
+                                totalExpected += (f.previousSessionDue || 0) + dyn.expectedOneTime + dyn.cumulativeMonthlyExpected;
+                                totalPaid += (f.actualPrevDuesPaid || 0) + (f.actualOneTimePaid || 0) + (f.actualMonthlyPaid || 0);
+                                totalPending += dyn.totalPayableNow;
+                            }
+                        });
+
+                        return (
+                            <>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
+                                    <div style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '0.75rem', textAlign: 'center', backgroundColor: '#f1f5f9' }}>
+                                        <div style={{ fontSize: '0.7rem', fontWeight: '700', color: '#475569', textTransform: 'uppercase', marginBottom: '2px' }}>Filtered Students</div>
+                                        <div style={{ fontSize: '1.1rem', fontWeight: '800', color: '#1e293b' }}>{filtered.length} Students</div>
+                                    </div>
+                                    <div style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '0.75rem', textAlign: 'center', backgroundColor: '#f8fafc' }}>
+                                        <div style={{ fontSize: '0.7rem', fontWeight: '700', color: '#475569', textTransform: 'uppercase', marginBottom: '2px' }}>Total Expected</div>
+                                        <div style={{ fontSize: '1.1rem', fontWeight: '800', color: '#1e293b' }}>₹{totalExpected.toLocaleString()}</div>
+                                    </div>
+                                    <div style={{ border: '1px solid #bbf7d0', borderRadius: '6px', padding: '0.75rem', textAlign: 'center', backgroundColor: '#f0fdf4' }}>
+                                        <div style={{ fontSize: '0.7rem', fontWeight: '700', color: '#166534', textTransform: 'uppercase', marginBottom: '2px' }}>Total Collected</div>
+                                        <div style={{ fontSize: '1.1rem', fontWeight: '800', color: '#166534' }}>₹{totalPaid.toLocaleString()}</div>
+                                    </div>
+                                    <div style={{ border: '1px solid #fecaca', borderRadius: '6px', padding: '0.75rem', textAlign: 'center', backgroundColor: '#fef2f2' }}>
+                                        <div style={{ fontSize: '0.7rem', fontWeight: '700', color: '#991b1b', textTransform: 'uppercase', marginBottom: '2px' }}>Total Outstanding</div>
+                                        <div style={{ fontSize: '1.1rem', fontWeight: '800', color: '#991b1b' }}>₹{totalPending.toLocaleString()}</div>
+                                    </div>
+                                </div>
+
+                                {/* Table */}
+                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem' }}>
+                                    <thead>
+                                        <tr style={{ backgroundColor: '#1e293b', color: 'white', textAlign: 'left' }}>
+                                            <th style={{ padding: '6px 8px', border: '1px solid #cbd5e1', width: '40px', textAlign: 'center' }}>S.No.</th>
+                                            <th style={{ padding: '6px 8px', border: '1px solid #cbd5e1', width: '180px' }}>Student Name</th>
+                                            <th style={{ padding: '6px 8px', border: '1px solid #cbd5e1', width: '100px', textAlign: 'center' }}>Adm No</th>
+                                            <th style={{ padding: '6px 8px', border: '1px solid #cbd5e1', width: '120px' }}>Father's Name</th>
+                                            <th style={{ padding: '6px 8px', border: '1px solid #cbd5e1', width: '100px' }}>Class</th>
+                                            <th style={{ padding: '6px 8px', border: '1px solid #cbd5e1', width: '90px', textAlign: 'right' }}>Expected (₹)</th>
+                                            <th style={{ padding: '6px 8px', border: '1px solid #cbd5e1', width: '90px', textAlign: 'right' }}>Collected (₹)</th>
+                                            <th style={{ padding: '6px 8px', border: '1px solid #cbd5e1', width: '90px', textAlign: 'right' }}>Outstanding (₹)</th>
+                                            <th style={{ padding: '6px 8px', border: '1px solid #cbd5e1' }}>Pending Details / Months</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {filtered.map((fee, idx) => {
+                                            const dyn = calculateDynamicDues(fee, dueMonthFilter);
+                                            
+                                            let expectedVal = 0;
+                                            let paidVal = 0;
+                                            let pendingVal = 0;
+
+                                            if (dueFeeTypeFilter === 'Monthly Only') {
+                                                expectedVal = dyn.cumulativeMonthlyExpected;
+                                                paidVal = fee.actualMonthlyPaid || 0;
+                                                pendingVal = dyn.pendingMonthly;
+                                            } else if (dueFeeTypeFilter === 'One-time Only') {
+                                                expectedVal = dyn.expectedOneTime;
+                                                paidVal = fee.actualOneTimePaid || 0;
+                                                pendingVal = dyn.pendingOneTime;
+                                            } else {
+                                                expectedVal = (fee.previousSessionDue || 0) + dyn.expectedOneTime + dyn.cumulativeMonthlyExpected;
+                                                paidVal = (fee.actualPrevDuesPaid || 0) + (fee.actualOneTimePaid || 0) + (fee.actualMonthlyPaid || 0);
+                                                pendingVal = dyn.totalPayableNow;
+                                            }
+
+                                            return (
+                                                <tr key={fee.id} style={{ backgroundColor: idx % 2 === 0 ? '#f8fafc' : 'white', borderBottom: '1px solid #cbd5e1' }}>
+                                                    <td style={{ padding: '6px 8px', border: '1px solid #cbd5e1', textAlign: 'center' }}>{idx + 1}</td>
+                                                    <td style={{ padding: '6px 8px', border: '1px solid #cbd5e1', fontWeight: '600' }}>{fee.studentName}</td>
+                                                    <td style={{ padding: '6px 8px', border: '1px solid #cbd5e1', textAlign: 'center' }}>{fee.admissionNo}</td>
+                                                    <td style={{ padding: '6px 8px', border: '1px solid #cbd5e1' }}>{fee.fatherName || 'N/A'}</td>
+                                                    <td style={{ padding: '6px 8px', border: '1px solid #cbd5e1' }}>{fee.className}</td>
+                                                    <td style={{ padding: '6px 8px', border: '1px solid #cbd5e1', textAlign: 'right' }}>{expectedVal.toLocaleString()}</td>
+                                                    <td style={{ padding: '6px 8px', border: '1px solid #cbd5e1', textAlign: 'right', color: '#15803d', fontWeight: '500' }}>{paidVal.toLocaleString()}</td>
+                                                    <td style={{ padding: '6px 8px', border: '1px solid #cbd5e1', textAlign: 'right', color: pendingVal > 0 ? '#b91c1c' : '#15803d', fontWeight: '700' }}>{pendingVal.toLocaleString()}</td>
+                                                    <td style={{ padding: '6px 8px', border: '1px solid #cbd5e1', color: '#475569', fontSize: '0.7rem' }}>{dueMonthFilter === 'All' ? dyn.pendingDetailsText : `Pending for ${dueMonthFilter}`}</td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </>
+                        );
+                    })()}
+
+                    {/* Footer */}
+                    <div style={{ marginTop: '2.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', color: '#64748b' }}>
+                        <div>* This is a system-generated official dues report.</div>
+                        <div>Page 1 of 1</div>
+                    </div>
+                </div>
+            ) : (
+                <div id="transport-report-print-overlay" style={{ display: 'none', backgroundColor: '#fff', padding: '2rem', width: '297mm', minHeight: '210mm', color: '#1e293b', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+                    {/* Header */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '3px solid #1e293b', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
+                        <div>
+                            <h1 style={{ fontSize: '1.75rem', fontWeight: '800', color: '#1e293b', margin: 0, textTransform: 'uppercase' }}>BIPS SENIOR SECONDARY SCHOOL</h1>
+                            <p style={{ fontSize: '0.85rem', color: '#64748b', margin: '2px 0 0 0', fontWeight: '500' }}>OFFICIAL TRANSPORT OUTSTANDING REPORT</p>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: '0.85rem', color: '#64748b' }}>Generated on: {new Date().toLocaleString('en-GB')}</div>
+                            <div style={{ fontSize: '0.85rem', color: '#64748b', marginTop: '2px' }}>Academic Session: {localStorage.getItem('activeSession') || '2024-2025'}</div>
+                        </div>
+                    </div>
+
+                    {/* Applied Filters Info */}
+                    <div style={{ backgroundColor: '#f8fafc', padding: '1rem 1.5rem', borderRadius: '8px', border: '1px solid #e2e8f0', display: 'flex', flexWrap: 'wrap', gap: '2rem', marginBottom: '1.5rem', fontSize: '0.85rem' }}>
+                        <div><span style={{ color: '#64748b', fontWeight: '500' }}>Class:</span> <strong style={{ color: '#1e293b' }}>{dueClassFilter}</strong></div>
+                        <div><span style={{ color: '#64748b', fontWeight: '500' }}>Student Type:</span> <strong style={{ color: '#1e293b' }}>{dueRtFilter === 'All' ? 'All Students' : dueRtFilter}</strong></div>
+                        <div><span style={{ color: '#64748b', fontWeight: '500' }}>Payment Status:</span> <strong style={{ color: '#1e293b' }}>{dueStatusFilter === 'All' ? 'All Statuses' : dueStatusFilter}</strong></div>
+                    </div>
+
+                    {/* Summary Metrics */}
+                    {(() => {
+                        const filtered = transportDues
+                            .filter(d => dueClassFilter === 'All' || d.className === dueClassFilter)
+                            .filter(d => {
+                                if (dueRtFilter === 'All') return true;
+                                if (dueRtFilter === 'RT') return d.isRT;
+                                return !d.isRT;
+                            })
+                            .filter(d => {
+                                if (dueSearchQuery === '') return true;
+                                const query = dueSearchQuery.toLowerCase();
+                                return (d.studentName || '').toLowerCase().includes(query) ||
+                                       (d.fatherName || '').toLowerCase().includes(query);
+                            })
+                            .filter(d => {
+                                if (dueStatusFilter === 'Paid') return d.pending === 0;
+                                if (dueStatusFilter === 'Unpaid') return d.totalPaid === 0 && d.monthlyFare > 0;
+                                if (dueStatusFilter === 'Partially Paid') return d.totalPaid > 0 && d.pending > 0;
+                                if (dueStatusFilter === 'Any Outstanding') return d.pending > 0;
+                                return true;
+                            });
+                        
+                        const totalFare = filtered.reduce((s, d) => s + (d.monthlyFare || 0) * 12, 0);
+                        const totalPaid = filtered.reduce((s, d) => s + (d.totalPaid || 0), 0);
+                        const totalPending = filtered.reduce((s, d) => s + (d.pending || 0), 0);
+
+                        return (
+                            <>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
+                                    <div style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '0.75rem', textAlign: 'center', backgroundColor: '#f1f5f9' }}>
+                                        <div style={{ fontSize: '0.7rem', fontWeight: '700', color: '#475569', textTransform: 'uppercase', marginBottom: '2px' }}>Filtered Transport Users</div>
+                                        <div style={{ fontSize: '1.1rem', fontWeight: '800', color: '#1e293b' }}>{filtered.length} Students</div>
+                                    </div>
+                                    <div style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '0.75rem', textAlign: 'center', backgroundColor: '#f8fafc' }}>
+                                        <div style={{ fontSize: '0.7rem', fontWeight: '700', color: '#475569', textTransform: 'uppercase', marginBottom: '2px' }}>Expected (Year)</div>
+                                        <div style={{ fontSize: '1.1rem', fontWeight: '800', color: '#1e293b' }}>₹{totalFare.toLocaleString()}</div>
+                                    </div>
+                                    <div style={{ border: '1px solid #bbf7d0', borderRadius: '6px', padding: '0.75rem', textAlign: 'center', backgroundColor: '#f0fdf4' }}>
+                                        <div style={{ fontSize: '0.7rem', fontWeight: '700', color: '#166534', textTransform: 'uppercase', marginBottom: '2px' }}>Collected (Net)</div>
+                                        <div style={{ fontSize: '1.1rem', fontWeight: '800', color: '#166534' }}>₹{totalPaid.toLocaleString()}</div>
+                                    </div>
+                                    <div style={{ border: '1px solid #fecaca', borderRadius: '6px', padding: '0.75rem', textAlign: 'center', backgroundColor: '#fef2f2' }}>
+                                        <div style={{ fontSize: '0.7rem', fontWeight: '700', color: '#991b1b', textTransform: 'uppercase', marginBottom: '2px' }}>Outstanding</div>
+                                        <div style={{ fontSize: '1.1rem', fontWeight: '800', color: '#991b1b' }}>₹{totalPending.toLocaleString()}</div>
+                                    </div>
+                                </div>
+
+                                {/* Table */}
+                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem' }}>
+                                    <thead>
+                                        <tr style={{ backgroundColor: '#1e293b', color: 'white', textAlign: 'left' }}>
+                                            <th style={{ padding: '6px 8px', border: '1px solid #cbd5e1', width: '40px', textAlign: 'center' }}>S.No.</th>
+                                            <th style={{ padding: '6px 8px', border: '1px solid #cbd5e1', width: '200px' }}>Student Name</th>
+                                            <th style={{ padding: '6px 8px', border: '1px solid #cbd5e1', width: '130px' }}>Father's Name</th>
+                                            <th style={{ padding: '6px 8px', border: '1px solid #cbd5e1', width: '100px' }}>Class</th>
+                                            <th style={{ padding: '6px 8px', border: '1px solid #cbd5e1', width: '150px' }}>Stop Name</th>
+                                            <th style={{ padding: '6px 8px', border: '1px solid #cbd5e1', width: '90px', textAlign: 'right' }}>Monthly Fare (₹)</th>
+                                            <th style={{ padding: '6px 8px', border: '1px solid #cbd5e1', width: '95px', textAlign: 'right' }}>Collected (₹)</th>
+                                            <th style={{ padding: '6px 8px', border: '1px solid #cbd5e1', width: '95px', textAlign: 'right' }}>Outstanding (₹)</th>
+                                            <th style={{ padding: '6px 8px', border: '1px solid #cbd5e1' }}>Paid Months</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {filtered.map((d, idx) => (
+                                            <tr key={d.id} style={{ backgroundColor: idx % 2 === 0 ? '#f8fafc' : 'white', borderBottom: '1px solid #cbd5e1' }}>
+                                                <td style={{ padding: '6px 8px', border: '1px solid #cbd5e1', textAlign: 'center' }}>{idx + 1}</td>
+                                                <td style={{ padding: '6px 8px', border: '1px solid #cbd5e1', fontWeight: '600' }}>{d.studentName}</td>
+                                                <td style={{ padding: '6px 8px', border: '1px solid #cbd5e1' }}>{d.fatherName || 'N/A'}</td>
+                                                <td style={{ padding: '6px 8px', border: '1px solid #cbd5e1' }}>{d.className}</td>
+                                                <td style={{ padding: '6px 8px', border: '1px solid #cbd5e1' }}>{d.stopName}</td>
+                                                <td style={{ padding: '6px 8px', border: '1px solid #cbd5e1', textAlign: 'right' }}>{d.monthlyFare.toLocaleString()}</td>
+                                                <td style={{ padding: '6px 8px', border: '1px solid #cbd5e1', textAlign: 'right', color: '#15803d', fontWeight: '500' }}>{d.totalPaid.toLocaleString()}</td>
+                                                <td style={{ padding: '6px 8px', border: '1px solid #cbd5e1', textAlign: 'right', color: d.pending > 0 ? '#b91c1c' : '#15803d', fontWeight: '700' }}>{d.pending.toLocaleString()}</td>
+                                                <td style={{ padding: '6px 8px', border: '1px solid #cbd5e1', color: '#475569', fontSize: '0.7rem' }}>{(d.paidMonths || []).join(', ') || 'None'}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </>
+                        );
+                    })()}
+
+                    {/* Footer */}
+                    <div style={{ marginTop: '2.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', color: '#64748b' }}>
+                        <div>* This is a system-generated official transport dues report.</div>
+                        <div>Page 1 of 1</div>
+                    </div>
+                </div>
+            )}
+
+            <style>{`
+                @media print {
+                    .no-print { display: none !important; }
+                    body, html { 
+                        background: white !important; 
+                        margin: 0 !important; 
+                        padding: 0 !important; 
+                        height: auto !important;
+                        overflow: visible !important;
+                    }
+                    body * { visibility: hidden; }
+                    
+                    /* Hide main screen area when printing statement or dues report */
+                    body.printing-statement .no-print-area,
+                    body.printing-dues-report .no-print-area {
+                        display: none !important;
+                    }
+
+                    /* Page Settings based on active print layout */
+                    body.printing-receipt {
+                        @page { size: A4 landscape !important; margin: 0 !important; }
+                    }
+                    body.printing-statement {
+                        @page { size: A4 portrait !important; margin: 10mm !important; }
+                    }
+                    body.printing-dues-report {
+                        @page { size: A4 landscape !important; margin: 10mm !important; }
+                    }
+                    
+                    /* Receipt Print Layout */
+                    body.printing-receipt #receipt-modal-overlay,
+                    body.printing-receipt #receipt-modal-overlay * {
+                        visibility: visible !important;
+                    }
+                    body.printing-receipt #receipt-modal-overlay {
+                        position: absolute !important;
+                        top: 0 !important; left: 0 !important;
+                        margin: 0 !important; padding: 0 !important;
+                        display: flex !important;
+                        background: transparent !important;
+                        overflow: visible !important;
+                        visibility: visible !important;
+                    }
+                    body.printing-receipt #printable-receipt-wrapper,
+                    body.printing-receipt #printable-receipt-wrapper * {
+                        visibility: visible !important;
+                    }
+                    body.printing-receipt #printable-receipt { 
+                        position: relative !important; 
+                        width: 297mm !important; 
+                        height: auto !important;
+                        max-height: 210mm !important;
+                        padding: 0 !important;
+                        margin: 0 !important; 
+                        box-shadow: none !important; 
+                        overflow: hidden !important;
+                        page-break-after: avoid !important;
+                        page-break-inside: avoid !important;
+                    }
+
+                    /* Statement Print Layout */
+                    body.printing-statement #statement-print-overlay,
+                    body.printing-statement #statement-print-overlay * {
+                        visibility: visible !important;
+                    }
+                    body.printing-statement #statement-print-overlay {
+                        position: absolute !important;
+                        top: 0 !important; left: 0 !important;
+                        margin: 0 !important; padding: 0 !important;
+                        display: block !important;
+                        background: white !important;
+                        overflow: visible !important;
+                        visibility: visible !important;
+                    }
+
+                    /* Dues Report Print Layout */
+                    body.printing-dues-report #dues-report-print-overlay,
+                    body.printing-dues-report #dues-report-print-overlay * {
+                        visibility: visible !important;
+                    }
+                    body.printing-dues-report #dues-report-print-overlay {
+                        position: absolute !important;
+                        top: 0 !important; left: 0 !important;
+                        margin: 0 !important; padding: 0 !important;
+                        display: block !important;
+                        background: white !important;
+                        overflow: visible !important;
+                        visibility: visible !important;
+                    }
+
+                    /* Transport Report Print Layout */
+                    body.printing-dues-report #transport-report-print-overlay,
+                    body.printing-dues-report #transport-report-print-overlay * {
+                        visibility: visible !important;
+                    }
+                    body.printing-dues-report #transport-report-print-overlay {
+                        position: absolute !important;
+                        top: 0 !important; left: 0 !important;
+                        margin: 0 !important; padding: 0 !important;
+                        display: block !important;
+                        background: white !important;
+                        overflow: visible !important;
+                        visibility: visible !important;
+                    }
+                }
+            `}</style>
+        </>
     );
 };
 

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNotification } from '../../context/NotificationContext';
 import { Printer, Download, Pencil, Trash2, Search, Users } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
 
 const generateRandomPassword = () => {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -31,6 +32,13 @@ const Students: React.FC = () => {
     const [filterStatus, setFilterStatus] = useState('');
     const [searchQuery, setSearchQuery] = useState('');
     const [filterAddress, setFilterAddress] = useState('');
+    const location = useLocation();
+
+    useEffect(() => {
+        if (location.state && (location.state as any).searchAdmissionNo) {
+            setSearchQuery((location.state as any).searchAdmissionNo);
+        }
+    }, [location.state]);
 
     useEffect(() => {
         if (filterClassId) {
@@ -77,6 +85,7 @@ const Students: React.FC = () => {
     const [address, setAddress] = useState('');
     const [bloodGroup, setBloodGroup] = useState('');
     const [isRT, setIsRT] = useState(false);
+    const [isThirdChild, setIsThirdChild] = useState(false);
     const [category, setCategory] = useState('');
     const [religion, setReligion] = useState('');
     const [nationality, setNationality] = useState('');
@@ -91,7 +100,7 @@ const Students: React.FC = () => {
     const [admissionDate, setAdmissionDate] = useState('');
     const [rollNumber, setRollNumber] = useState('');
     const [medium, setMedium] = useState('');
-    const [academicYear, setAcademicYear] = useState('');
+    const [academicYear, setAcademicYear] = useState(localStorage.getItem('activeSession') || '2026-2027');
     const [house, setHouse] = useState('');
 
     const [prevSchoolName, setPrevSchoolName] = useState('');
@@ -117,6 +126,14 @@ const Students: React.FC = () => {
         fetchStudents();
         fetchClasses();
         fetchTransportStops();
+
+        const handleSessionChange = () => {
+            fetchStudents();
+        };
+        window.addEventListener('activeSessionChanged', handleSessionChange);
+        return () => {
+            window.removeEventListener('activeSessionChanged', handleSessionChange);
+        };
     }, []);
 
     const fetchTransportStops = async () => {
@@ -142,7 +159,8 @@ const Students: React.FC = () => {
 
     const fetchStudents = async () => {
         try {
-            const res = await axios.get('/erp-api/admin/students');
+            const session = localStorage.getItem('activeSession') || '2024-2025';
+            const res = await axios.get(`/erp-api/admin/students?session=${session}`);
             setStudents(res.data);
             setCurrentPage(1);
         } catch (err) {
@@ -163,10 +181,10 @@ const Students: React.FC = () => {
         setEditingId(null);
         setFirstName(''); setLastName(''); setEmail(''); setPhone(''); setPassword(generateRandomPassword()); setAdmissionNo('');
         setClassId(''); setSectionId(''); setTransportStopId(''); setStatus('Active');
-        setGender(''); setDob(''); setAddress(''); setBloodGroup(''); setIsRT(false); setCategory('');
+        setGender(''); setDob(''); setAddress(''); setBloodGroup(''); setIsRT(false); setIsThirdChild(false); setCategory('');
         setReligion(''); setNationality(''); setAadhaar(''); setPhoto('');
         setPrevSchoolName(''); setPrevClass(''); setPrevSchoolAddress(''); setPrevMarks(''); setLeavingReason(''); setSiblingInfo('');
-        setAdmissionDate(''); setRollNumber(''); setMedium(''); setAcademicYear(''); setHouse('');
+        setAdmissionDate(''); setRollNumber(''); setMedium(''); setAcademicYear(localStorage.getItem('activeSession') || '2026-2027'); setHouse('');
         setFatherName(''); setFatherMobile(''); setFatherOccupation(''); setFatherQualification(''); setFatherEmail('');
         setMotherName(''); setMotherMobile(''); setMotherOccupation(''); setMotherQualification('');
         setActiveTab('personal');
@@ -195,6 +213,7 @@ const Students: React.FC = () => {
         setAddress(student.user?.address || student.address || '');
         setBloodGroup(student.bloodGroup || '');
         setIsRT(student.isRT || false);
+        setIsThirdChild(student.isThirdChild || false);
         setCategory(student.category || '');
         setReligion(student.religion || '');
         setNationality(student.nationality || '');
@@ -250,7 +269,7 @@ const Students: React.FC = () => {
                     classId: classId ? classId.trim() : null, 
                     sectionId: sectionId ? sectionId.trim() : null,
                     transportStopId: transportStopId ? transportStopId : null,
-                    gender, dob, address, bloodGroup, isRT, category, religion, nationality, aadhaar, photo,
+                    gender, dob, address, bloodGroup, isRT, isThirdChild, category, religion, nationality, aadhaar, photo,
                     prevSchoolName, prevClass, prevSchoolAddress, prevMarks, leavingReason, siblingInfo,
                     admissionDate, rollNumber, medium, academicYear, house,
                     fatherName, fatherMobile, fatherOccupation, fatherQualification, fatherEmail, status,
@@ -258,32 +277,17 @@ const Students: React.FC = () => {
                 });
                 addNotification('admission', 'Student Updated', `${firstName} ${lastName} has been updated successfully!`);
              } else {
-                // Find the highest existing admission number to continue the sequence
-                let nextNumber = 1;
-                if (students.length > 0) {
-                    const numbers = students.map(s => {
-                        const val = s.admissionNo || '';
-                        if (val.startsWith('BIPS/26/')) {
-                            const num = parseInt(val.split('/')[2]);
-                            return isNaN(num) ? 0 : num;
-                        }
-                        return 0;
-                    });
-                    nextNumber = Math.max(...numbers, 0) + 1;
-                }
-                
-                // Final safety check: ensure the number hasn't been used in the current session
-                const finalAdmissionNo = `BIPS/26/${String(nextNumber).padStart(3, '0')}`;
-                
-                await axios.post('/erp-api/admin/students', {
-                    firstName, lastName, email: finalEmail, phone, password, admissionNo: finalAdmissionNo, 
+                const res = await axios.post('/erp-api/admin/students', {
+                    firstName, lastName, email: finalEmail, phone, password, admissionNo, 
                     classId, sectionId, transportStopId,
-                    gender, dob, address, bloodGroup, isRT, category, religion, nationality, aadhaar, photo,
+                    gender, dob, address, bloodGroup, isRT, isThirdChild, category, religion, nationality, aadhaar, photo,
                     prevSchoolName, prevClass, prevSchoolAddress, prevMarks, leavingReason, siblingInfo,
                     admissionDate, rollNumber, medium, academicYear, house,
                     fatherName, fatherMobile, fatherOccupation, fatherQualification, fatherEmail, status,
                     motherName, motherMobile, motherOccupation, motherQualification
                 });
+                
+                const finalAdmissionNo = res.data.studentProfile?.admissionNo || admissionNo;
                 addNotification('admission', 'New Admission', `${firstName} ${lastName} has been admitted as ${finalAdmissionNo}!`);
             }
             
@@ -444,8 +448,11 @@ const Students: React.FC = () => {
 
     const handleExportExcel = () => {
         const headers = ['S.R No', 'STUDENT ID', 'NAME', 'FATHER NAME', 'ADDRESS', 'CLASS', 'SECTION', 'STATUS'];
+        const session = localStorage.getItem('activeSession') || '2026-2027';
         
         const csvContent = [
+            `"Academic Session: ${session}"`,
+            "",
             headers.join(','),
             ...filteredStudents.map((s, idx) => {
                 const srNo = s.admissionNo || `BIPS/26/${String(filteredStudents.length - idx).padStart(3, '0')}`;
@@ -466,7 +473,7 @@ const Students: React.FC = () => {
         if (link.download !== undefined) {
             const url = URL.createObjectURL(blob);
             link.setAttribute('href', url);
-            link.setAttribute('download', 'student_records.csv');
+            link.setAttribute('download', `student_records_${session}.csv`);
             link.style.visibility = 'hidden';
             document.body.appendChild(link);
             link.click();
@@ -623,6 +630,30 @@ const Students: React.FC = () => {
                                     <option value="Yes">Yes</option>
                                 </select>
                             </div>
+
+                             <div className="form-group">
+                                 <label>Third Child Student</label>
+                                 <div style={{ display: 'flex', gap: '1.5rem', height: '42px', alignItems: 'center' }}>
+                                     <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 500, cursor: 'pointer', color: '#475569', margin: 0 }}>
+                                         <input 
+                                             type="radio" 
+                                             name="isThirdChild" 
+                                             checked={!isThirdChild} 
+                                             onChange={() => setIsThirdChild(false)} 
+                                             style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                                         /> No
+                                     </label>
+                                     <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 500, cursor: 'pointer', color: '#475569', margin: 0 }}>
+                                         <input 
+                                             type="radio" 
+                                             name="isThirdChild" 
+                                             checked={isThirdChild} 
+                                             onChange={() => setIsThirdChild(true)} 
+                                             style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                                         /> Yes
+                                     </label>
+                                 </div>
+                             </div>
 
                             <div className="form-group">
                                 <label>Category</label>

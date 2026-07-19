@@ -57,6 +57,7 @@ model StudentProfile {
   dateOfBirth   String?
   bloodGroup    String?
   isRT          Boolean @default(false)
+  isThirdChild  Boolean @default(false)
   category      String?
   religion      String?
   nationality   String?
@@ -89,6 +90,11 @@ model StudentProfile {
   concessions Concession[]
   marks       Mark[]
   fees        FeePayment[]
+  sessionId   String?        @db.ObjectId
+  session     Session?       @relation(fields: [sessionId], references: [id])
+
+  @@index([status, academicYear])
+  @@index([classId])
 }
 
 model TeacherProfile {
@@ -168,6 +174,8 @@ model Attendance {
   student   StudentProfile? @relation(fields: [studentId], references: [id])
   teacherId String?         @db.ObjectId
   teacher   TeacherProfile? @relation(fields: [teacherId], references: [id]) // For teacher attendance
+
+  @@index([date])
 }
 
 model Timetable {
@@ -234,6 +242,10 @@ model FeePayment {
   submittedBy    String? // Name or ID of the person who submitted
   approvedBy     String? // Name or ID of the person who approved
   approvalDate   DateTime? // Date and time when approved or rejected
+  sessionId      String?        @db.ObjectId
+  session        Session?       @relation(fields: [sessionId], references: [id])
+
+  @@index([status, paymentDate])
 }
 
 model FeeHead {
@@ -285,4 +297,15 @@ model Expense {
   status        String   @default("APPROVED") // APPROVED, PENDING
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+}
+
+model Session {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  name        String   @unique // e.g. "2024-2025"
+  startDate   DateTime
+  endDate     DateTime
+  isDefault   Boolean  @default(false)
+
+  studentProfiles StudentProfile[]
+  feePayments     FeePayment[]
 }

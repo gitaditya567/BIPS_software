@@ -96,8 +96,21 @@ const ReportCards: React.FC = () => {
     const [showDropdown, setShowDropdown] = useState(false);
     // Selection state
     const [selectedStudent, setSelectedStudent] = useState<any>(null);
-    const [sessionStart, setSessionStart] = useState('24');
-    const [sessionEnd, setSessionEnd] = useState('25');
+    const getSessionYears = () => {
+        const session = localStorage.getItem('activeSession') || '2024-2025';
+        const parts = session.split('-');
+        if (parts.length === 2) {
+            return {
+                start: parts[0].substring(2),
+                end: parts[1].substring(2)
+            };
+        }
+        return { start: '24', end: '25' };
+    };
+
+    const initialSession = getSessionYears();
+    const [sessionStart, setSessionStart] = useState(initialSession.start);
+    const [sessionEnd, setSessionEnd] = useState(initialSession.end);
 
     // Marks State
     const [marks, setMarks] = useState<any>({});
@@ -131,6 +144,17 @@ const ReportCards: React.FC = () => {
 
     // Initialize and fetch data
     useEffect(() => {
+        const handleSessionChange = () => {
+            const activeSession = localStorage.getItem('activeSession') || '2024-2025';
+            const parts = activeSession.split('-');
+            if (parts.length === 2) {
+                setSessionStart(parts[0].substring(2));
+                setSessionEnd(parts[1].substring(2));
+            }
+        };
+        window.addEventListener('activeSessionChanged', handleSessionChange);
+        handleSessionChange();
+
         const fetchStudents = async () => {
             try {
                 const res = await axios.get('/erp-api/admin/students');
@@ -172,6 +196,10 @@ const ReportCards: React.FC = () => {
             initialOverallDev[trait] = { term1: '', term2: '', overall: '' };
         });
         setOverallDev(initialOverallDev);
+
+        return () => {
+            window.removeEventListener('activeSessionChanged', handleSessionChange);
+        };
     }, []);
 
     const handleMarkChange = (subId: string, field: string, val: string) => {

@@ -2,8 +2,11 @@ import express from 'express';
 import { Role } from '@prisma/client';
 import prisma from '../lib/prisma';
 import bcrypt from 'bcrypt';
+import { getExpectedFeeAmount } from '../lib/feeUtils';
 
 const router = express.Router();
+
+import { getCache, setCache, invalidateCache } from '../lib/cache';
 
 // Add Class
 router.post('/classes', async (req, res) => {
@@ -41,22 +44,117 @@ router.post('/classes/:id/sections', async (req, res) => {
 // Get Students
 router.get('/students', async (req, res) => {
     try {
-        const students = await prisma.studentProfile.findMany({
-            include: {
-                user: true,
-                class: true,
-                section: true
+        let sessionQuery = req.query.session as string;
+        if (!sessionQuery) {
+            const defSession = await prisma.session.findFirst({ where: { isDefault: true } });
+            sessionQuery = defSession?.name || '2024-2025';
+        }
+
+        const cacheKey = `students:${sessionQuery}`;
+        const cached = getCache(cacheKey);
+        if (cached) return res.json(cached);
+
+        const getAlternativeSessionName = (session: string): string => {
+            const parts = session.split('-');
+            if (parts.length === 2) {
+                const start = parts[0];
+                const end = parts[1];
+                if (end.length === 4) {
+                    return `${start}-${end.slice(2)}`;
+                } else if (end.length === 2) {
+                    return `${start}-20${end}`;
+                }
+            }
+            return session;
+        };
+
+        const altSession = getAlternativeSessionName(sessionQuery);
+
+        const students: any[] = await prisma.studentProfile.findMany({
+            where: {
+                ...(sessionQuery && sessionQuery !== 'All' ? {
+                    OR: [
+                        { academicYear: sessionQuery },
+                        { academicYear: altSession }
+                    ]
+                } : {})
+            },
+            select: {
+                id: true,
+                admissionNo: true,
+                studentId: true,
+                rollNumber: true,
+                status: true,
+                academicYear: true,
+                dateOfBirth: true,
+                gender: true,
+                bloodGroup: true,
+                category: true,
+                religion: true,
+                nationality: true,
+                aadhaarNumber: true,
+                photo: true,
+                medium: true,
+                house: true,
+                admissionDate: true,
+                classId: true,
+                sectionId: true,
+                parentId: true,
+                isRT: true,
+                isThirdChild: true,
+                transportStopId: true,
+                previousSessionDue: true,
+                fatherName: true,
+                fatherMobile: true,
+                fatherOccupation: true,
+                fatherQualification: true,
+                fatherEmail: true,
+                motherName: true,
+                motherMobile: true,
+                motherOccupation: true,
+                motherQualification: true,
+                prevSchoolName: true,
+                prevClass: true,
+                prevSchoolAddress: true,
+                prevMarks: true,
+                leavingReason: true,
+                siblingInfo: true,
+                sessionId: true,
+                user: {
+                    select: {
+                        id: true,
+                        name: true,
+                        email: true,
+                        phone: true,
+                        address: true
+                    }
+                },
+                class: {
+                    select: {
+                        id: true,
+                        name: true
+                    }
+                },
+                section: {
+                    select: {
+                        id: true,
+                        name: true
+                    }
+                }
             }
         });
-        res.json(students.map(s => ({
+        const result = students.map((s: any) => ({
             ...s,
             name: s.user.name,
             email: s.user.email,
+            phone: s.user.phone,
+            address: s.user.address,
             className: s.class?.name || 'N/A',
             sectionName: s.section?.name || 'N/A',
-            // @ts-ignore
             status: s.status || 'Active'
-        })));
+        }));
+        setCache(cacheKey, result, 60_000);
+        res.json(result);
     } catch (error) {
         res.status(500).json({ error: 'Failed to fetch students' });
     }
@@ -358,7 +456,7 @@ router.post('/students', async (req, res) => {
     try {
         const {
             email, password, firstName, lastName, phone, admissionNo, classId, sectionId,
-            gender, dob, bloodGroup, isRT, category, religion, nationality, aadhaar, address, photo,
+            gender, dob, bloodGroup, isRT, isThirdChild, category, religion, nationality, aadhaar, address, photo,
             prevSchoolName, prevClass, prevSchoolAddress, prevMarks, transportStopId
         } = req.body;
 
@@ -388,6 +486,33 @@ router.post('/students', async (req, res) => {
 
         const studentId = `STU-${year}-${String(nextCount).padStart(4, '0')}`;
 
+        // Auto-generate Admission Number if empty
+        let finalAdmissionNo = admissionNo;
+        if (!finalAdmissionNo || finalAdmissionNo.trim() === '') {
+            const currentYearLastTwo = new Date().getFullYear().toString().slice(-2); // e.g. "26"
+            const prefix = `BIPS/${currentYearLastTwo}/`;
+            
+            const allStudents = await prisma.studentProfile.findMany({
+                where: { admissionNo: { startsWith: prefix } },
+                select: { admissionNo: true }
+            });
+            
+            let nextNum = 1;
+            if (allStudents.length > 0) {
+                const numbers = allStudents.map(s => {
+                    const val = s.admissionNo || '';
+                    const parts = val.split('/');
+                    if (parts.length >= 3) {
+                        const num = parseInt(parts[2]);
+                        return isNaN(num) ? 0 : num;
+                    }
+                    return 0;
+                });
+                nextNum = Math.max(...numbers, 0) + 1;
+            }
+            finalAdmissionNo = `${prefix}${String(nextNum).padStart(3, '0')}`;
+        }
+
         const newStudent = await prisma.user.create({
             data: {
                 email,
@@ -398,7 +523,7 @@ router.post('/students', async (req, res) => {
                 address,
                 studentProfile: {
                     create: {
-                        admissionNo,
+                        admissionNo: finalAdmissionNo,
                         studentId,
                         classId: classId || undefined,
                         sectionId: sectionId || undefined,
@@ -408,6 +533,7 @@ router.post('/students', async (req, res) => {
                         dateOfBirth: dob,
                         bloodGroup,
                         isRT: Boolean(isRT),
+                        isThirdChild: Boolean(isThirdChild),
                         category,
                         religion,
                         nationality,
@@ -440,6 +566,8 @@ router.post('/students', async (req, res) => {
             include: { studentProfile: true }
         });
 
+        invalidateCache('students');
+        invalidateCache('dashboard');
         res.json(newStudent);
     } catch (error: any) {
         console.error('Student Creation Error Details:', {
@@ -476,7 +604,7 @@ router.put('/students/:id', async (req, res) => {
         const { id } = req.params;
         const {
             email, firstName, lastName, phone, admissionNo, classId, sectionId,
-            gender, dob, bloodGroup, isRT, category, religion, nationality, aadhaar, address, photo,
+            gender, dob, bloodGroup, isRT, isThirdChild, category, religion, nationality, aadhaar, address, photo,
             prevSchoolName, prevClass, prevSchoolAddress, prevMarks, password, transportStopId
         } = req.body;
 
@@ -525,6 +653,7 @@ router.put('/students/:id', async (req, res) => {
                 dateOfBirth: dob,
                 bloodGroup,
                 isRT: Boolean(isRT),
+                isThirdChild: Boolean(isThirdChild),
                 category,
                 religion,
                 nationality,
@@ -612,39 +741,166 @@ router.delete('/students/:id', async (req, res) => {
                 where: { id: profile.userId }
             });
         }
+        invalidateCache('students');
+        invalidateCache('dashboard');
         res.json({ success: true, message: 'Student deleted' });
     } catch (error) {
         res.status(500).json({ error: 'Failed' });
     }
 });
 
+function isPaymentInAcademicYearLocal(p: any, academicYear: string | null): boolean {
+    if (!academicYear) return true;
+    const parts = academicYear.split('-');
+    if (parts.length !== 2) return true;
+    let startYear = parts[0];
+    let endYear = parts[1];
+    
+    if (startYear.length === 2) startYear = `20${startYear}`;
+    if (endYear.length === 2) endYear = `20${endYear}`;
+
+    const month = p.month || '';
+    const year = p.year || '';
+
+    const pDate = new Date(p.paymentDate);
+    const startSessionDate = new Date(parseInt(startYear), 3, 1); // April 1st
+    const endSessionDate = new Date(parseInt(endYear), 2, 31, 23, 59, 59); // March 31st
+    const isWithinDateRange = pDate >= startSessionDate && pDate <= endSessionDate;
+
+    if (p.feeHead && p.feeHead.toLowerCase().includes('previous dues')) {
+        return isWithinDateRange;
+    }
+
+    const springMonths = ['January', 'February', 'March'];
+    const autumnMonths = ['April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+    if (springMonths.includes(month)) {
+        return year === endYear;
+    }
+    if (autumnMonths.includes(month)) {
+        return year === startYear;
+    }
+
+    return isWithinDateRange;
+}
+
 // Dashboard Stats
 router.get('/dashboard/stats', async (req, res) => {
     try {
-        const totalStudents = await prisma.user.count({ where: { role: 'STUDENT' } });
-        const totalTeachers = await prisma.user.count({ where: { role: 'TEACHER' } });
-        
+        const sessionQuery = req.query.session as string;
+        const altSession = (() => {
+            if (sessionQuery) {
+                const parts = sessionQuery.split('-');
+                if (parts.length === 2) {
+                    const start = parts[0];
+                    const end = parts[1];
+                    if (end.length === 4) {
+                        return `${start}-${end.slice(2)}`;
+                    } else if (end.length === 2) {
+                        return `${start}-20${end}`;
+                    }
+                }
+            }
+            return sessionQuery;
+        })();
+
+        const statsCacheKey = `dashboard:stats:${sessionQuery || 'all'}`;
+        const cachedStats = getCache(statsCacheKey);
+        if (cachedStats) return res.json(cachedStats);
+
         const now = new Date();
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-        
-        const monthlyFees = await prisma.feePayment.aggregate({
-            _sum: { amountPaid: true },
-            where: {
-                paymentDate: { gte: startOfMonth },
-                status: 'APPROVED'
-            }
-        });
-        const monthlyCollection = monthlyFees._sum.amountPaid || 0;
+        const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
-        // Fetch daily collections for the current month for chart
-        const allMonthFees = await prisma.feePayment.findMany({
-            where: {
-                paymentDate: { gte: startOfMonth },
-                status: 'APPROVED'
-            },
-            select: { paymentDate: true, amountPaid: true }
-        });
-        
+        const [
+            totalStudents,
+            totalTeachers,
+            allMonthFees,
+            attendances,
+            pendingPayments,
+            newAdmissions,
+            recentFees,
+            recentAdmissions
+        ] = await Promise.all([
+            prisma.studentProfile.count({
+                where: {
+                    status: 'Active',
+                    ...(sessionQuery && sessionQuery !== 'All' ? {
+                        OR: [
+                            { academicYear: sessionQuery },
+                            { academicYear: altSession }
+                        ]
+                    } : {})
+                }
+            }),
+            prisma.teacherProfile.count(),
+            prisma.feePayment.findMany({
+                where: {
+                    paymentDate: { gte: startOfMonth },
+                    status: 'APPROVED'
+                },
+                select: { amountPaid: true, paymentDate: true, month: true, year: true, feeHead: true }
+            }),
+            prisma.attendance.findMany({
+                where: { 
+                    date: { 
+                        gte: startOfDay,
+                        lt: new Date(startOfDay.getTime() + 24 * 60 * 60 * 1000)
+                    }
+                },
+                select: { status: true }
+            }),
+            prisma.feePayment.aggregate({
+                where: { status: 'PENDING' },
+                _sum: { amountPaid: true },
+                _count: { id: true }
+            }),
+            prisma.studentProfile.count({
+                where: { 
+                    admissionDate: { gte: startOfMonth },
+                    ...(sessionQuery && sessionQuery !== 'All' ? {
+                        OR: [
+                            { academicYear: sessionQuery },
+                            { academicYear: altSession }
+                        ]
+                    } : {})
+                }
+            }),
+            prisma.feePayment.findMany({
+                take: 4,
+                orderBy: { paymentDate: 'desc' },
+                select: {
+                    id: true,
+                    amountPaid: true,
+                    paymentDate: true,
+                    status: true,
+                    student: {
+                        select: {
+                            id: true,
+                            admissionNo: true,
+                            user: { select: { name: true } }
+                        }
+                    }
+                }
+            }),
+            prisma.studentProfile.findMany({
+                take: 4,
+                orderBy: { admissionDate: 'desc' },
+                select: {
+                    id: true,
+                    admissionDate: true,
+                    user: { select: { name: true } },
+                    class: { select: { name: true } }
+                }
+            })
+        ]);
+
+        let monthlyFiltered = allMonthFees;
+        if (sessionQuery && sessionQuery !== 'All') {
+            monthlyFiltered = allMonthFees.filter(p => isPaymentInAcademicYearLocal(p, sessionQuery));
+        }
+        const monthlyCollection = monthlyFiltered.reduce((sum, p) => sum + (p.amountPaid || 0), 0);
+
         // Prepare daily collection array (1 to current day)
         const currentDay = now.getDate();
         const dailyCollections = Array.from({ length: currentDay }, (_, i) => {
@@ -656,47 +912,19 @@ router.get('/dashboard/stats', async (req, res) => {
             };
         });
 
-        allMonthFees.forEach(fee => {
+        monthlyFiltered.forEach(fee => {
             const dayIndex = new Date(fee.paymentDate).getDate() - 1;
             if (dailyCollections[dayIndex]) {
                 dailyCollections[dayIndex].amount += fee.amountPaid || 0;
             }
         });
         
-        const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        const attendances = await prisma.attendance.findMany({
-            where: { 
-                date: { 
-                    gte: startOfDay,
-                    lt: new Date(startOfDay.getTime() + 24 * 60 * 60 * 1000)
-                }
-            }
-        });
         const presentCount = attendances.filter(a => a.status === 'Present').length;
         const totalAttendanceCount = attendances.length;
         const attendancePercentage = totalAttendanceCount > 0 ? Math.round((presentCount / totalAttendanceCount) * 100) : 0;
         
-        const pendingFeesAgg = await prisma.feePayment.aggregate({
-            _sum: { totalFee: true },
-            where: { status: 'PENDING' }
-        });
-        const pendingFees = pendingFeesAgg._sum.totalFee || 0;
-        
-        const newAdmissions = await prisma.studentProfile.count({
-            where: { admissionDate: { gte: startOfMonth } }
-        });
-        
-        const recentFees = await prisma.feePayment.findMany({
-            take: 4,
-            orderBy: { paymentDate: 'desc' },
-            include: { student: { include: { user: true } } }
-        });
-        
-        const recentAdmissions = await prisma.studentProfile.findMany({
-            take: 4,
-            orderBy: { admissionDate: 'desc' },
-            include: { user: true, class: true }
-        });
+        let pendingFiltered = pendingPayments;
+        const pendingFees = (pendingPayments as any)._sum?.amount || 0;
         
         let allActivities: any[] = [];
         
@@ -730,7 +958,7 @@ router.get('/dashboard/stats', async (req, res) => {
         allActivities.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
         const recentActivities = allActivities.slice(0, 4).map(a => ({ ...a, time: a.time.toISOString() }));
         
-        res.json({
+        const statsResult = {
             stats: {
                 totalStudents,
                 totalTeachers,
@@ -741,11 +969,296 @@ router.get('/dashboard/stats', async (req, res) => {
                 dailyCollections
             },
             recentActivities
-        });
-
+        };
+        setCache(statsCacheKey, statsResult, 90_000);
+        res.json(statsResult);
+ 
     } catch (error) {
         console.error(error);
         res.status(500).json({ error: 'Failed to fetch dashboard stats' });
+    }
+});
+
+// Dashboard Revenue Stats
+router.get('/dashboard/revenue', async (req, res) => {
+    try {
+        const sessionQuery = req.query.session as string;
+        const altSession = (() => {
+            if (sessionQuery) {
+                const parts = sessionQuery.split('-');
+                if (parts.length === 2) {
+                    const start = parts[0];
+                    const end = parts[1];
+                    if (end.length === 4) {
+                        return `${start}-${end.slice(2)}`;
+                    } else if (end.length === 2) {
+                        return `${start}-20${end}`;
+                    }
+                }
+            }
+            return sessionQuery;
+        })();
+
+        const revenueCacheKey = `dashboard:revenue:${sessionQuery || 'all'}`;
+        const cachedRevenue = getCache(revenueCacheKey);
+        if (cachedRevenue) return res.json(cachedRevenue);
+
+        let dateFilter = {};
+        if (sessionQuery && sessionQuery !== 'All') {
+            const parts = sessionQuery.split('-');
+            if (parts.length === 2) {
+                let startYear = parts[0];
+                let endYear = parts[1];
+                if (startYear.length === 2) startYear = `20${startYear}`;
+                if (endYear.length === 2) endYear = `20${endYear}`;
+                const startDate = new Date(`${startYear}-04-01T00:00:00.000Z`);
+                const endDate = new Date(`${endYear}-03-31T23:59:59.999Z`);
+                dateFilter = {
+                    paymentDate: {
+                        gte: startDate,
+                        lte: endDate
+                    }
+                };
+            }
+        }
+
+        const [students, classes, feeHeads, allSessionPayments] = await Promise.all([
+            prisma.studentProfile.findMany({
+                where: { 
+                    status: 'Active',
+                    ...(sessionQuery && sessionQuery !== 'All' ? {
+                        OR: [
+                            { academicYear: sessionQuery },
+                            { academicYear: altSession }
+                        ]
+                    } : {})
+                },
+                select: {
+                    id: true,
+                    admissionNo: true,
+                    isRT: true,
+                    isThirdChild: true,
+                    classId: true,
+                    transportStopId: true,
+                    previousSessionDue: true,
+                    class: {
+                        select: {
+                            id: true,
+                            name: true,
+                            feeStructure: true
+                        }
+                    },
+                    transportStop: {
+                        select: {
+                            id: true,
+                            busFare: true
+                        }
+                    }
+                }
+            }),
+            prisma.class.findMany(),
+            prisma.feeHead.findMany(),
+            prisma.feePayment.findMany({
+                where: { 
+                    status: 'APPROVED',
+                    ...dateFilter
+                }
+            })
+        ]);
+
+        let sessionPaymentsFiltered = allSessionPayments;
+        if (sessionQuery && sessionQuery !== 'All') {
+            sessionPaymentsFiltered = allSessionPayments.filter(p => isPaymentInAcademicYearLocal(p, sessionQuery));
+        }
+
+        // Group payments by student ID in memory
+        const paymentsByStudent: Record<string, typeof sessionPaymentsFiltered> = {};
+        sessionPaymentsFiltered.forEach(p => {
+            if (!paymentsByStudent[p.studentId]) {
+                paymentsByStudent[p.studentId] = [];
+            }
+            paymentsByStudent[p.studentId].push(p);
+        });
+
+        // Link payments to student objects
+        students.forEach(s => {
+            (s as any).fees = paymentsByStudent[s.id] || [];
+        });
+
+        // Calculate elapsed months for current session dues
+        const currentDate = new Date();
+        const currentMonth = currentDate.getMonth();
+        const sessionStartMonth = 3; // April
+        let monthsToCalculate = 0;
+        if (currentMonth >= sessionStartMonth) {
+            monthsToCalculate = (currentMonth - sessionStartMonth) + 1;
+        } else {
+            monthsToCalculate = (currentMonth + 12 - sessionStartMonth) + 1;
+        }
+        monthsToCalculate = Math.min(12, Math.max(1, monthsToCalculate));
+
+        const totalCollectedSession = sessionPaymentsFiltered.reduce((sum, p) => sum + (p.amountPaid || 0), 0);
+        const totalConcessionsSession = sessionPaymentsFiltered.reduce((sum, p) => sum + (p.discount || 0), 0);
+
+        let schoolStudentsCount = students.length;
+        let schoolExpectedRevenue = 0;
+        let schoolCollected = totalCollectedSession;
+        let schoolOutstanding = 0;
+        let schoolConcessions = totalConcessionsSession;
+
+        let schoolTuitionExpected = 0;
+        let schoolTransportExpected = 0;
+        let schoolAdmissionExpected = 0;
+        let schoolOtherExpected = 0;
+        let schoolPrevDuesExpected = 0;
+        let schoolRteExpected = 0;
+        let schoolThirdChildExpected = 0;
+
+        const classWiseMatrix = classes.map(cls => {
+            const classStudents = students.filter(s => s.classId === cls.id);
+            const classFeeStructure = cls.feeStructure ? (cls.feeStructure as any) : {};
+
+            let yearlyProjected = 0;
+            let collected = 0;
+            let discountGiven = 0;
+            let classOutstanding = 0;
+
+            let tuitionExpected = 0;
+            let transportExpected = 0;
+            let admissionExpected = 0;
+            let otherExpected = 0;
+            let prevDuesExpected = 0;
+            let rteExpected = 0;
+            let thirdChildExpected = 0;
+
+            classStudents.forEach(student => {
+                const prevDue = student.previousSessionDue || 0;
+                prevDuesExpected += prevDue;
+
+                const busFare = student.transportStop?.busFare || 0;
+                const transportProj = busFare * 12;
+                transportExpected += transportProj;
+
+                let studentMonthlyProj = 0;
+                let studentOneTimeProj = 0;
+                let studentMonthlyFeeAmount = 0;
+
+                Object.entries(classFeeStructure).forEach(([headName, amountVal]) => {
+                    const headNameLower = headName.toLowerCase();
+                    const isRteHead = headNameLower.includes('rte students fees');
+                    const isThirdChildHead = headNameLower.includes('third child one time fees');
+
+                    const head = feeHeads.find(h => h.name.toLowerCase() === headName.toLowerCase());
+                    if (!head && !isRteHead && !isThirdChildHead) return; // Skip unregistered helper fee heads
+
+                    const activeHead = head || { name: headName, type: 'One-time' };
+                    const amount = getExpectedFeeAmount(student, activeHead, classFeeStructure, cls.name);
+                    if (amount <= 0) return;
+
+                    const isMonthly = activeHead.type === 'Monthly';
+                    if (headNameLower.includes('rte students fees')) {
+                        rteExpected += amount;
+                        studentOneTimeProj += amount;
+                    } else if (headNameLower.includes('third child one time fees')) {
+                        thirdChildExpected += amount;
+                        studentOneTimeProj += amount;
+                    } else if (isMonthly) {
+                        studentMonthlyProj += amount * 12;
+                        studentMonthlyFeeAmount += amount;
+                        if (headNameLower.includes('tuition')) {
+                            tuitionExpected += amount * 12;
+                        } else {
+                            otherExpected += amount * 12;
+                        }
+                    } else {
+                        studentOneTimeProj += amount;
+                        if (headNameLower.includes('admission') || headNameLower.includes('annual') || headNameLower.includes('exam')) {
+                            admissionExpected += amount;
+                        } else {
+                            otherExpected += amount;
+                        }
+                    }
+                });
+
+                const totalStudentProjected = prevDue + transportProj + studentMonthlyProj + studentOneTimeProj;
+                yearlyProjected += totalStudentProjected;
+
+                // Calculate outstanding up to elapsed month
+                const expectedMonthlyUpToNow = studentMonthlyFeeAmount * monthsToCalculate;
+                const expectedTransportUpToNow = busFare * monthsToCalculate;
+                const expectedUpToNow = prevDue + studentOneTimeProj + expectedMonthlyUpToNow + expectedTransportUpToNow;
+
+                let totalPaidAndDiscount = 0;
+                (student as any).fees.forEach((payment: any) => {
+                    collected += payment.amountPaid || 0;
+                    discountGiven += payment.discount || 0;
+                    totalPaidAndDiscount += (payment.amountPaid || 0) + (payment.discount || 0);
+                });
+
+                const studentOutstanding = Math.max(0, expectedUpToNow - totalPaidAndDiscount);
+                classOutstanding += studentOutstanding;
+            });
+
+            const outstanding = classOutstanding;
+
+            schoolExpectedRevenue += yearlyProjected;
+            schoolCollected += collected;
+            schoolConcessions += discountGiven;
+            schoolOutstanding += outstanding;
+            schoolTuitionExpected += tuitionExpected;
+            schoolTransportExpected += transportExpected;
+            schoolAdmissionExpected += admissionExpected;
+            schoolOtherExpected += otherExpected;
+            schoolRteExpected += rteExpected;
+            schoolThirdChildExpected += thirdChildExpected;
+            schoolPrevDuesExpected += prevDuesExpected;
+
+            return {
+                classId: cls.id,
+                className: cls.name,
+                totalStudents: classStudents.length,
+                yearlyProjected,
+                collected,
+                outstanding,
+                discountGiven,
+                breakdown: {
+                    tuition: tuitionExpected,
+                    transport: transportExpected,
+                    admission: admissionExpected,
+                    previousDues: prevDuesExpected,
+                    other: otherExpected,
+                    rteFees: rteExpected,
+                    thirdChildFees: thirdChildExpected,
+                    discount: discountGiven
+                }
+            };
+        });
+
+        const revenueResult = {
+            summary: {
+                totalStudents: schoolStudentsCount,
+                totalExpectedRevenue: schoolExpectedRevenue,
+                totalCollected: schoolCollected,
+                totalOutstanding: schoolOutstanding,
+                totalConcessions: schoolConcessions,
+                breakdown: {
+                    tuition: schoolTuitionExpected,
+                    transport: schoolTransportExpected,
+                    admission: schoolAdmissionExpected,
+                    previousDues: schoolPrevDuesExpected,
+                    other: schoolOtherExpected,
+                    rteFees: schoolRteExpected,
+                    thirdChildFees: schoolThirdChildExpected,
+                    discount: schoolConcessions
+                }
+            },
+            classMatrix: classWiseMatrix
+        };
+        setCache(revenueCacheKey, revenueResult, 90_000);
+        res.json(revenueResult);
+    } catch (err: any) {
+        console.error('Revenue stats calculation error:', err);
+        res.status(500).json({ error: 'Failed to calculate revenue statistics' });
     }
 });
 
@@ -833,6 +1346,218 @@ router.put('/transport/stops/:id', async (req, res) => {
             return res.status(400).json({ error: 'Stop with this name already exists' });
         }
         res.status(500).json({ error: 'Failed to update transport stop' });
+    }
+});
+
+interface TransportParsedItem {
+    name: string;
+    amount: number;
+    months: string[];
+    isTransport: boolean;
+}
+
+function parseTransportBreakdown(feeHead: string | null, month: string | null, amountPaid: number, discount: number): TransportParsedItem[] {
+    const totalAmount = amountPaid + discount;
+    if (!feeHead) return [];
+    const items: TransportParsedItem[] = [];
+
+    if (feeHead.includes('==>')) {
+        const parts = feeHead.split('==>');
+        const monthsStr = parts[0].trim();
+        const breakdownStr = parts[1].trim();
+
+        const paidMonths = monthsStr ? monthsStr.split(',').map(m => m.trim()).filter(Boolean) : [];
+        const itemParts = breakdownStr.split('||').map(item => item.trim()).filter(Boolean);
+
+        itemParts.forEach(itemPart => {
+            const splitColon = itemPart.split(':');
+            if (splitColon.length >= 2) {
+                const name = splitColon[0].trim();
+                const amt = parseFloat(splitColon[1].trim()) || 0;
+                const nameLower = name.toLowerCase();
+                const isTransport = nameLower.includes('transport') || nameLower.includes('bus');
+
+                items.push({
+                    name,
+                    amount: amt,
+                    months: isTransport ? paidMonths : [],
+                    isTransport
+                });
+            }
+        });
+    } else {
+        const name = feeHead.trim();
+        const nameLower = name.toLowerCase();
+        const paidMonths = month ? month.split(',').map(m => m.trim()).filter(Boolean) : [];
+        const isTransport = nameLower.includes('transport') || nameLower.includes('bus');
+
+        items.push({
+            name,
+            amount: totalAmount,
+            months: isTransport ? paidMonths : [],
+            isTransport
+        });
+    }
+    return items;
+}
+
+// Get Transport Ledger for all transport users
+router.get('/transport/ledger', async (req, res) => {
+    try {
+        let sessionQuery = req.query.session as string;
+        if (!sessionQuery) {
+            const defSession = await prisma.session.findFirst({ where: { isDefault: true } });
+            sessionQuery = defSession?.name || '2024-2025';
+        }
+
+        const altSession = (() => {
+            if (sessionQuery) {
+                const parts = sessionQuery.split('-');
+                if (parts.length === 2) {
+                    const start = parts[0];
+                    const end = parts[1];
+                    if (end.length === 4) {
+                        return `${start}-${end.slice(2)}`;
+                    } else if (end.length === 2) {
+                        return `${start}-20${end}`;
+                    }
+                }
+            }
+            return sessionQuery;
+        })();
+
+        const students = await prisma.studentProfile.findMany({
+            where: {
+                status: 'Active',
+                transportStopId: { not: null },
+                ...(sessionQuery && sessionQuery !== 'All' ? {
+                    OR: [
+                        { academicYear: sessionQuery },
+                        { academicYear: altSession }
+                    ]
+                } : {})
+            },
+            include: {
+                class: true,
+                user: true,
+                transportStop: true,
+                fees: {
+                    where: { status: 'APPROVED' }
+                }
+            }
+        });
+
+        const allMonths = ['April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December', 'January', 'February', 'March'];
+        
+        // Calculate elapsed months for current session dues
+        const currentDate = new Date();
+        const currentMonth = currentDate.getMonth();
+        const sessionStartMonth = 3; // April
+        let monthsToCalculate = 0;
+        if (currentMonth >= sessionStartMonth) {
+            monthsToCalculate = (currentMonth - sessionStartMonth) + 1;
+        } else {
+            monthsToCalculate = (currentMonth + 12 - sessionStartMonth) + 1;
+        }
+        monthsToCalculate = Math.min(12, Math.max(1, monthsToCalculate));
+        const elapsedMonths = allMonths.slice(0, monthsToCalculate);
+
+        let totalExpectedYear = 0;
+        let totalCollected = 0;
+        let totalOutstanding = 0;
+
+        const ledgerRows = students.map(student => {
+            const busFare = student.transportStop?.busFare || 0;
+            const expectedYearly = busFare * 12;
+            const expectedUpToNow = busFare * monthsToCalculate;
+
+            // Map out payments per month
+            const monthlyPaidAmounts: Record<string, number> = {};
+            allMonths.forEach(m => { monthlyPaidAmounts[m] = 0; });
+
+            let studentCollected = 0;
+
+            student.fees.forEach(payment => {
+                // Filter fee payments that belong to the queried academic year
+                if (!isPaymentInAcademicYearLocal(payment, sessionQuery)) return;
+
+                const parsed = parseTransportBreakdown(payment.feeHead, payment.month, payment.amountPaid || 0, payment.discount || 0);
+                parsed.forEach(item => {
+                    if (item.isTransport) {
+                        studentCollected += item.amount;
+                        if (item.months.length > 0) {
+                            const amtPerMonth = item.amount / item.months.length;
+                            item.months.forEach(m => {
+                                if (monthlyPaidAmounts[m] !== undefined) {
+                                    monthlyPaidAmounts[m] += amtPerMonth;
+                                }
+                            });
+                        } else if (payment.month && monthlyPaidAmounts[payment.month] !== undefined) {
+                            monthlyPaidAmounts[payment.month] += item.amount;
+                        }
+                    }
+                });
+            });
+
+            // Month status array
+            const monthsStatus = allMonths.map(m => {
+                const isElapsed = elapsedMonths.includes(m);
+                const paidAmount = monthlyPaidAmounts[m] || 0;
+                // Consider paid if paidAmount >= busFare (with a tiny tolerance of 1 rupee for decimals)
+                const isPaid = paidAmount >= (busFare - 1);
+                
+                let status: 'paid' | 'pending' | 'future' = 'future';
+                if (isPaid) {
+                    status = 'paid';
+                } else if (isElapsed) {
+                    status = 'pending';
+                }
+
+                return {
+                    month: m,
+                    paidAmount,
+                    status
+                };
+            });
+
+            const studentOutstanding = Math.max(0, expectedUpToNow - studentCollected);
+
+            totalExpectedYear += expectedYearly;
+            totalCollected += studentCollected;
+            totalOutstanding += studentOutstanding;
+
+            return {
+                studentId: student.id,
+                admissionNo: student.admissionNo,
+                name: student.user?.name || 'N/A',
+                fatherName: student.fatherName || 'N/A',
+                className: student.class?.name || 'N/A',
+                classId: student.classId,
+                stopName: student.transportStop?.name || 'N/A',
+                busFare,
+                expectedYearly,
+                expectedUpToNow,
+                collected: studentCollected,
+                outstanding: studentOutstanding,
+                months: monthsStatus
+            };
+        });
+
+        res.json({
+            stats: {
+                totalUsers: students.length,
+                totalExpectedYear,
+                totalCollected,
+                totalOutstanding
+            },
+            students: ledgerRows,
+            elapsedMonths,
+            allMonths
+        });
+
+    } catch (error: any) {
+        console.error('Failed to calculate transport ledger:', error);
+        res.status(500).json({ error: error.message || 'Failed to get transport ledger' });
     }
 });
 

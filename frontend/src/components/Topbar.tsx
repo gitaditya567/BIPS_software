@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Search, Clock } from 'lucide-react';
 import { NotificationBell } from './NotificationSystem';
+import axios from 'axios';
 
 // ─── Live Clock ───────────────────────────────────────────────────────────────
 const LiveClock: React.FC = () => {
@@ -65,10 +66,40 @@ const LiveClock: React.FC = () => {
 // ─── Topbar ───────────────────────────────────────────────────────────────────
 const Topbar: React.FC = () => {
     const [user, setUser] = useState<{ name: string; role: string } | null>(null);
+    const [sessionState, setSessionState] = useState(localStorage.getItem('activeSession') || '2024-2025');
+    const [sessions, setSessions] = useState<{ id: string; name: string; isDefault: boolean }[]>([]);
 
     useEffect(() => {
         const userData = localStorage.getItem('user');
         if (userData) setUser(JSON.parse(userData));
+
+        // Fetch academic sessions list
+        const loadSessions = async () => {
+            try {
+                const res = await axios.get('/erp-api/sessions');
+                setSessions(res.data);
+
+                const activeRes = await axios.get('/erp-api/sessions/active');
+                if (activeRes.data && !localStorage.getItem('activeSession')) {
+                    const activeName = activeRes.data.name;
+                    localStorage.setItem('activeSession', activeName);
+                    setSessionState(activeName);
+                    window.dispatchEvent(new Event('activeSessionChanged'));
+                }
+            } catch (error) {
+                console.error('Failed to load academic sessions', error);
+            }
+        };
+
+        loadSessions();
+
+        const handleSessionChange = () => {
+            setSessionState(localStorage.getItem('activeSession') || '2024-2025');
+        };
+        window.addEventListener('activeSessionChanged', handleSessionChange);
+        return () => {
+            window.removeEventListener('activeSessionChanged', handleSessionChange);
+        };
     }, []);
 
     const getRoleLabel = (role?: string) => {
@@ -119,6 +150,46 @@ const Topbar: React.FC = () => {
 
             {/* Right section */}
             <div className="topbar-right">
+
+                {/* ── Academic Session Selector ── */}
+                <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    padding: '0.45rem 1rem',
+                    background: '#f8fafc',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '12px',
+                    marginRight: '0.5rem'
+                }}>
+                    <span style={{ fontSize: '0.8rem', fontWeight: '700', color: '#64748b' }}>Session:</span>
+                    <select
+                        value={sessionState}
+                        onChange={(e) => {
+                            const val = e.target.value;
+                            localStorage.setItem('activeSession', val);
+                            window.dispatchEvent(new Event('activeSessionChanged'));
+                            setSessionState(val);
+                        }}
+                        style={{
+                            border: 'none',
+                            background: 'transparent',
+                            fontSize: '0.85rem',
+                            fontWeight: '700',
+                            color: '#1e293b',
+                            outline: 'none',
+                            cursor: 'pointer'
+                        }}
+                    >
+                        {(sessions.length > 0 ? sessions : [
+                            { id: '1', name: '2024-2025' },
+                            { id: '2', name: '2025-2026' },
+                            { id: '3', name: '2026-2027' }
+                        ]).map(s => (
+                            <option key={s.id} value={s.name}>{s.name}</option>
+                        ))}
+                    </select>
+                </div>
 
                 {/* ── Live Date & Time ── */}
                 <LiveClock />

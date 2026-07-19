@@ -15,6 +15,7 @@ import adminRoutes from './routes/admin';
 import feeRoutes from './routes/fees';
 import generalRoutes from './routes/general';
 import teacherRoutes from './routes/teacher';
+import sessionRoutes from './routes/sessions';
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
@@ -77,12 +78,15 @@ app.use('/api/fees', feeRoutes);
 app.use('/erp-api/fees', feeRoutes);
 app.use('/api/general', generalRoutes);
 app.use('/api/teacher', teacherRoutes);
+app.use('/api/sessions', sessionRoutes);
+app.use('/erp-api/sessions', sessionRoutes);
 
 // Fallback Routes for stripped prefixes (aaPanel)
 app.use('/admin', adminRoutes);
 app.use('/fees', feeRoutes);
 app.use('/general', generalRoutes);
 app.use('/teacher', teacherRoutes);
+app.use('/sessions', sessionRoutes);
 
 
 

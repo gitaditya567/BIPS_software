@@ -1140,7 +1140,16 @@ const Fees: React.FC = () => {
             setStudentHistory(mappedHistory);
             
             const balRes = await axios.get(`/erp-api/fees/student/${studentId}/balance`);
-            setPendingDues(balRes.data.previousSessionDue || 0);
+
+            const approvedReceipts = mappedHistory.filter((r: any) => r.status === 'APPROVED');
+            const totalBilledNew = approvedReceipts.reduce((sum: number, r: any) => sum + (Number(r.totalFee) || 0), 0);
+            const totalPaidAndDiscount = approvedReceipts.reduce((sum: number, r: any) => sum + (Number(r.paidAmount) || 0) + (Number(r.discount) || 0), 0);
+            const initialPrevDue = balRes.data.initialPreviousSessionDue !== undefined 
+                ? balRes.data.initialPreviousSessionDue 
+                : (balRes.data.previousSessionDue || 0);
+
+            const calculatedPendingDues = Math.max(0, (initialPrevDue + totalBilledNew) - totalPaidAndDiscount);
+            setPendingDues(calculatedPendingDues);
 
             const hasTr = balRes.data.hasTransport || false;
 

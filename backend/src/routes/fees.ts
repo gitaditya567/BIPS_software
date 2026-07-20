@@ -991,6 +991,7 @@ router.get('/student/:id/balance', async (req, res) => {
         res.json({ 
             outstandingBalance: ledger.summary.netOutstanding,
             previousSessionDue: ledger.summary.previousDuesPending,
+            initialPreviousSessionDue: ledger.summary.previousSessionDue,
             currentSessionBalance: ledger.summary.netOutstanding - ledger.summary.previousDuesPending,
             hasTransport: ledger.student.transportStop !== 'N/A',
             transportStopName: ledger.student.transportStop !== 'N/A' ? ledger.student.transportStop : null,

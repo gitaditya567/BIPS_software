@@ -278,7 +278,8 @@ async function getStudentFeeLedger(studentId: string) {
     });
 
     const previousSessionDue = student.previousSessionDue || 0;
-    const prevDuePending = Math.max(0, previousSessionDue - actualPrevDuesPaid);
+    const cappedPrevDuesPaid = Math.min(previousSessionDue, actualPrevDuesPaid);
+    const prevDuePending = Math.max(0, previousSessionDue - cappedPrevDuesPaid);
 
     let oneTimePending = 0;
     const oneTimeStatus = oneTimeExpectedBreakdown.map(ot => {
@@ -374,7 +375,7 @@ async function getStudentFeeLedger(studentId: string) {
         },
         summary: {
             previousSessionDue,
-            previousDuesPaid: actualPrevDuesPaid,
+            previousDuesPaid: cappedPrevDuesPaid,
             previousDuesPending: prevDuePending,
             
             expectedOneTime: expectedOneTimeTotal,
@@ -1169,7 +1170,8 @@ router.get('/due-list', async (req, res) => {
 
             // Calculate dues
             const previousSessionDue = student.previousSessionDue || 0;
-            const prevDuePending = Math.max(0, previousSessionDue - actualPrevDuesPaid);
+            const cappedPrevDuesPaid = Math.min(previousSessionDue, actualPrevDuesPaid);
+            const prevDuePending = Math.max(0, previousSessionDue - cappedPrevDuesPaid);
 
             let oneTimePending = 0;
             oneTimeBreakdown.forEach(ot => {
@@ -1244,7 +1246,7 @@ router.get('/due-list', async (req, res) => {
                 paidMonths: studentPayments.map(p => p.month).filter(Boolean) as string[],
                 actualOneTimePaid,
                 actualMonthlyPaid,
-                actualPrevDuesPaid,
+                actualPrevDuesPaid: cappedPrevDuesPaid,
             };
         }).filter(Boolean);
 

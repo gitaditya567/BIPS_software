@@ -104,6 +104,12 @@ const isFeeExempt = (
     const headNameLower = head.name.toLowerCase();
     const isRT = student.isRT || false;
     const isThirdChild = student.isThirdChild || false;
+    const isOldStudent = (student as any).isOldStudent || false;
+
+    // Admission Fee & Admission Form Fee are exempt for Old Students
+    if (isOldStudent && (headNameLower === 'admission fee' || headNameLower === 'admission form fee' || headNameLower.includes('admission fee') || headNameLower.includes('admission form fee'))) {
+        return true;
+    }
 
     // Filter "RTE STUDENTS FEES" - only charged to RTE students
     if (headNameLower.includes('rte students fees')) {
@@ -828,6 +834,7 @@ const Fees: React.FC = () => {
     const [paymentMode, setPaymentMode] = useState('Cash');
     const [receiptNo, setReceiptNo] = useState('');
     const [fatherName, setFatherName] = useState('');
+    const [isOldStudent, setIsOldStudent] = useState(false);
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
     const [selectedFees, setSelectedFees] = useState<string[]>([]);
     const currentMonthNameInit = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][new Date().getMonth()];
@@ -1837,6 +1844,7 @@ const Fees: React.FC = () => {
             setStudentName(''); 
             setAdmissionNo(''); 
             setFatherName('');
+            setIsOldStudent(false);
             setSelectedClass('');
             setSelectedFees([]);
             setPaidAmount(''); 
@@ -2201,6 +2209,7 @@ const Fees: React.FC = () => {
                                                          setStudentName(s.name);
                                                          setAdmissionNo(s.admissionNo);
                                                          setFatherName(s.fatherName || 'N/A');
+                                                         setIsOldStudent(Boolean(s.isOldStudent));
                                                          setSelectedClass(s.className);
                                                          fetchStudentHistory(s.id, s.name);
                                                          setShowSearchDropdown(false);
@@ -2262,7 +2271,17 @@ const Fees: React.FC = () => {
                             {/* 2. Student Details */}
                             <div className="stat-card" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '1.5rem', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
                                 <div style={{ gridColumn: 'span 5' }}><h3 style={{ color: '#1e293b', fontSize: '1.1rem' }}>2. Student Details</h3></div>
-                                <div><label style={{ color: '#64748b', fontSize: '0.8rem' }}>Full Name</label><div style={{ fontWeight: '700', fontSize: '1.1rem' }}>{studentName}</div></div>
+                                <div>
+                                    <label style={{ color: '#64748b', fontSize: '0.8rem' }}>Full Name</label>
+                                    <div style={{ fontWeight: '700', fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                        {studentName}
+                                        {isOldStudent && (
+                                            <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.5rem', backgroundColor: '#e0f2fe', color: '#0369a1', borderRadius: '12px', fontWeight: 600, border: '1px solid #bae6fd' }}>
+                                                Old Student (No Admission Fee)
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
                                 <div><label style={{ color: '#64748b', fontSize: '0.8rem' }}>Father Name</label><div style={{ fontWeight: '700', fontSize: '1.1rem' }}>{fatherName}</div></div>
                                 <div><label style={{ color: '#64748b', fontSize: '0.8rem' }}>Admission No</label><div style={{ fontWeight: '700', fontSize: '1.1rem' }}>{admissionNo}</div></div>
                                 <div><label style={{ color: '#64748b', fontSize: '0.8rem' }}>Current Class</label><div style={{ fontWeight: '700', fontSize: '1.1rem' }}>{selectedClass}</div></div>

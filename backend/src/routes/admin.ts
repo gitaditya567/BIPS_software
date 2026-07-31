@@ -102,6 +102,7 @@ router.get('/students', async (req, res) => {
                 parentId: true,
                 isRT: true,
                 isThirdChild: true,
+                isOldStudent: true,
                 transportStopId: true,
                 previousSessionDue: true,
                 fatherName: true,
@@ -456,7 +457,7 @@ router.post('/students', async (req, res) => {
     try {
         const {
             email, password, firstName, lastName, phone, admissionNo, classId, sectionId,
-            gender, dob, bloodGroup, isRT, isThirdChild, category, religion, nationality, aadhaar, address, photo,
+            gender, dob, bloodGroup, isRT, isThirdChild, isOldStudent, category, religion, nationality, aadhaar, address, photo,
             prevSchoolName, prevClass, prevSchoolAddress, prevMarks, transportStopId
         } = req.body;
 
@@ -534,6 +535,7 @@ router.post('/students', async (req, res) => {
                         bloodGroup,
                         isRT: Boolean(isRT),
                         isThirdChild: Boolean(isThirdChild),
+                        isOldStudent: Boolean(isOldStudent),
                         category,
                         religion,
                         nationality,
@@ -604,7 +606,7 @@ router.put('/students/:id', async (req, res) => {
         const { id } = req.params;
         const {
             email, firstName, lastName, phone, admissionNo, classId, sectionId,
-            gender, dob, bloodGroup, isRT, isThirdChild, category, religion, nationality, aadhaar, address, photo,
+            gender, dob, bloodGroup, isRT, isThirdChild, isOldStudent, category, religion, nationality, aadhaar, address, photo,
             prevSchoolName, prevClass, prevSchoolAddress, prevMarks, password, transportStopId
         } = req.body;
 
@@ -654,6 +656,7 @@ router.put('/students/:id', async (req, res) => {
                 bloodGroup,
                 isRT: Boolean(isRT),
                 isThirdChild: Boolean(isThirdChild),
+                isOldStudent: Boolean(isOldStudent),
                 category,
                 religion,
                 nationality,
@@ -682,6 +685,8 @@ router.put('/students/:id', async (req, res) => {
             }
         });
 
+        invalidateCache('students');
+        invalidateCache('dashboard');
         res.json(updatedStudent);
     } catch (error: any) {
         console.error('Student Update Error Details:', {

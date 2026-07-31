@@ -86,6 +86,7 @@ const Students: React.FC = () => {
     const [bloodGroup, setBloodGroup] = useState('');
     const [isRT, setIsRT] = useState(false);
     const [isThirdChild, setIsThirdChild] = useState(false);
+    const [isOldStudent, setIsOldStudent] = useState(false);
     const [category, setCategory] = useState('');
     const [religion, setReligion] = useState('');
     const [nationality, setNationality] = useState('');
@@ -181,7 +182,7 @@ const Students: React.FC = () => {
         setEditingId(null);
         setFirstName(''); setLastName(''); setEmail(''); setPhone(''); setPassword(generateRandomPassword()); setAdmissionNo('');
         setClassId(''); setSectionId(''); setTransportStopId(''); setStatus('Active');
-        setGender(''); setDob(''); setAddress(''); setBloodGroup(''); setIsRT(false); setIsThirdChild(false); setCategory('');
+        setGender(''); setDob(''); setAddress(''); setBloodGroup(''); setIsRT(false); setIsThirdChild(false); setIsOldStudent(false); setCategory('');
         setReligion(''); setNationality(''); setAadhaar(''); setPhoto('');
         setPrevSchoolName(''); setPrevClass(''); setPrevSchoolAddress(''); setPrevMarks(''); setLeavingReason(''); setSiblingInfo('');
         setAdmissionDate(''); setRollNumber(''); setMedium(''); setAcademicYear(localStorage.getItem('activeSession') || '2026-2027'); setHouse('');
@@ -214,6 +215,7 @@ const Students: React.FC = () => {
         setBloodGroup(student.bloodGroup || '');
         setIsRT(student.isRT || false);
         setIsThirdChild(student.isThirdChild || false);
+        setIsOldStudent(student.isOldStudent || false);
         setCategory(student.category || '');
         setReligion(student.religion || '');
         setNationality(student.nationality || '');
@@ -269,7 +271,7 @@ const Students: React.FC = () => {
                     classId: classId ? classId.trim() : null, 
                     sectionId: sectionId ? sectionId.trim() : null,
                     transportStopId: transportStopId ? transportStopId : null,
-                    gender, dob, address, bloodGroup, isRT, isThirdChild, category, religion, nationality, aadhaar, photo,
+                    gender, dob, address, bloodGroup, isRT, isThirdChild, isOldStudent, category, religion, nationality, aadhaar, photo,
                     prevSchoolName, prevClass, prevSchoolAddress, prevMarks, leavingReason, siblingInfo,
                     admissionDate, rollNumber, medium, academicYear, house,
                     fatherName, fatherMobile, fatherOccupation, fatherQualification, fatherEmail, status,
@@ -280,7 +282,7 @@ const Students: React.FC = () => {
                 const res = await axios.post('/erp-api/admin/students', {
                     firstName, lastName, email: finalEmail, phone, password, admissionNo, 
                     classId, sectionId, transportStopId,
-                    gender, dob, address, bloodGroup, isRT, isThirdChild, category, religion, nationality, aadhaar, photo,
+                    gender, dob, address, bloodGroup, isRT, isThirdChild, isOldStudent, category, religion, nationality, aadhaar, photo,
                     prevSchoolName, prevClass, prevSchoolAddress, prevMarks, leavingReason, siblingInfo,
                     admissionDate, rollNumber, medium, academicYear, house,
                     fatherName, fatherMobile, fatherOccupation, fatherQualification, fatherEmail, status,
@@ -655,6 +657,30 @@ const Students: React.FC = () => {
                                  </div>
                              </div>
 
+                              <div className="form-group">
+                                  <label>Purana / Old Student?</label>
+                                  <div style={{ display: 'flex', gap: '1.5rem', height: '42px', alignItems: 'center' }}>
+                                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 500, cursor: 'pointer', color: '#475569', margin: 0 }}>
+                                          <input 
+                                              type="radio" 
+                                              name="isOldStudent" 
+                                              checked={!isOldStudent} 
+                                              onChange={() => setIsOldStudent(false)} 
+                                              style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                                          /> No (New)
+                                      </label>
+                                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 600, cursor: 'pointer', color: '#0284c7', margin: 0 }}>
+                                          <input 
+                                              type="radio" 
+                                              name="isOldStudent" 
+                                              checked={isOldStudent} 
+                                              onChange={() => setIsOldStudent(true)} 
+                                              style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                                          /> Yes (Old Student - Exclude Admission Fees)
+                                      </label>
+                                  </div>
+                              </div>
+
                             <div className="form-group">
                                 <label>Category</label>
                                 <select className="form-control" value={category} onChange={e => setCategory(e.target.value)}>
@@ -977,7 +1003,14 @@ const Students: React.FC = () => {
                                     <td>{s.admissionNo || `BIPS/26/${String(filteredStudents.length - (firstIndex + idx)).padStart(3, '0')}`}</td>
                                     <td>{s.studentId || 'N/A'}</td>
                                     <td style={{ fontWeight: 'bold' }}>{s.className || 'N/A'}</td>
-                                    <td>{s.name}</td>
+                                     <td>
+                                         {s.name}
+                                         {s.isOldStudent && (
+                                             <span style={{ fontSize: '0.7rem', padding: '0.15rem 0.4rem', backgroundColor: '#e0f2fe', color: '#0369a1', borderRadius: '4px', marginLeft: '0.4rem', fontWeight: 600, border: '1px solid #bae6fd' }}>
+                                                 Old Student
+                                             </span>
+                                         )}
+                                     </td>
                                     <td>{s.email}</td>
                                     <td>{s.className}</td>
                                     <td>{s.sectionName}</td>

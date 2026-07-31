@@ -30,6 +30,12 @@ export function getExpectedFeeAmount(
     const headNameLower = head.name.toLowerCase();
     const isRT = student.isRT || false;
     const isThirdChild = (student as any).isThirdChild || false;
+    const isOldStudent = (student as any).isOldStudent || false;
+
+    // Filter "Admission Fee" and "Admission Form Fee" - waived off for Old/Previous students
+    if (isOldStudent && (headNameLower === 'admission fee' || headNameLower === 'admission form fee' || headNameLower.includes('admission fee') || headNameLower.includes('admission form fee'))) {
+        return 0;
+    }
 
     // Filter "RTE STUDENTS FEES" - only charged to RTE students
     if (headNameLower.includes('rte students fees')) {

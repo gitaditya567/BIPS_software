@@ -58,6 +58,7 @@ model StudentProfile {
   bloodGroup    String?
   isRT          Boolean @default(false)
   isThirdChild  Boolean @default(false)
+  isOldStudent  Boolean @default(false)
   category      String?
   religion      String?
   nationality   String?

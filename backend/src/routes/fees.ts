@@ -1939,7 +1939,19 @@ const payuResponse = async (req: express.Request, res: express.Response): Promis
         const paidAmountVal = feePaymentRecord?.amountPaid || postData.amount || 0;
         const feeHeadVal = feePaymentRecord?.feeHead || 'Online Fee Payment';
 
-        const redirectUrl = `http://localhost:5173${redirectPath}?payment=${finalStatus.toLowerCase()}&txnid=${txnid || ''}&receipt=${assignedReceiptNo || ''}&studentId=${stId}&admissionNo=${encodeURIComponent(targetAdmNo)}&amount=${paidAmountVal}&feeHead=${encodeURIComponent(feeHeadVal)}`;
+        let frontendBase = process.env.FRONTEND_URL || '';
+        if (!frontendBase) {
+            const hostHeader = req.get('host') || 'bipslucknow.org';
+            const protocol = req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
+            if (hostHeader.includes('localhost')) {
+                frontendBase = 'http://localhost:5173';
+            } else {
+                frontendBase = `${protocol}://${hostHeader}`;
+            }
+        }
+        frontendBase = frontendBase.replace(/\/+$/, '');
+
+        const redirectUrl = `${frontendBase}${redirectPath}?payment=${finalStatus.toLowerCase()}&txnid=${txnid || ''}&receipt=${assignedReceiptNo || ''}&studentId=${stId}&admissionNo=${encodeURIComponent(targetAdmNo)}&amount=${paidAmountVal}&feeHead=${encodeURIComponent(feeHeadVal)}`;
         
         return res.send(`
             <!DOCTYPE html>

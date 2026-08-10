@@ -758,19 +758,23 @@ function isPaymentInAcademicYearLocal(p: any, academicYear: string | null): bool
     if (!academicYear) return true;
     const parts = academicYear.split('-');
     if (parts.length !== 2) return true;
-    let startYear = parts[0];
-    let endYear = parts[1];
+    let startYear = parts[0].trim();
+    let endYear = parts[1].trim();
     
     if (startYear.length === 2) startYear = `20${startYear}`;
     if (endYear.length === 2) endYear = `20${endYear}`;
 
-    const month = p.month || '';
-    const year = p.year || '';
+    const month = (p.month || '').trim();
+    const pYear = String(p.year || '').trim();
+
+    if (pYear && (pYear === academicYear || pYear.startsWith(startYear) || pYear.includes(startYear) || pYear.includes(endYear))) {
+        return true;
+    }
 
     const pDate = new Date(p.paymentDate);
     const startSessionDate = new Date(parseInt(startYear), 3, 1); // April 1st
     const endSessionDate = new Date(parseInt(endYear), 2, 31, 23, 59, 59); // March 31st
-    const isWithinDateRange = pDate >= startSessionDate && pDate <= endSessionDate;
+    const isWithinDateRange = !isNaN(pDate.getTime()) && pDate >= startSessionDate && pDate <= endSessionDate;
 
     if (p.feeHead && p.feeHead.toLowerCase().includes('previous dues')) {
         return isWithinDateRange;
@@ -780,10 +784,10 @@ function isPaymentInAcademicYearLocal(p: any, academicYear: string | null): bool
     const autumnMonths = ['April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
     if (springMonths.includes(month)) {
-        return year === endYear;
+        return !pYear || pYear === endYear || pYear.includes(endYear) || isWithinDateRange;
     }
     if (autumnMonths.includes(month)) {
-        return year === startYear;
+        return !pYear || pYear === startYear || pYear.includes(startYear) || isWithinDateRange;
     }
 
     return isWithinDateRange;
@@ -1566,4 +1570,142 @@ router.get('/transport/ledger', async (req, res) => {
     }
 });
 
+// --- TRANSFER CERTIFICATE (TC) ROUTES ---
+
+// Get all TC records
+router.get('/tc-records', async (req, res) => {
+    try {
+        const records = await (prisma as any).transferCertificate.findMany({
+            orderBy: { createdAt: 'desc' },
+            include: {
+                student: {
+                    select: {
+                        id: true,
+                        admissionNo: true,
+                        class: { select: { name: true } }
+                    }
+                }
+            }
+        });
+        res.json(records);
+    } catch (error: any) {
+        console.error('Error fetching TC records:', error);
+        res.status(500).json({ error: 'Failed to fetch TC records' });
+    }
+});
+
+// Save or Update TC record
+router.post('/tc-records', async (req, res) => {
+    try {
+        const {
+            id,
+            studentId,
+            studentName,
+            admissionNo,
+            withdrawalNo,
+            tcNo,
+            sRegisterNo,
+            className,
+            leavingDate,
+            reason,
+            conduct,
+            fatherName,
+            motherName,
+            occupation,
+            address,
+            caste,
+            lastInstitution,
+            dob,
+            dobWords,
+            aadharNo,
+            isPaid,
+            receiptNo,
+            feeAmount
+        } = req.body;
+
+        if (!studentName || !admissionNo) {
+            return res.status(400).json({ error: 'Student Name and Admission Number are required' });
+        }
+
+        let record;
+        if (id) {
+            record = await (prisma as any).transferCertificate.update({
+                where: { id },
+                data: {
+                    studentId: studentId || undefined,
+                    studentName,
+                    admissionNo,
+                    withdrawalNo,
+                    tcNo: tcNo || undefined,
+                    sRegisterNo,
+                    className,
+                    leavingDate,
+                    reason,
+                    conduct,
+                    fatherName,
+                    motherName,
+                    occupation,
+                    address,
+                    caste,
+                    lastInstitution,
+                    dob,
+                    dobWords,
+                    aadharNo,
+                    isPaid: isPaid ?? false,
+                    receiptNo: receiptNo || undefined,
+                    feeAmount: feeAmount ? Number(feeAmount) : 0
+                }
+            });
+        } else {
+            // Auto generate tcNo if not provided
+            const finalTcNo = tcNo || `BIPS/TC/${new Date().getFullYear()}/${Date.now().toString().slice(-4)}`;
+            
+            record = await (prisma as any).transferCertificate.create({
+                data: {
+                    studentId: studentId || undefined,
+                    studentName,
+                    admissionNo,
+                    withdrawalNo: withdrawalNo || '',
+                    tcNo: finalTcNo,
+                    sRegisterNo: sRegisterNo || '',
+                    className: className || '',
+                    leavingDate: leavingDate || '',
+                    reason: reason || '',
+                    conduct: conduct || 'Satisfactory',
+                    fatherName: fatherName || '',
+                    motherName: motherName || '',
+                    occupation: occupation || '',
+                    address: address || '',
+                    caste: caste || '',
+                    lastInstitution: lastInstitution || '',
+                    dob: dob || '',
+                    dobWords: dobWords || '',
+                    aadharNo: aadharNo || '',
+                    isPaid: isPaid ?? false,
+                    receiptNo: receiptNo || undefined,
+                    feeAmount: feeAmount ? Number(feeAmount) : 0
+                }
+            });
+        }
+
+        res.json({ success: true, record });
+    } catch (error: any) {
+        console.error('Error saving TC record:', error);
+        res.status(500).json({ error: error.message || 'Failed to save TC record' });
+    }
+});
+
+// Delete TC record
+router.delete('/tc-records/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        await (prisma as any).transferCertificate.delete({ where: { id } });
+        res.json({ success: true, message: 'TC record deleted' });
+    } catch (error: any) {
+        console.error('Error deleting TC record:', error);
+        res.status(500).json({ error: 'Failed to delete TC record' });
+    }
+});
+
 export default router;
+

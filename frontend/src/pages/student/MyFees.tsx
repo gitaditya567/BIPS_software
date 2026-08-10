@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { IndianRupee, CheckCircle, Clock, AlertCircle, Printer, Eye } from 'lucide-react';
+import { IndianRupee, CheckCircle, Clock, AlertCircle, Printer, Eye, CreditCard, ShieldCheck, X } from 'lucide-react';
+
+const MONTHS = ['April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December', 'January', 'February', 'March'];
 
 const MyFees: React.FC = () => {
     const userRaw = localStorage.getItem('user');
@@ -14,9 +16,34 @@ const MyFees: React.FC = () => {
     // Receipt Modal State
     const [selectedReceipt, setSelectedReceipt] = useState<any>(null);
 
+    // PayU Online Payment States
+    const [showPayModal, setShowPayModal] = useState(false);
+    const [payMonth, setPayMonth] = useState('April');
+    const [payYear, setPayYear] = useState('2024');
+    const [payFeeHead, setPayFeeHead] = useState('Tuition Fee');
+    const [payAmount, setPayAmount] = useState<number | string>('');
+    const [payRemark, setPayRemark] = useState('');
+    const [payLoading, setPayLoading] = useState(false);
+    const [paymentBanner, setPaymentBanner] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
     useEffect(() => {
         if (studentInfo) {
             fetchData();
+        }
+        // Check URL for payment response status
+        const params = new URLSearchParams(window.location.search);
+        const status = params.get('payment');
+        const receipt = params.get('receipt');
+        if (status === 'approved') {
+            setPaymentBanner({
+                type: 'success',
+                message: `Payment Received Successfully! ${receipt ? 'Receipt No: ' + receipt : ''}`
+            });
+        } else if (status === 'rejected') {
+            setPaymentBanner({
+                type: 'error',
+                message: 'Online payment was not completed or failed. Please try again.'
+            });
         }
     }, [studentInfo]);
 
@@ -46,7 +73,56 @@ const MyFees: React.FC = () => {
     const totalPaid = feeHistory.filter(h => h.status === 'APPROVED').reduce((sum, h) => sum + (h.amountPaid || 0), 0);
     const pendingRequests = feeHistory.filter(h => h.status === 'PENDING').reduce((sum, h) => sum + (h.totalFee || 0), 0);
 
+    const handlePayUInitiate = async (e: React.FormEvent) => {
+        e.preventDefault();
+        const numAmount = Number(payAmount);
+        if (!numAmount || numAmount <= 0) {
+            alert('Please enter a valid payment amount');
+            return;
+        }
 
+        try {
+            setPayLoading(true);
+            const response = await axios.post('/erp-api/fees/payu/initiate', {
+                studentId: studentInfo.id,
+                amountPaid: numAmount,
+                totalFee: numAmount,
+                discount: 0,
+                feeHead: `${payMonth} - ${payFeeHead}`,
+                month: payMonth,
+                year: payYear,
+                remark: payRemark || 'Paid via PayU Online Gateway',
+                customerName: user?.name || studentInfo.fatherName || 'Student',
+                customerEmail: user?.email || studentInfo.fatherEmail || 'student@school.com',
+                customerPhone: studentInfo.fatherMobile || user?.phone || '9999999999'
+            });
+
+            if (response.data.success && response.data.action && response.data.params) {
+                // Submit form directly to PayU launch URL
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.action = response.data.action;
+
+                Object.entries(response.data.params).forEach(([k, v]) => {
+                    const input = document.createElement('input');
+                    input.type = 'hidden';
+                    input.name = k;
+                    input.value = String(v);
+                    form.appendChild(input);
+                });
+
+                document.body.appendChild(form);
+                form.submit();
+            } else {
+                alert('Could not initialize PayU Gateway: ' + (response.data.error || 'Unknown error'));
+            }
+        } catch (err: any) {
+            console.error('PayU Initiation Error:', err);
+            alert(err.response?.data?.error || 'Failed to initiate PayU online payment');
+        } finally {
+            setPayLoading(false);
+        }
+    };
 
     if (!studentInfo) return <div style={{ padding: '2rem' }}>Loading or User not found...</div>;
 
@@ -54,12 +130,46 @@ const MyFees: React.FC = () => {
         <div style={{ fontFamily: "'Inter', sans-serif" }}>
             <h1 style={{ marginBottom: '2rem', fontSize: '1.875rem', fontWeight: 800 }}>My Fees & Payments</h1>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.5rem', marginBottom: '2.5rem' }}>
+            {paymentBanner && (
+                <div style={{
+                    marginBottom: '1.5rem', padding: '1rem 1.5rem', borderRadius: '12px',
+                    backgroundColor: paymentBanner.type === 'success' ? '#def7ec' : '#fde8e8',
+                    color: paymentBanner.type === 'success' ? '#03543f' : '#9b1c1c',
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    border: `1px solid ${paymentBanner.type === 'success' ? '#84e1bc' : '#f8b4b4'}`
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', fontWeight: 600 }}>
+                        {paymentBanner.type === 'success' ? <CheckCircle size={22} /> : <AlertCircle size={22} />}
+                        <span>{paymentBanner.message}</span>
+                    </div>
+                    <button onClick={() => setPaymentBanner(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }}>
+                        <X size={18} />
+                    </button>
+                </div>
+            )}
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem', marginBottom: '2.5rem' }}>
                 <div style={{ backgroundColor: '#2b6cb0', color: 'white', padding: '1.75rem', borderRadius: '16px', boxShadow: '0 4px 15px rgba(43,108,176,0.2)' }}>
                     <p style={{ margin: 0, fontSize: '0.9rem', opacity: 0.9 }}>Total Paid This Year</p>
                     <h2 style={{ margin: '0.5rem 0 0', fontSize: '2.5rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         <IndianRupee size={32} /> {totalPaid}
                     </h2>
+                </div>
+
+                <div style={{ backgroundColor: '#107c41', color: 'white', padding: '1.75rem', borderRadius: '16px', boxShadow: '0 4px 15px rgba(16,124,65,0.2)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                    <div>
+                        <p style={{ margin: 0, fontSize: '0.9rem', opacity: 0.9 }}>Online Fee Payment</p>
+                        <h3 style={{ margin: '0.4rem 0 0', fontSize: '1.4rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <CreditCard size={24} /> PayU Gateway
+                        </h3>
+                        <p style={{ fontSize: '0.75rem', opacity: 0.85, marginTop: '0.3rem', margin: 0 }}>Instant UPI, Debit/Credit Cards & NetBanking</p>
+                    </div>
+                    <button 
+                        onClick={() => setShowPayModal(true)}
+                        style={{ marginTop: '1rem', backgroundColor: '#ffffff', color: '#107c41', border: 'none', padding: '0.6rem 1.2rem', borderRadius: '8px', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', width: 'fit-content', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}
+                    >
+                        <CreditCard size={18} /> Pay Online Now
+                    </button>
                 </div>
 
                 {pendingRequests > 0 && (
@@ -182,6 +292,120 @@ const MyFees: React.FC = () => {
                     )}
                 </div>
             </div>
+
+            {/* ── PayU Online Payment Modal ── */}
+            {showPayModal && (
+                <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 999, padding: '1rem' }}>
+                    <div style={{ backgroundColor: '#ffffff', borderRadius: '16px', width: '100%', maxWidth: '500px', padding: '2rem', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', borderBottom: '1px solid #edf2f7', paddingBottom: '1rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                <div style={{ backgroundColor: '#e6fffa', color: '#047857', padding: '0.6rem', borderRadius: '10px' }}>
+                                    <CreditCard size={24} />
+                                </div>
+                                <div>
+                                    <h3 style={{ margin: 0, fontWeight: 800, color: '#1f2937', fontSize: '1.25rem' }}>Pay Dues via PayU</h3>
+                                    <span style={{ fontSize: '0.75rem', color: '#6b7280', display: 'flex', alignItems: 'center', gap: '0.3rem', marginTop: '2px' }}>
+                                        <ShieldCheck size={14} color="#047857" /> 256-bit Encrypted SSL Gateway
+                                    </span>
+                                </div>
+                            </div>
+                            <button onClick={() => setShowPayModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af' }}>
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        <form onSubmit={handlePayUInitiate} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                            <div>
+                                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, color: '#374151', marginBottom: '0.4rem' }}>Select Fee Month</label>
+                                <select 
+                                    value={payMonth} 
+                                    onChange={e => setPayMonth(e.target.value)}
+                                    style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '0.95rem', fontWeight: 600 }}
+                                >
+                                    {MONTHS.map(m => (
+                                        <option key={m} value={m}>{m}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div>
+                                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, color: '#374151', marginBottom: '0.4rem' }}>Fee Head / Type</label>
+                                <select 
+                                    value={payFeeHead} 
+                                    onChange={e => setPayFeeHead(e.target.value)}
+                                    style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '0.95rem', fontWeight: 600 }}
+                                >
+                                    <option value="Tuition Fee">Tuition Fee</option>
+                                    <option value="Transport Fee">Transport Fee</option>
+                                    <option value="Exam Fee">Exam Fee</option>
+                                    <option value="Annual Charges">Annual Charges</option>
+                                    <option value="Previous Dues">Previous Session Dues</option>
+                                    <option value="Full Fee Payment">Full Fee Payment</option>
+                                </select>
+                            </div>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                                <div>
+                                    <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, color: '#374151', marginBottom: '0.4rem' }}>Academic Year</label>
+                                    <input 
+                                        type="text" 
+                                        value={payYear} 
+                                        onChange={e => setPayYear(e.target.value)} 
+                                        placeholder="e.g. 2024"
+                                        style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '0.95rem' }} 
+                                        required 
+                                    />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, color: '#374151', marginBottom: '0.4rem' }}>Amount to Pay (₹)</label>
+                                    <input 
+                                        type="number" 
+                                        value={payAmount} 
+                                        onChange={e => setPayAmount(e.target.value)} 
+                                        placeholder="Enter amount"
+                                        style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '0.95rem', fontWeight: 700, color: '#047857' }} 
+                                        required 
+                                        min="1"
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, color: '#374151', marginBottom: '0.4rem' }}>Remark (Optional)</label>
+                                <input 
+                                    type="text" 
+                                    value={payRemark} 
+                                    onChange={e => setPayRemark(e.target.value)} 
+                                    placeholder="e.g. April Tuition Fee Payment"
+                                    style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '0.9rem' }} 
+                                />
+                            </div>
+
+                            <div style={{ backgroundColor: '#f9fafb', padding: '1rem', borderRadius: '10px', fontSize: '0.8rem', color: '#4b5563', border: '1px solid #e5e7eb' }}>
+                                <p style={{ margin: '0 0 0.3rem', fontWeight: 700 }}>Payer Information:</p>
+                                <p style={{ margin: 0 }}>Name: <b>{user?.name || studentInfo.fatherName || 'Student/Parent'}</b> | SR No: <b>{studentInfo.admissionNo}</b></p>
+                            </div>
+
+                            <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem' }}>
+                                <button 
+                                    type="button" 
+                                    onClick={() => setShowPayModal(false)}
+                                    style={{ flex: 1, padding: '0.8rem', borderRadius: '10px', border: '1px solid #d1d5db', backgroundColor: '#ffffff', color: '#374151', fontWeight: 700, cursor: 'pointer' }}
+                                >
+                                    Cancel
+                                </button>
+                                <button 
+                                    type="submit" 
+                                    disabled={payLoading}
+                                    style={{ flex: 2, padding: '0.8rem', borderRadius: '10px', border: 'none', backgroundColor: '#047857', color: '#ffffff', fontWeight: 800, cursor: payLoading ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', boxShadow: '0 4px 6px -1px rgba(4, 120, 87, 0.3)' }}
+                                >
+                                    <CreditCard size={18} /> {payLoading ? 'Redirecting to PayU...' : 'Proceed to PayU Gateway'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
 
             {/* ── Receipt Modal (Monospace / Thermal Printer Style) ── */}
             {selectedReceipt && (() => {

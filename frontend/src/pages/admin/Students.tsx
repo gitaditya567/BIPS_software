@@ -252,7 +252,22 @@ const Students: React.FC = () => {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!firstName) return alert('Please enter the First Name, it is required.');
+        if (!firstName) {
+            setActiveTab('personal');
+            return alert('Please enter First Name, it is required.');
+        }
+        if (!classId) {
+            setActiveTab('personal');
+            return alert('Please select Class of Admission, it is required.');
+        }
+        if (!dob) {
+            setActiveTab('personal');
+            return alert('Please enter Date of Birth, it is required.');
+        }
+        if (!fatherName) {
+            setActiveTab('parent');
+            return alert("Please enter Father Name, it is required.");
+        }
 
         setLoading(true);
         
@@ -583,15 +598,15 @@ const Students: React.FC = () => {
                             </div>
 
                              <div className="form-group">
-                                <label>Class of Admission</label>
-                                <select className="form-control" value={classId} onChange={e => setClassId(e.target.value)}>
+                                <label>Class of Admission <span style={{ color: '#ef4444' }}>*</span></label>
+                                <select className="form-control" value={classId} onChange={e => setClassId(e.target.value)} required>
                                     <option value="">Select Class</option>
                                     {classes.map(cls => <option key={cls.id} value={cls.id}>{cls.name}</option>)}
                                 </select>
                             </div>
 
                             <div className="form-group">
-                                <label>First Name</label>
+                                <label>First Name <span style={{ color: '#ef4444' }}>*</span></label>
                                 <input type="text" className="form-control" value={firstName} onChange={e => setFirstName(e.target.value)} required />
                             </div>
 
@@ -611,8 +626,8 @@ const Students: React.FC = () => {
                             </div>
 
                             <div className="form-group">
-                                <label>Date of Birth</label>
-                                <input type="date" className="form-control" value={dob} onChange={e => setDob(e.target.value)} />
+                                <label>Date of Birth <span style={{ color: '#ef4444' }}>*</span></label>
+                                <input type="date" className="form-control" value={dob} onChange={e => setDob(e.target.value)} required />
                             </div>
 
                             <div className="form-group">
@@ -821,8 +836,8 @@ const Students: React.FC = () => {
                             <h4 style={{ marginBottom: '1rem', fontSize: '1.1rem', fontWeight: 'bold' }}>Father Details</h4>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '2rem' }}>
                                 <div className="form-group">
-                                    <label>Father Name</label>
-                                    <input type="text" className="form-control" value={fatherName} onChange={e => setFatherName(e.target.value)} />
+                                    <label>Father Name <span style={{ color: '#ef4444' }}>*</span></label>
+                                    <input type="text" className="form-control" value={fatherName} onChange={e => setFatherName(e.target.value)} required />
                                 </div>
                                 <div className="form-group">
                                     <label>Father Mobile</label>

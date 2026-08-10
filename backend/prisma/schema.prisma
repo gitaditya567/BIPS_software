@@ -91,6 +91,7 @@ model StudentProfile {
   concessions Concession[]
   marks       Mark[]
   fees        FeePayment[]
+  tcRecords   TransferCertificate[]
   sessionId   String?        @db.ObjectId
   session     Session?       @relation(fields: [sessionId], references: [id])
 
@@ -246,7 +247,14 @@ model FeePayment {
   sessionId      String?        @db.ObjectId
   session        Session?       @relation(fields: [sessionId], references: [id])
 
+  // PayU Online Payment Fields
+  txnid              String?
+  payuMoneyId        String?
+  gatewayStatus      String?
+  rawGatewayResponse String?
+
   @@index([status, paymentDate])
+  @@index([txnid])
 }
 
 model FeeHead {
@@ -309,4 +317,36 @@ model Session {
 
   studentProfiles StudentProfile[]
   feePayments     FeePayment[]
+}
+
+model TransferCertificate {
+  id              String          @id @default(auto()) @map("_id") @db.ObjectId
+  studentId       String?         @db.ObjectId
+  student         StudentProfile? @relation(fields: [studentId], references: [id], onDelete: SetNull)
+  studentName     String
+  admissionNo     String
+  withdrawalNo    String?
+  tcNo            String          @unique
+  sRegisterNo     String?
+  className       String?
+  leavingDate     String?
+  reason          String?
+  conduct         String?         @default("Satisfactory")
+  issueDate       DateTime        @default(now())
+  fatherName      String?
+  motherName      String?
+  occupation      String?
+  address         String?
+  caste           String?
+  lastInstitution String?
+  dob             String?
+  dobWords        String?
+  aadharNo        String?
+  isPaid          Boolean         @default(false)
+  receiptNo       String?
+  feeAmount       Float?          @default(0)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([admissionNo])
 }

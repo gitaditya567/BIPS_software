@@ -24,6 +24,7 @@ import ServiceRecord from './pages/teacher/ServiceRecord';
 import MyFees from './pages/student/MyFees';
 import MyAttendance from './pages/student/MyAttendance';
 import StudentProfile from './pages/student/StudentProfile';
+import PublicFeePayment from './pages/PublicFeePayment';
 import './index.css';
 
 const App: React.FC = () => {
@@ -36,6 +37,8 @@ const App: React.FC = () => {
 
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/feeonline" element={<PublicFeePayment />} />
+          <Route path="feeonline" element={<PublicFeePayment />} />
 
           <Route path="/" element={<Layout />}>
             <Route index element={<Navigate to="/login" replace />} />

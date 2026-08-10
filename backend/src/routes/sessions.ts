@@ -112,21 +112,26 @@ function getNextClassName(currentName: string) {
 }
 
 function isPaymentInAcademicYear(p: any, academicYear: string) {
+    if (!academicYear) return true;
     const parts = academicYear.split('-');
     if (parts.length !== 2) return true;
-    let startYear = parts[0];
-    let endYear = parts[1];
+    let startYear = parts[0].trim();
+    let endYear = parts[1].trim();
 
     if (startYear.length === 2) startYear = `20${startYear}`;
     if (endYear.length === 2) endYear = `20${endYear}`;
 
-    const month = p.month || '';
-    const year = p.year || '';
+    const month = (p.month || '').trim();
+    const pYear = String(p.year || '').trim();
+
+    if (pYear && (pYear === academicYear || pYear.startsWith(startYear) || pYear.includes(startYear) || pYear.includes(endYear))) {
+        return true;
+    }
 
     const pDate = new Date(p.paymentDate);
     const startSessionDate = new Date(parseInt(startYear), 3, 1);
     const endSessionDate = new Date(parseInt(endYear), 2, 31, 23, 59, 59);
-    const isWithinDateRange = pDate >= startSessionDate && pDate <= endSessionDate;
+    const isWithinDateRange = !isNaN(pDate.getTime()) && pDate >= startSessionDate && pDate <= endSessionDate;
 
     if (p.feeHead && p.feeHead.toLowerCase().includes('previous dues')) {
         return isWithinDateRange;
@@ -136,10 +141,10 @@ function isPaymentInAcademicYear(p: any, academicYear: string) {
     const autumnMonths = ['April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
     if (springMonths.includes(month)) {
-        return year === endYear;
+        return !pYear || pYear === endYear || pYear.includes(endYear) || isWithinDateRange;
     }
     if (autumnMonths.includes(month)) {
-        return year === startYear;
+        return !pYear || pYear === startYear || pYear.includes(startYear) || isWithinDateRange;
     }
 
     return isWithinDateRange;

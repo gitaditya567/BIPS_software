@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNotification } from '../../context/NotificationContext';
-import { IndianRupee, TrendingUp, CalendarDays, Trash2, Check, AlertCircle, Calendar, Users, Download } from 'lucide-react';
+import { IndianRupee, TrendingUp, CalendarDays, Trash2, Check, AlertCircle, Calendar, Users, Download, CreditCard } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -19,6 +19,9 @@ interface FeeRecord {
     discount: number;
     paidAmount: number;
     paymentMode: string;
+    txnid?: string;
+    payuMoneyId?: string;
+    gatewayStatus?: string;
     date: string;
     status: 'APPROVED' | 'PENDING' | 'REJECTED';
     submittedBy: string;
@@ -144,11 +147,17 @@ const formatAmount = (val: any) => {
     return Number(num.toFixed(2)).toLocaleString('en-IN');
 };
 
+const isApproverRole = (role?: string) => {
+    if (!role) return false;
+    const r = role.toUpperCase();
+    return r === 'PRINCIPAL' || r === 'ADMIN' || r === 'SUPERADMIN' || r === 'SUPER_ADMIN' || r === 'SUPERADMINISTRATOR' || r === 'SUPER_ADMINISTRATOR';
+};
+
 const Fees: React.FC = () => {
     const navigate = useNavigate();
     const { addNotification } = useNotification();
     const [user, setUser] = useState<{ id: string; role: string; name: string } | null>(null);
-    const [activeTab, setActiveTab] = useState<'collection' | 'heads' | 'due' | 'structure' | 'reports' | 'approvals' | 'drafts' | 'previous_due'>('collection');
+    const [activeTab, setActiveTab] = useState<'collection' | 'other_fees' | 'heads' | 'due' | 'structure' | 'reports' | 'approvals' | 'drafts' | 'previous_due'>('collection');
     const [activeReport, setActiveReport] = useState<'daily' | 'monthly' | 'class' | 'pending'>('daily');
     const [showReceipt, setShowReceipt] = useState(false);
     const [selectedReceipt, setSelectedReceipt] = useState<FeeRecord | null>(null);
@@ -158,6 +167,25 @@ const Fees: React.FC = () => {
     const [studentHistory, setStudentHistory] = useState<FeeRecord[]>([]);
     const [pendingDues, setPendingDues] = useState<number>(0);
     const [feeHeads, setFeeHeads] = useState<FeeHead[]>([]);
+
+    // Other Fees State
+    const [otherFeeSubTab, setOtherFeeSubTab] = useState<'reg_fee' | 'late_fee' | 'event_fee' | 'other_misc'>('reg_fee');
+    const [otherFeeSearchQuery, setOtherFeeSearchQuery] = useState('');
+    const [otherFeeShowSearchDropdown, setOtherFeeShowSearchDropdown] = useState(false);
+    const [otherFeeStudent, setOtherFeeStudent] = useState<any | null>(null);
+    const [otherFeeDate, setOtherFeeDate] = useState(new Date().toISOString().split('T')[0]);
+    const [otherFeeStudentName, setOtherFeeStudentName] = useState('');
+    const [otherFeeAdmissionNo, setOtherFeeAdmissionNo] = useState('');
+    const [otherFeeFatherName, setOtherFeeFatherName] = useState('');
+    const [otherFeeClass, setOtherFeeClass] = useState('');
+    const [otherFeeAddress, setOtherFeeAddress] = useState('');
+    const [otherFeeCategory, setOtherFeeCategory] = useState('Registration Fee');
+    const [otherFeeDescription, setOtherFeeDescription] = useState('');
+    const [otherFeeAmount, setOtherFeeAmount] = useState('');
+    const [otherFeePaymentMode, setOtherFeePaymentMode] = useState<'Cash' | 'PayU'>('Cash');
+    const [otherFeeRemark, setOtherFeeRemark] = useState('');
+    const [otherFeeSubmitting, setOtherFeeSubmitting] = useState(false);
+    const [otherFeeTableSearch, setOtherFeeTableSearch] = useState('');
 
     // State for Editing Fee Structure
     const [editingClassId, setEditingClassId] = useState<string | null>(null);
@@ -186,7 +214,7 @@ const Fees: React.FC = () => {
         monthly: [],
         classWise: []
     });
-    const [reportFilterMonth, setReportFilterMonth] = useState(new Date().toLocaleString('en-GB', { month: 'long' }));
+    const [reportFilterMonth, setReportFilterMonth] = useState('All');
     const [classReportFilter, setClassReportFilter] = useState('All');
     const [pendingClassFilter, setPendingClassFilter] = useState('All');
     const [prevDueClassFilter, setPrevDueClassFilter] = useState('All');
@@ -709,48 +737,87 @@ const Fees: React.FC = () => {
     const exportToPDF = () => {
         const doc = new jsPDF() as any;
         const activeSessionStr = localStorage.getItem('activeSession') || '2024-2025';
-        doc.setFont("helvetica", "bold");
-        doc.text("BIPS ERP - SCHOOL MANAGEMENT SYSTEM", 14, 15);
-        doc.setFontSize(10);
-        doc.setFont("helvetica", "normal");
-        doc.text(`Generated on: ${new Date().toLocaleString()} | Academic Session: ${activeSessionStr}`, 14, 22);
 
         let reportName = "";
         let head: any[] = [];
         let body: any[] = [];
+        let summaryHead: any[] = [];
+        let summaryBody: any[] = [];
 
         if (activeReport === 'daily') {
             const todayStr = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-            const query = receiptSearchQuery.trim().toLowerCase();
-            reportName = query !== '' ? `Search Collection Report` : `Daily Collection Report (${todayStr})`;
-            head = [['Date', 'Student Name', 'Father Name', 'Class', 'Receipt No', 'Amount (INR)']];
+            const rawQuery = receiptSearchQuery.trim().toLowerCase();
+            const numOnlyQuery = rawQuery.replace(/^rcp/i, '');
+            reportName = rawQuery !== '' ? `Search Collection Report` : `Daily Collection Report (${todayStr})`;
+            head = [['S.No.', 'Date', 'Student Name', 'Father Name', 'Class', 'Receipt No', 'Payment Mode', 'Amount (INR)']];
             
-            const filtered = query !== ''
-                ? reportData.daily.filter(d => 
-                    (d.receiptNo || '').toLowerCase().includes(query) ||
-                    (d.studentName || '').toLowerCase().includes(query) ||
-                    (d.admissionNo || '').toLowerCase().includes(query)
-                  )
-                : reportData.daily.filter(d => d.date === todayStr);
+            let filtered: any[] = [];
+            if (rawQuery !== '') {
+                const rNoMatches = reportData.daily.filter(d => {
+                    const rNo = (d.receiptNo || '').toLowerCase();
+                    return rNo.includes(rawQuery) || (numOnlyQuery !== '' && rNo.includes(numOnlyQuery));
+                });
+                if (rNoMatches.length > 0) {
+                    filtered = rNoMatches;
+                } else {
+                    filtered = reportData.daily.filter(d => {
+                        const sName = (d.studentName || '').toLowerCase();
+                        const admNo = (d.admissionNo || '').toLowerCase();
+                        return sName.includes(rawQuery) || (numOnlyQuery !== '' && sName.includes(numOnlyQuery)) ||
+                               admNo.includes(rawQuery) || (numOnlyQuery !== '' && admNo.includes(numOnlyQuery));
+                    });
+                }
+            } else {
+                filtered = reportData.daily.filter(d => d.date === todayStr);
+            }
 
-            body = filtered.map(d => [d.date, d.studentName, d.fatherName || 'N/A', d.className, d.receiptNo, `Rs. ${d.paidAmount.toLocaleString()}`]);
-            
-            // Add a total row
-            const total = filtered.reduce((s, d) => s + d.paidAmount, 0);
-            body.push([{ content: 'GRAND TOTAL:', colSpan: 5, styles: { halign: 'right', fontStyle: 'bold' } }, { content: `Rs. ${total.toLocaleString()}`, styles: { fontStyle: 'bold' } }]);
-        } else if (activeReport === 'monthly') {
-            reportName = `Monthly Collection Detailed (${reportFilterMonth})`;
-            head = [['Date', 'Receipt No', 'Student Name', 'Class', 'Mode', 'Amount (INR)']];
-            const filtered = reportData.daily.filter(d => {
-                const pDate = new Date(d.paymentDate);
-                const m = pDate.toLocaleString('en-GB', { month: 'long' });
-                return m === reportFilterMonth;
+            body = filtered.map((d, index) => {
+                const isOnline = (d.paymentMode || '').toLowerCase().includes('payu') || (d.paymentMode || '').toLowerCase().includes('online');
+                return [index + 1, d.date, d.studentName, d.fatherName || 'N/A', d.className, d.receiptNo, isOnline ? 'Online (PayU)' : 'Cash', `Rs. ${d.paidAmount.toLocaleString()}`];
             });
-            body = filtered.map(d => [d.date, d.receiptNo, d.studentName, d.className, d.paymentMode, `Rs. ${d.paidAmount.toLocaleString()}`]);
             
-            // Add a total row
+            // Calculate totals and counts for Cash, Online, and Grand Total
+            const cashFiltered = filtered.filter(d => !(d.paymentMode || '').toLowerCase().includes('payu') && !(d.paymentMode || '').toLowerCase().includes('online'));
+            const onlineFiltered = filtered.filter(d => (d.paymentMode || '').toLowerCase().includes('payu') || (d.paymentMode || '').toLowerCase().includes('online'));
+            
+            const cashCount = cashFiltered.length;
+            const onlineCount = onlineFiltered.length;
+            const cashTotal = cashFiltered.reduce((s, d) => s + d.paidAmount, 0);
+            const onlineTotal = onlineFiltered.reduce((s, d) => s + d.paidAmount, 0);
             const total = filtered.reduce((s, d) => s + d.paidAmount, 0);
-            body.push([{ content: 'GRAND TOTAL:', colSpan: 5, styles: { halign: 'right', fontStyle: 'bold' } }, { content: `Rs. ${total.toLocaleString()}`, styles: { fontStyle: 'bold' } }]);
+
+            // Separate Top Executive Summary Table
+            summaryHead = [['REPORT DATE', 'TOTAL RECEIPTS', 'CASH TOTAL (INR)', 'ONLINE TOTAL (INR)', 'GRAND TOTAL (INR)']];
+            summaryBody = [[
+                todayStr,
+                `${filtered.length} Receipt(s)\n(Cash: ${cashCount} | Online: ${onlineCount})`,
+                `Rs. ${cashTotal.toLocaleString()}`,
+                `Rs. ${onlineTotal.toLocaleString()}`,
+                `Rs. ${total.toLocaleString()}`
+            ]];
+
+            // Add Cash Total, Online Total, and Grand Total rows
+            body.push([{ content: 'Cash Collection Total:', colSpan: 7, styles: { halign: 'right', fontStyle: 'bold', textColor: [51, 65, 85] } }, { content: `Rs. ${cashTotal.toLocaleString()}`, styles: { fontStyle: 'bold', textColor: [51, 65, 85] } }]);
+            body.push([{ content: 'Online (PayU) Collection Total:', colSpan: 7, styles: { halign: 'right', fontStyle: 'bold', textColor: [4, 120, 87] } }, { content: `Rs. ${onlineTotal.toLocaleString()}`, styles: { fontStyle: 'bold', textColor: [4, 120, 87] } }]);
+            body.push([{ content: 'GRAND TOTAL:', colSpan: 7, styles: { halign: 'right', fontStyle: 'bold', fillColor: [241, 245, 249] } }, { content: `Rs. ${total.toLocaleString()}`, styles: { fontStyle: 'bold', fillColor: [241, 245, 249] } }]);
+        } else if (activeReport === 'monthly') {
+            reportName = `Monthly Collection Fee Report (${reportFilterMonth === 'All' ? 'April to March' : reportFilterMonth})`;
+            head = [['S.No.', 'Month', 'Academic Session', 'Total Collection (INR)']];
+            const academicMonths = ['April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December', 'January', 'February', 'March'];
+            const filteredMonths = academicMonths.map(m => {
+                const found = (reportData.monthly || []).find((rec: any) => rec.month?.trim().toLowerCase() === m.toLowerCase());
+                return {
+                    month: m,
+                    year: found ? found.year : activeSessionStr,
+                    total: found ? found.total : 0
+                };
+            }).filter(m => reportFilterMonth === 'All' || m.month.toLowerCase() === reportFilterMonth.toLowerCase());
+
+            body = filteredMonths.map((m, idx) => [idx + 1, m.month, m.year, `Rs. ${m.total.toLocaleString()}`]);
+            
+            // Add Grand Total row
+            const total = filteredMonths.reduce((s, m) => s + m.total, 0);
+            body.push([{ content: 'GRAND TOTAL:', colSpan: 3, styles: { halign: 'right', fontStyle: 'bold', fillColor: [241, 245, 249] } }, { content: `Rs. ${total.toLocaleString()}`, styles: { fontStyle: 'bold', fillColor: [241, 245, 249] } }]);
         } else if (activeReport === 'class') {
             reportName = "Class-wise Fee Collection";
             head = [['Class', 'Students Paid', 'Collected (INR)']];
@@ -792,19 +859,66 @@ const Fees: React.FC = () => {
             body.push([{ content: 'GRAND TOTAL:', colSpan: 4, styles: { halign: 'right', fontStyle: 'bold' } }, { content: `Rs. ${total.toLocaleString()}`, styles: { fontStyle: 'bold' } }]);
         }
 
-        doc.setFontSize(14);
+        // Header Section (Clean, non-overlapping vertical Y alignment)
+        doc.setFontSize(15);
         doc.setFont("helvetica", "bold");
-        doc.text(reportName, 14, 32);
+        doc.text("BIPS SENIOR SECONDARY SCHOOL", 14, 13);
 
-        autoTable(doc, {
-            startY: 38,
-            head: head,
-            body: body,
-            theme: 'grid',
-            headStyles: { fillColor: [79, 70, 229], textColor: 255 },
-            alternateRowStyles: { fillColor: [248, 250, 252] },
-            margin: { top: 40 }
-        });
+        doc.setFontSize(11);
+        doc.setFont("helvetica", "bold");
+        doc.text(reportName, 14, 20);
+
+        doc.setFontSize(8.5);
+        doc.setFont("helvetica", "normal");
+        doc.text(`Generated on: ${new Date().toLocaleString()} | Academic Session: ${activeSessionStr}`, 14, 26);
+
+        if (activeReport === 'daily' && summaryHead.length > 0) {
+            // 1. Render Top Executive Summary Table
+            autoTable(doc, {
+                startY: 31,
+                head: summaryHead,
+                body: summaryBody,
+                theme: 'grid',
+                headStyles: { fillColor: [30, 41, 59], textColor: 255, fontStyle: 'bold', halign: 'center' },
+                bodyStyles: { fontStyle: 'bold', halign: 'center', fontSize: 9.5 },
+                columnStyles: {
+                    2: { textColor: [51, 65, 85] },
+                    3: { textColor: [4, 120, 87] },
+                    4: { textColor: [30, 41, 59], fillColor: [241, 245, 249] }
+                }
+            });
+
+            // 2. Render Main Receipts Table below summary table
+            autoTable(doc, {
+                startY: (doc as any).lastAutoTable.finalY + 8,
+                head: head,
+                body: body,
+                theme: 'grid',
+                headStyles: { fillColor: [79, 70, 229], textColor: 255 },
+                alternateRowStyles: { fillColor: [248, 250, 252] },
+                margin: { top: 20 },
+                didParseCell: function (data) {
+                    if (data.section === 'body' && Array.isArray(data.row.raw)) {
+                        const modeCell = String(data.row.raw[6] || '').toLowerCase();
+                        if (modeCell.includes('online') || modeCell.includes('payu')) {
+                            data.cell.styles.fillColor = [236, 253, 245];
+                            data.cell.styles.textColor = [4, 120, 87];
+                            data.cell.styles.fontStyle = 'bold';
+                        }
+                    }
+                }
+            });
+        } else {
+            autoTable(doc, {
+                startY: 32,
+                head: head,
+                body: body,
+                theme: 'grid',
+                headStyles: { fillColor: [79, 70, 229], textColor: 255 },
+                alternateRowStyles: { fillColor: [248, 250, 252] },
+                margin: { top: 20 }
+            });
+        }
 
         doc.save(`${reportName.replace(/ /g, '_')}_${activeSessionStr}_${new Date().toISOString().split('T')[0]}.pdf`);
     };
@@ -1039,10 +1153,10 @@ const Fees: React.FC = () => {
             setUser(parsedUser);
             
             // Initial data load
-            if (parsedUser.role === 'PRINCIPAL' || parsedUser.role === 'ADMIN') {
+            if (isApproverRole(parsedUser.role)) {
                 fetchPendingApprovals();
             }
-            if (parsedUser.role === 'ACCOUNTS' || parsedUser.role === 'ADMIN' || parsedUser.role === 'PRINCIPAL') {
+            if (parsedUser.role === 'ACCOUNTS' || parsedUser.role === 'ADMIN' || parsedUser.role === 'PRINCIPAL' || isApproverRole(parsedUser.role)) {
                 fetchAllHistory();
                 fetchReports();
                 fetchDueFees();
@@ -1059,7 +1173,7 @@ const Fees: React.FC = () => {
 
             // Polling for auto-refresh every 15 seconds (only for pending approvals)
             const interval = setInterval(() => {
-                if (parsedUser.role === 'PRINCIPAL' || parsedUser.role === 'ADMIN') {
+                if (isApproverRole(parsedUser.role)) {
                     fetchPendingApprovals();
                 }
             }, 15000);
@@ -1081,6 +1195,79 @@ const Fees: React.FC = () => {
             };
         }
     }, []);
+
+    // Handle post-payment URL params (PayU redirect return)
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const paymentStatus = params.get('payment');
+        const receiptParam = params.get('receipt');
+
+        if (paymentStatus === 'approved') {
+            if (receiptParam) {
+                axios.get('/erp-api/fees').then(res => {
+                    const foundRec = res.data.find((r: any) => r.receiptNo === receiptParam);
+                    if (foundRec) {
+                        const formattedRec: FeeRecord = {
+                            ...foundRec,
+                            paidAmount: foundRec.amountPaid || foundRec.paidAmount || 0,
+                            date: new Date(foundRec.paymentDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+                            studentName: foundRec.studentName || foundRec.student?.user?.name || 'Student',
+                            className: foundRec.className || foundRec.student?.class?.name || '',
+                            admissionNo: foundRec.admissionNo || foundRec.student?.admissionNo || '-'
+                        };
+                        setSelectedReceipt(formattedRec);
+                        setShowReceipt(true);
+
+                        // Populate Student Fee Counter view behind the modal
+                        const stId = foundRec.studentId || foundRec.student?.id;
+                        const stName = foundRec.studentName || foundRec.student?.user?.name;
+                        const admNo = foundRec.admissionNo || foundRec.student?.admissionNo;
+                        const clsName = foundRec.className || foundRec.student?.class?.name;
+                        const fName = foundRec.student?.fatherName || 'N/A';
+                        const oldSt = Boolean(foundRec.student?.isOldStudent);
+
+                        if (stName) setStudentName(stName);
+                        if (admNo) setAdmissionNo(admNo);
+                        if (clsName) setSelectedClass(clsName);
+                        if (fName) setFatherName(fName);
+                        setIsOldStudent(oldSt);
+
+                        if (stId) {
+                            fetchStudentHistory(stId, stName || 'Student');
+                        }
+                    }
+                }).catch(console.error);
+            }
+        } else if (paymentStatus === 'rejected') {
+            const studentIdParam = params.get('studentId');
+            if (studentIdParam) {
+                axios.get(`/erp-api/admin/students/${studentIdParam}`).then(res => {
+                    const s = res.data;
+                    if (s) {
+                        setStudentName(s.user?.name || s.name || '');
+                        setAdmissionNo(s.admissionNo || '');
+                        setFatherName(s.fatherName || 'N/A');
+                        setIsOldStudent(Boolean(s.isOldStudent));
+                        setSelectedClass(s.class?.name || s.className || '');
+                        fetchStudentHistory(s.id, s.user?.name || s.name || 'Student');
+                    }
+                }).catch(() => {
+                    const s = students.find((st: any) => st.id === studentIdParam);
+                    if (s) {
+                        setStudentName(s.name);
+                        setAdmissionNo(s.admissionNo);
+                        setFatherName(s.fatherName || 'N/A');
+                        setIsOldStudent(Boolean(s.isOldStudent));
+                        setSelectedClass(s.className);
+                        fetchStudentHistory(s.id, s.name);
+                    }
+                });
+            }
+            addNotification('fee', 'Payment Status', 'PayU Payment was cancelled or failed. Please try again.');
+            const cleanUrl = window.location.pathname;
+            window.history.replaceState({}, document.title, cleanUrl);
+        }
+    }, [students]);
 
     // Fetch initial data regardless of login status (for the module to function)
     useEffect(() => {
@@ -1107,17 +1294,16 @@ const Fees: React.FC = () => {
     const fetchPendingApprovals = async () => {
         try {
             const res = await axios.get('/erp-api/fees/pending');
-            // Map backend amountPaid to frontend paidAmount
             const mappedData = res.data.map((r: any) => ({
                 ...r,
                 paidAmount: r.amountPaid || r.paidAmount || 0,
-                studentName: r.studentName || 'Unknown Student',
-                admissionNo: r.admissionNo || 'N/A',
-                className: r.className || 'Unknown Class'
+                studentName: r.studentName || r.student?.user?.name || 'Unknown Student',
+                admissionNo: r.admissionNo || r.student?.admissionNo || 'N/A',
+                className: r.className || r.student?.class?.name || 'Unknown Class'
             }));
             setFeeRecords(prev => {
                 const nonPending = prev.filter(r => r.status !== 'PENDING');
-                return [...nonPending, ...mappedData];
+                return [...mappedData, ...nonPending];
             });
         } catch (err) {
             console.error('Failed to fetch approvals:', err);
@@ -1139,10 +1325,10 @@ const Fees: React.FC = () => {
                 ...r,
                 paidAmount: r.amountPaid || r.paidAmount || 0,
                 date: new Date(r.paymentDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
-                studentName: studentNameVal,
-                admissionNo: r.student?.admissionNo || r.admissionNo || 'N/A',
-                className: r.student?.class?.name || r.className || 'N/A',
-                sessionName: r.session?.name || null
+                studentName: r.studentName || r.student?.user?.name || studentNameVal || 'Student',
+                admissionNo: r.admissionNo || r.student?.admissionNo || admissionNo || 'N/A',
+                className: r.className || r.student?.class?.name || selectedClass || 'N/A',
+                sessionName: r.session?.name || r.sessionName || null
             }));
             setStudentHistory(mappedHistory);
             
@@ -1305,14 +1491,20 @@ const Fees: React.FC = () => {
     const fetchAllHistory = async () => {
         try {
             const res = await axios.get('/erp-api/fees');
-            setFeeRecords(res.data.map((r: any) => ({
+            const newHistory = res.data.map((r: any) => ({
                 ...r,
                 paidAmount: r.amountPaid || r.paidAmount || 0,
                 date: new Date(r.paymentDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
-                studentName: r.studentName || 'Unknown Student',
-                className: r.className || 'Unknown Class',
+                studentName: r.studentName || r.student?.user?.name || 'Unknown Student',
+                className: r.className || r.student?.class?.name || 'Unknown Class',
                 sessionName: r.session?.name || null
-            })));
+            }));
+            setFeeRecords(prev => {
+                const pendingItems = prev.filter(r => r.status === 'PENDING');
+                const pendingIds = new Set(pendingItems.map(p => p.id));
+                const filteredHistory = newHistory.filter((h: any) => !pendingIds.has(h.id));
+                return [...pendingItems, ...filteredHistory];
+            });
         } catch (err) {
             console.error('Failed to fetch full history:', err);
         }
@@ -1384,6 +1576,9 @@ const Fees: React.FC = () => {
                 case 'drafts':
                     fetchAllHistory();
                     break;
+                case 'other_fees':
+                    fetchAllHistory();
+                    break;
                 case 'collection':
                     fetchAllHistory();
                     break;
@@ -1404,6 +1599,63 @@ const Fees: React.FC = () => {
 
         return () => clearInterval(interval);
     }, [activeTab, dueView, user]);
+
+    // Auto pop-up Printable Thermal Receipt when returning from online PayU payment
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const paymentStatus = params.get('payment');
+        const receiptNoParam = params.get('receipt');
+
+        if (paymentStatus === 'approved' && receiptNoParam) {
+            axios.get('/erp-api/fees/history').then(res => {
+                const found = (res.data || []).find((r: any) => r.receiptNo === receiptNoParam);
+                if (found) {
+                    setSelectedReceipt(found);
+                    setShowReceipt(true);
+                    addNotification('fee', 'Payment Approved', `Online PayU Payment Approved! Receipt ${receiptNoParam} generated successfully.`);
+                }
+            }).catch(err => console.error('Failed to fetch receipt for modal popup', err));
+
+            // Clean query parameters from URL so modal doesn't pop up again on refresh
+            const cleanUrl = window.location.pathname;
+            window.history.replaceState({}, document.title, cleanUrl);
+        }
+    }, []);
+
+    const getFilteredTransportDues = () => {
+        return transportDues
+            .filter(d => dueClassFilter === 'All' || d.className === dueClassFilter)
+            .filter(d => {
+                if (dueRtFilter === 'All') return true;
+                if (dueRtFilter === 'RT') return d.isRT;
+                return !d.isRT;
+            })
+            .filter(d => {
+                if (dueSearchQuery === '') return true;
+                const query = dueSearchQuery.toLowerCase();
+                return (d.studentName || '').toLowerCase().includes(query) ||
+                       (d.fatherName || '').toLowerCase().includes(query);
+            })
+            .filter(d => {
+                const month = dueMonthFilter;
+                const isMonthSelected = month !== 'All';
+                const isMonthPaid = isMonthSelected ? (d.paidMonths || []).includes(month) : false;
+
+                if (dueStatusFilter === 'Paid') {
+                    return isMonthSelected ? isMonthPaid : d.pending === 0;
+                }
+                if (dueStatusFilter === 'Unpaid') {
+                    return isMonthSelected ? !isMonthPaid : (d.pending > 0 || d.totalPaid === 0);
+                }
+                if (dueStatusFilter === 'Partially Paid') {
+                    return isMonthSelected ? (!isMonthPaid && (d.paidMonths || []).length > 0) : (d.totalPaid > 0 && d.pending > 0);
+                }
+                if (dueStatusFilter === 'Any Outstanding') {
+                    return isMonthSelected ? !isMonthPaid : d.pending > 0;
+                }
+                return true;
+            });
+    };
 
     const downloadDueExcel = () => {
         const activeSessionStr = localStorage.getItem('activeSession') || '2024-2025';
@@ -1496,48 +1748,56 @@ const Fees: React.FC = () => {
             document.body.removeChild(link);
         } else {
             // Transport Excel
-            const headers = ['STUDENT NAME', 'FATHER NAME', 'CLASS', 'STOP', 'MONTHLY FARE', 'TOTAL PAID', 'TOTAL PENDING', 'MONTHS PAID'];
-            const filtered = transportDues
-                .filter(d => dueClassFilter === 'All' || d.className === dueClassFilter)
-                .filter(d => {
-                    if (dueRtFilter === 'All') return true;
-                    if (dueRtFilter === 'RT') return d.isRT;
-                    return !d.isRT;
-                })
-                .filter(d => {
-                    if (dueSearchQuery === '') return true;
-                    const query = dueSearchQuery.toLowerCase();
-                    return (d.studentName || '').toLowerCase().includes(query) ||
-                           (d.fatherName || '').toLowerCase().includes(query);
-                })
-                .filter(d => {
-                    if (dueStatusFilter === 'Paid') return d.pending === 0;
-                    if (dueStatusFilter === 'Unpaid') return d.totalPaid === 0 && d.monthlyFare > 0;
-                    if (dueStatusFilter === 'Partially Paid') return d.totalPaid > 0 && d.pending > 0;
-                    if (dueStatusFilter === 'Any Outstanding') return d.pending > 0;
-                    return true;
-                });
-            const csvContent = [
-                `"Academic Session: ${activeSessionStr}"`,
-                "",
-                headers.join(','),
-                ...filtered.map(d => [
-                    `"${d.studentName}"`,
-                    `"${d.fatherName || 'N/A'}"`,
-                    `"${d.className}"`,
-                    `"${d.stopName}"`,
-                    d.monthlyFare,
-                    d.totalPaid,
-                    d.pending,
-                    `"${(d.paidMonths || []).join('; ')}"`
-                ].join(','))
-            ].join('\n');
+            const filtered = getFilteredTransportDues();
+            let headers: string[] = [];
+            let csvContentLines: string[] = [];
 
+            if (dueMonthFilter !== 'All') {
+                headers = ['STUDENT NAME', 'FATHER NAME', 'CLASS', 'STOP', 'MONTHLY FARE', `${dueMonthFilter.toUpperCase()} STATUS`, 'TOTAL PENDING (SESSION)', 'MONTHS PAID'];
+                csvContentLines = [
+                    `"Academic Session: ${activeSessionStr} | Month: ${dueMonthFilter} | Status: ${dueStatusFilter}"`,
+                    "",
+                    headers.join(','),
+                    ...filtered.map(d => {
+                        const isPaidForMonth = (d.paidMonths || []).includes(dueMonthFilter);
+                        const statusText = isPaidForMonth ? 'PAID' : 'UNPAID';
+                        return [
+                            `"${d.studentName}"`,
+                            `"${d.fatherName || 'N/A'}"`,
+                            `"${d.className}"`,
+                            `"${d.stopName}"`,
+                            d.monthlyFare,
+                            `"${statusText}"`,
+                            d.pending,
+                            `"${(d.paidMonths || []).join('; ')}"`
+                        ].join(',');
+                    })
+                ];
+            } else {
+                headers = ['STUDENT NAME', 'FATHER NAME', 'CLASS', 'STOP', 'MONTHLY FARE', 'TOTAL PAID', 'TOTAL PENDING', 'MONTHS PAID'];
+                csvContentLines = [
+                    `"Academic Session: ${activeSessionStr} | Status: ${dueStatusFilter}"`,
+                    "",
+                    headers.join(','),
+                    ...filtered.map(d => [
+                        `"${d.studentName}"`,
+                        `"${d.fatherName || 'N/A'}"`,
+                        `"${d.className}"`,
+                        `"${d.stopName}"`,
+                        d.monthlyFare,
+                        d.totalPaid,
+                        d.pending,
+                        `"${(d.paidMonths || []).join('; ')}"`
+                    ].join(','))
+                ];
+            }
+
+            const csvContent = csvContentLines.join('\n');
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
             const url = URL.createObjectURL(blob);
             const link = document.createElement("a");
             link.setAttribute("href", url);
-            link.setAttribute("download", `Transport_Dues_${activeSessionStr}_${new Date().toLocaleDateString()}.csv`);
+            link.setAttribute("download", dueMonthFilter !== 'All' ? `Transport_Unpaid_${dueMonthFilter}_${activeSessionStr}.csv` : `Transport_Dues_${activeSessionStr}.csv`);
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
@@ -1746,12 +2006,167 @@ const Fees: React.FC = () => {
                 setFinalAmount(netPayable);
                 setPaidAmount(netPayable); // Auto-fill amount being paid
             }
-        } else {
-            setTotalFee('0');
-            setFinalAmount('0');
-            setPaidAmount('');
         }
     }, [selectedClass, selectedFees, discount, feeStructure, isTransportEnabled, isTransportYearly, transportRows, pendingDues, selectedMonths]);
+
+    const handleCollectOtherFee = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!otherFeeAmount || Number(otherFeeAmount) <= 0) {
+            alert('Please enter a valid fee amount');
+            return;
+        }
+        if (!otherFeeStudentName || !otherFeeAdmissionNo) {
+            alert('Please enter student name and admission number');
+            return;
+        }
+
+        setOtherFeeSubmitting(true);
+        try {
+            const matchingStudent = otherFeeStudent || students.find(s => s.admissionNo === otherFeeAdmissionNo || (s.name || '').toLowerCase() === otherFeeStudentName.toLowerCase()) || (students.length > 0 ? students[0] : null);
+
+            const feeHeadValue = `${otherFeeCategory}${otherFeeDescription ? `: ${otherFeeDescription}` : ''}`;
+
+            const payload = {
+                studentId: matchingStudent?.id || (students.length > 0 ? students[0].id : undefined),
+                admissionNo: otherFeeAdmissionNo,
+                amountPaid: Number(otherFeeAmount),
+                totalFee: Number(otherFeeAmount),
+                discount: 0,
+                feeHead: feeHeadValue,
+                paymentMode: otherFeePaymentMode,
+                month: new Date().toLocaleString('en-US', { month: 'long' }),
+                year: new Date().getFullYear().toString(),
+                submittedBy: user?.name || 'User',
+                remark: otherFeeRemark || `Collected ${otherFeeCategory}${otherFeeAddress ? ` | Address: ${otherFeeAddress}` : ''}${otherFeeFatherName ? ` | Father: ${otherFeeFatherName}` : ''}`
+            };
+
+            if (otherFeePaymentMode === 'PayU') {
+                const payuRes = await axios.post('/erp-api/fees/payu/initiate', {
+                    studentId: matchingStudent?.id || (students.length > 0 ? students[0].id : undefined),
+                    amountPaid: Number(otherFeeAmount),
+                    totalFee: Number(otherFeeAmount),
+                    discount: 0,
+                    feeHead: feeHeadValue,
+                    month: new Date().toLocaleString('en-US', { month: 'long' }),
+                    year: new Date().getFullYear().toString(),
+                    remark: otherFeeRemark || `Collected ${otherFeeCategory}`,
+                    customerName: otherFeeStudentName,
+                    customerEmail: 'student@school.com',
+                    customerPhone: '9999999999',
+                    udf4: 'Admin'
+                });
+
+                if (payuRes.data.success && payuRes.data.action && payuRes.data.params) {
+                    const form = document.createElement('form');
+                    form.method = 'POST';
+                    form.action = payuRes.data.action;
+
+                    Object.entries(payuRes.data.params).forEach(([k, v]) => {
+                        const input = document.createElement('input');
+                        input.type = 'hidden';
+                        input.name = k;
+                        input.value = String(v);
+                        form.appendChild(input);
+                    });
+
+                    document.body.appendChild(form);
+                    form.submit();
+                    return;
+                } else {
+                    alert('Could not initiate PayU Gateway: ' + (payuRes.data.error || 'Unknown error'));
+                    return;
+                }
+            }
+
+            const res = await axios.post('/erp-api/fees/collect', payload);
+            const savedRecord = res.data.data;
+
+            const newRecord: FeeRecord = {
+                ...savedRecord,
+                paidAmount: savedRecord.amountPaid || savedRecord.paidAmount || Number(otherFeeAmount),
+                id: savedRecord.id,
+                date: new Date(savedRecord.paymentDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+                studentName: otherFeeStudentName,
+                admissionNo: otherFeeAdmissionNo,
+                className: otherFeeClass || 'General',
+                sessionName: savedRecord.session?.name || null
+            };
+
+            setFeeRecords([newRecord, ...feeRecords]);
+            setSelectedReceipt(newRecord);
+            setShowReceipt(true);
+            addNotification('fee', `${otherFeeCategory} Collected`, `₹${Number(otherFeeAmount).toLocaleString()} collected from ${otherFeeStudentName}.`);
+
+            // Reset form
+            setOtherFeeStudent(null);
+            setOtherFeeStudentName('');
+            setOtherFeeAdmissionNo('');
+            setOtherFeeFatherName('');
+            setOtherFeeClass('');
+            setOtherFeeAddress('');
+            setOtherFeeDescription('');
+            setOtherFeeAmount('');
+            setOtherFeeRemark('');
+            setOtherFeeSearchQuery('');
+        } catch (err: any) {
+            console.error(err);
+            alert(err.response?.data?.error || 'Failed to collect fee');
+        } finally {
+            setOtherFeeSubmitting(false);
+        }
+    };
+
+    const handleRetryPayment = async (record: FeeRecord) => {
+        const student = students.find(s => s.admissionNo === admissionNo) || (record as any).student;
+        if (!student) {
+            alert('Student details not found');
+            return;
+        }
+
+        const confirmRetry = window.confirm(`Retry payment of ₹${record.paidAmount || record.totalFee} for ${record.feeHead || 'Fee'} via PayU?`);
+        if (!confirmRetry) return;
+
+        setSubmitting(true);
+        try {
+            const payuRes = await axios.post('/erp-api/fees/payu/initiate', {
+                studentId: student.id,
+                amountPaid: Number(record.paidAmount || record.totalFee),
+                totalFee: Number(record.totalFee || record.paidAmount),
+                discount: Number(record.discount || 0),
+                feeHead: record.feeHead || 'Retry Fee Payment',
+                month: record.month || selectedMonths[0] || 'April',
+                year: new Date().getFullYear().toString(),
+                remark: `Retry Payment for ${record.receiptNo || 'Failed Txn'}`,
+                customerName: student.name || studentName,
+                customerEmail: 'student@school.com',
+                customerPhone: '9999999999',
+                udf4: 'Admin'
+            });
+
+            if (payuRes.data.success && payuRes.data.action && payuRes.data.params) {
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.action = payuRes.data.action;
+
+                Object.entries(payuRes.data.params).forEach(([k, v]) => {
+                    const input = document.createElement('input');
+                    input.type = 'hidden';
+                    input.name = k;
+                    input.value = String(v);
+                    form.appendChild(input);
+                });
+
+                document.body.appendChild(form);
+                form.submit();
+            } else {
+                alert('Could not initiate PayU Gateway: ' + (payuRes.data.error || 'Unknown error'));
+                setSubmitting(false);
+            }
+        } catch (err: any) {
+            alert('Failed to retry payment: ' + (err.message || err));
+            setSubmitting(false);
+        }
+    };
 
     const handleCollectFee = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -1812,6 +2227,44 @@ const Fees: React.FC = () => {
                 submittedBy: user?.name || 'User',
                 remark
             };
+
+            if (paymentMode === 'PayU') {
+                const payuRes = await axios.post('/erp-api/fees/payu/initiate', {
+                    studentId: student.id,
+                    amountPaid: Number(paidAmount),
+                    totalFee: Number(totalFee),
+                    discount: Number(discount),
+                    feeHead: feeHeadValue,
+                    month: selectedMonths[0] || 'April',
+                    year: new Date().getFullYear().toString(),
+                    remark: remark || 'Paid via PayU Online Gateway',
+                    customerName: student.name,
+                    customerEmail: 'student@school.com',
+                    customerPhone: '9999999999',
+                    udf4: 'Admin'
+                });
+
+                if (payuRes.data.success && payuRes.data.action && payuRes.data.params) {
+                    const form = document.createElement('form');
+                    form.method = 'POST';
+                    form.action = payuRes.data.action;
+
+                    Object.entries(payuRes.data.params).forEach(([k, v]) => {
+                        const input = document.createElement('input');
+                        input.type = 'hidden';
+                        input.name = k;
+                        input.value = String(v);
+                        form.appendChild(input);
+                    });
+
+                    document.body.appendChild(form);
+                    form.submit();
+                    return;
+                } else {
+                    alert('Could not initiate PayU Gateway: ' + (payuRes.data.error || 'Unknown error'));
+                    return;
+                }
+            }
 
             const res = await axios.post('/erp-api/fees/collect', payload);
             const savedRecord = res.data.data;
@@ -2101,6 +2554,7 @@ const Fees: React.FC = () => {
                 <div style={{ display: 'flex', gap: '0.4rem', background: '#f1f5f9', padding: '0.35rem', borderRadius: '10px', flexWrap: 'wrap', overflowX: 'auto' }}>
                     {[
                         { id: 'collection', label: 'Fee Collection' },
+                        { id: 'other_fees', label: 'Other Fees' },
                         { id: 'drafts', label: 'My Drafts' },
                         { id: 'approvals', label: 'Approvals' },
                         { id: 'heads', label: 'Fee Heads' },
@@ -2110,8 +2564,8 @@ const Fees: React.FC = () => {
                         { id: 'reports', label: 'Fee Reports' }
                     ].map(tab => {
 
-                        // Principal or Admin only for Approvals
-                        const isAuthorized = user?.role === 'PRINCIPAL' || user?.role === 'ADMIN';
+                        // Principal, Admin, and Superadmin for Approvals
+                        const isAuthorized = isApproverRole(user?.role);
                         if (tab.id === 'approvals' && !isAuthorized) return null;
                              // Accountant only for Drafts
                         if (tab.id === 'drafts' && user?.role !== 'ACCOUNTS') return null;
@@ -2643,7 +3097,7 @@ const Fees: React.FC = () => {
                                 </div>
                                 <div style={{ maxHeight: '400px', overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: '12px' }}>
                                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                                    <thead><tr style={{ textAlign: 'left', borderBottom: '2px solid #e2e8f0', color: '#64748b', fontSize: '0.85rem', position: 'sticky', top: 0, backgroundColor: '#f8fafc', zIndex: 1 }}><th style={{ padding: '0.75rem' }}>Receipt</th><th style={{ padding: '0.75rem' }}>Fee Head</th><th style={{ padding: '0.75rem' }}>Amount</th><th style={{ padding: '0.75rem' }}>Due</th><th style={{ padding: '0.75rem' }}>Discount</th><th style={{ padding: '0.75rem' }}>Date</th><th style={{ padding: '0.75rem' }}>Status</th></tr></thead>
+                                    <thead><tr style={{ textAlign: 'left', borderBottom: '2px solid #e2e8f0', color: '#64748b', fontSize: '0.85rem', position: 'sticky', top: 0, backgroundColor: '#f8fafc', zIndex: 1 }}><th style={{ padding: '0.75rem' }}>Receipt</th><th style={{ padding: '0.75rem' }}>Fee Head</th><th style={{ padding: '0.75rem' }}>Amount</th><th style={{ padding: '0.75rem' }}>Due</th><th style={{ padding: '0.75rem' }}>Discount</th><th style={{ padding: '0.75rem' }}>Mode</th><th style={{ padding: '0.75rem' }}>Date</th><th style={{ padding: '0.75rem' }}>Status</th></tr></thead>
                                     <tbody>
                                         {studentHistory.length > 0 ? (
                                             studentHistory.map(r => {
@@ -2657,6 +3111,20 @@ const Fees: React.FC = () => {
                                                 const rawDue = ((r.totalFee || 0) + parsedPreviousDue) - (r.paidAmount || 0) - (r.discount || 0);
                                                 const isAdvance = rawDue < 0;
                                                 const dueAmt = Math.abs(rawDue);
+                                                const isOnlinePay = (r.paymentMode || '').toLowerCase().includes('payu') || (r.paymentMode || '').toLowerCase().includes('online');
+                                                const isAlreadyPaidByApproved = (r.status === 'REJECTED') && studentHistory.some(other => {
+                                                    if (other.status !== 'APPROVED') return false;
+                                                    if (other.feeHead && r.feeHead && other.feeHead.trim() === r.feeHead.trim()) return true;
+                                                    if (r.feeHead && other.feeHead && r.feeHead.includes('==>') && other.feeHead.includes('==>')) {
+                                                        const rMonth = r.feeHead.split('==>')[0].trim();
+                                                        const otherMonth = other.feeHead.split('==>')[0].trim();
+                                                        const rHead = r.feeHead.split('==>')[1].trim();
+                                                        const otherHead = other.feeHead.split('==>')[1].trim();
+                                                        if (rMonth === otherMonth && rHead === otherHead) return true;
+                                                    }
+                                                    return false;
+                                                });
+
                                                 return (
                                                 <tr key={r.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                                                     <td style={{ padding: '0.75rem', color: '#2563eb', fontWeight: '700' }}>{r.receiptNo}</td>
@@ -2672,6 +3140,20 @@ const Fees: React.FC = () => {
                                                         {rawDue === 0 ? '-' : isAdvance ? `+₹${dueAmt.toLocaleString()} (Adv)` : `₹${dueAmt.toLocaleString()}`}
                                                     </td>
                                                     <td style={{ padding: '0.75rem', color: r.discount > 0 ? '#ef4444' : '#64748b', fontWeight: '600' }}>{r.discount > 0 ? `₹${r.discount}` : '-'}</td>
+                                                    <td style={{ padding: '0.75rem' }}>
+                                                        <span style={{ 
+                                                            fontSize: '0.7rem', 
+                                                            fontWeight: '700', 
+                                                            padding: '0.2rem 0.55rem', 
+                                                            borderRadius: '6px',
+                                                            backgroundColor: isOnlinePay ? '#ecfdf5' : '#f1f5f9',
+                                                            color: isOnlinePay ? '#047857' : '#334155',
+                                                            border: `1px solid ${isOnlinePay ? '#a7f3d0' : '#cbd5e1'}`,
+                                                            whiteSpace: 'nowrap'
+                                                        }}>
+                                                            {isOnlinePay ? '💳 Online (PayU)' : '💵 Cash'}
+                                                        </span>
+                                                    </td>
                                                     <td style={{ padding: '0.75rem', fontSize: '0.85rem' }}>{r.date}</td>
                                                     <td style={{ padding: '0.75rem' }}>
                                                         <span style={{ 
@@ -2688,6 +3170,53 @@ const Fees: React.FC = () => {
                                                         </span>
                                                         {r.status === 'APPROVED' && (
                                                             <button onClick={() => { setSelectedReceipt(r); setShowReceipt(true); }} style={{ marginLeft: '0.5rem', border: 'none', background: 'none', color: '#4f46e5', cursor: 'pointer', fontSize: '0.7rem', fontWeight: 'bold', textDecoration: 'underline' }}>View</button>
+                                                        )}
+                                                        {r.status === 'REJECTED' && (
+                                                            isAlreadyPaidByApproved ? (
+                                                                <button 
+                                                                    disabled
+                                                                    style={{ 
+                                                                        marginLeft: '0.5rem', 
+                                                                        backgroundColor: '#cbd5e1', 
+                                                                        color: '#64748b', 
+                                                                        border: '1px solid #94a3b8', 
+                                                                        padding: '0.25rem 0.65rem', 
+                                                                        borderRadius: '6px', 
+                                                                        cursor: 'not-allowed', 
+                                                                        fontSize: '0.7rem', 
+                                                                        fontWeight: 'bold',
+                                                                        display: 'inline-flex',
+                                                                        alignItems: 'center',
+                                                                        gap: '0.25rem',
+                                                                        opacity: 0.8
+                                                                    }}
+                                                                    title="This fee head has already been successfully paid in another receipt"
+                                                                >
+                                                                    ✓ Already Paid
+                                                                </button>
+                                                            ) : (
+                                                                <button 
+                                                                    onClick={() => handleRetryPayment(r)} 
+                                                                    style={{ 
+                                                                        marginLeft: '0.5rem', 
+                                                                        backgroundColor: '#047857', 
+                                                                        color: 'white', 
+                                                                        border: 'none', 
+                                                                        padding: '0.25rem 0.65rem', 
+                                                                        borderRadius: '6px', 
+                                                                        cursor: 'pointer', 
+                                                                        fontSize: '0.7rem', 
+                                                                        fontWeight: 'bold',
+                                                                        display: 'inline-flex',
+                                                                        alignItems: 'center',
+                                                                        gap: '0.25rem',
+                                                                        boxShadow: '0 1px 2px rgba(0,0,0,0.1)'
+                                                                    }}
+                                                                    title="Retry this failed transaction via PayU Gateway"
+                                                                >
+                                                                    💳 Pay Again
+                                                                </button>
+                                                            )
                                                         )}
                                                     </td>
                                                 </tr>
@@ -2800,9 +3329,9 @@ const Fees: React.FC = () => {
                                         <div className="form-group" style={{ marginTop: '1rem' }}>
                                             <label>Payment Mode</label>
                                             <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem' }}>
-                                                {['Cash', 'UPI', 'Bank'].map(mode => (
-                                                    <label key={mode} style={{ flex: 1, textAlign: 'center', padding: '0.75rem', background: paymentMode === mode ? '#22c55e' : 'white', color: paymentMode === mode ? 'white' : '#166534', borderRadius: '8px', border: '1px solid #22c55e', cursor: 'pointer', fontWeight: '700', transition: '0.2s' }}>
-                                                        <input type="radio" name="paymentMode" value={mode} checked={paymentMode === mode} onChange={() => setPaymentMode(mode)} style={{ display: 'none' }} /> {mode}
+                                                {['Cash', 'PayU'].map(mode => (
+                                                    <label key={mode} style={{ flex: 1, textAlign: 'center', padding: '0.75rem', background: paymentMode === mode ? (mode === 'PayU' ? '#047857' : '#22c55e') : 'white', color: paymentMode === mode ? 'white' : (mode === 'PayU' ? '#047857' : '#166534'), borderRadius: '8px', border: `1px solid ${mode === 'PayU' ? '#047857' : '#22c55e'}`, cursor: 'pointer', fontWeight: '700', transition: '0.2s' }}>
+                                                        <input type="radio" name="paymentMode" value={mode} checked={paymentMode === mode} onChange={() => setPaymentMode(mode)} style={{ display: 'none' }} /> {mode === 'PayU' ? 'PayU Gateway 💳' : mode}
                                                     </label>
                                                 ))}
                                             </div>
@@ -2847,8 +3376,8 @@ const Fees: React.FC = () => {
                                                 Send Receipt via WhatsApp
                                             </label>
                                         </div>
-                                         <button type="submit" disabled={submitting} className="btn-primary" style={{ width: '100%', marginTop: '1.5rem', padding: '1rem', backgroundColor: submitting ? '#94a3b8' : (Number(discount) > 0 && requiresApproval) ? '#ea580c' : '#166534', fontSize: '1.1rem', cursor: submitting ? 'not-allowed' : 'pointer' }}>
-                                             {submitting ? 'Processing...' : (Number(discount) > 0 && requiresApproval) ? 'Submit for Principal Approval' : 'Confirm & Print Receipt'}
+                                         <button type="submit" disabled={submitting} className="btn-primary" style={{ width: '100%', marginTop: '1.5rem', padding: '1rem', backgroundColor: submitting ? '#94a3b8' : paymentMode === 'PayU' ? '#047857' : (Number(discount) > 0 && requiresApproval) ? '#ea580c' : '#166534', fontSize: '1.1rem', cursor: submitting ? 'not-allowed' : 'pointer' }}>
+                                             {submitting ? 'Processing...' : paymentMode === 'PayU' ? 'Proceed to PayU Gateway 💳' : (Number(discount) > 0 && requiresApproval) ? 'Submit for Principal Approval' : 'Confirm & Print Receipt'}
                                          </button>
                                     </form>
                                 </div>
@@ -2923,6 +3452,297 @@ const Fees: React.FC = () => {
                                 </tr>
                             ))}</tbody>
                         </table>
+                    </div>
+                </div>
+            )}
+
+            {activeTab === 'other_fees' && (
+                <div style={{ animation: 'fadeIn 0.3s ease-out' }}>
+                    {/* Top Sub-tabs Navigation */}
+                    <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', background: '#f1f5f9', padding: '0.4rem', borderRadius: '12px', width: 'fit-content' }}>
+                        {[
+                            { id: 'reg_fee', label: 'Registration Fee' },
+                            { id: 'late_fee', label: 'Late Fee' },
+                            { id: 'event_fee', label: 'Event Fee' },
+                            { id: 'other_misc', label: 'Other Misc Fee' }
+                        ].map(subTab => (
+                            <button 
+                                key={subTab.id}
+                                onClick={() => {
+                                    setOtherFeeSubTab(subTab.id as any);
+                                    if (subTab.id === 'reg_fee') setOtherFeeCategory('Registration Fee');
+                                    else if (subTab.id === 'late_fee') setOtherFeeCategory('Late Fee');
+                                    else if (subTab.id === 'event_fee') setOtherFeeCategory('Event Fee');
+                                    else setOtherFeeCategory('Other Misc Fee');
+                                }}
+                                style={{ 
+                                    padding: '0.6rem 1.4rem', 
+                                    border: 'none', 
+                                    borderRadius: '10px', 
+                                    cursor: 'pointer', 
+                                    fontWeight: '700', 
+                                    fontSize: '0.85rem',
+                                    transition: 'all 0.3s',
+                                    backgroundColor: otherFeeSubTab === subTab.id ? '#ffffff' : 'transparent',
+                                    color: otherFeeSubTab === subTab.id ? '#1e293b' : '#64748b',
+                                    boxShadow: otherFeeSubTab === subTab.id ? '0 4px 6px -1px rgba(0,0,0,0.1)' : 'none'
+                                }}
+                            >
+                                {subTab.label}
+                            </button>
+                        ))}
+                    </div>
+
+                    {/* Main Grid Layout: Left Collection Form (38%) + Right Record Table (62%) */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1.9fr', gap: '1.5rem' }}>
+                        {/* Left Side: Compact Fee Collection Form */}
+                        <div className="stat-card" style={{ display: 'block', height: 'fit-content', background: '#ffffff', border: '1px solid #e2e8f0', padding: '1.5rem', borderRadius: '14px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', paddingBottom: '0.75rem', borderBottom: '1px solid #e2e8f0' }}>
+                                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: '#1e293b' }}>
+                                    💳 Collect {otherFeeCategory}
+                                </h3>
+                                <span style={{ fontSize: '0.75rem', fontWeight: 700, backgroundColor: '#e0e7ff', color: '#3730a3', padding: '0.2rem 0.6rem', borderRadius: '12px' }}>
+                                    Receipt: Auto
+                                </span>
+                            </div>
+
+                            <form onSubmit={handleCollectOtherFee}>
+                                {/* Student Search with Auto-Fill */}
+                                <div className="form-group" style={{ position: 'relative', marginBottom: '1rem' }}>
+                                    <label style={{ fontSize: '0.8rem', fontWeight: 700, color: '#475569' }}>
+                                        Search Student (Auto-Fill)
+                                    </label>
+                                    <input 
+                                        type="text"
+                                        className="form-control"
+                                        placeholder="Type Student Name or SR No..."
+                                        value={otherFeeSearchQuery}
+                                        onChange={(e) => {
+                                            setOtherFeeSearchQuery(e.target.value);
+                                            setOtherFeeShowSearchDropdown(true);
+                                        }}
+                                        style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '0.5rem 0.8rem', fontSize: '0.85rem' }}
+                                    />
+
+                                    {/* Search Autocomplete Dropdown */}
+                                    {otherFeeShowSearchDropdown && otherFeeSearchQuery.trim().length > 0 && (
+                                        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100, backgroundColor: 'white', border: '1px solid #cbd5e1', borderRadius: '8px', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', maxHeight: '200px', overflowY: 'auto', marginTop: '4px' }}>
+                                            {students
+                                                .filter(s => 
+                                                    (s.name || '').toLowerCase().includes(otherFeeSearchQuery.toLowerCase()) || 
+                                                    (s.admissionNo || '').toLowerCase().includes(otherFeeSearchQuery.toLowerCase())
+                                                )
+                                                .slice(0, 8)
+                                                .map(s => (
+                                                    <div 
+                                                        key={s.id}
+                                                        onClick={() => {
+                                                            setOtherFeeStudent(s);
+                                                            setOtherFeeStudentName(s.name);
+                                                            setOtherFeeAdmissionNo(s.admissionNo);
+                                                            setOtherFeeFatherName(s.fatherName || '');
+                                                            setOtherFeeClass(s.className || s.class?.name || '');
+                                                            setOtherFeeAddress(s.address || s.village || s.city || '');
+                                                            setOtherFeeSearchQuery(`${s.name} (${s.admissionNo})`);
+                                                            setOtherFeeShowSearchDropdown(false);
+                                                        }}
+                                                        style={{ padding: '0.6rem 0.8rem', cursor: 'pointer', borderBottom: '1px solid #f1f5f9', fontSize: '0.825rem' }}
+                                                    >
+                                                        <div style={{ fontWeight: 700, color: '#1e293b' }}>{s.name} ({s.admissionNo})</div>
+                                                        <div style={{ fontSize: '0.725rem', color: '#64748b' }}>Father: {s.fatherName || 'N/A'} | Class: {s.className || s.class?.name || 'N/A'}</div>
+                                                    </div>
+                                                ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                                    <div className="form-group" style={{ marginBottom: 0 }}>
+                                        <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b' }}>Date</label>
+                                        <input type="date" className="form-control" value={otherFeeDate} onChange={e => setOtherFeeDate(e.target.value)} required style={{ fontSize: '0.825rem' }} />
+                                    </div>
+                                    <div className="form-group" style={{ marginBottom: 0 }}>
+                                        <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b' }}>Student No / SR No *</label>
+                                        <input type="text" className="form-control" value={otherFeeAdmissionNo} onChange={e => setOtherFeeAdmissionNo(e.target.value)} required placeholder="e.g. 1447" style={{ fontSize: '0.825rem', fontWeight: 700, color: '#2563eb' }} />
+                                    </div>
+                                </div>
+
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                                    <div className="form-group" style={{ marginBottom: 0 }}>
+                                        <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b' }}>Student Name *</label>
+                                        <input type="text" className="form-control" value={otherFeeStudentName} onChange={e => setOtherFeeStudentName(e.target.value)} required placeholder="e.g. Rahul Yadav" style={{ fontSize: '0.825rem', fontWeight: 700 }} />
+                                    </div>
+                                    <div className="form-group" style={{ marginBottom: 0 }}>
+                                        <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b' }}>Father Name</label>
+                                        <input type="text" className="form-control" value={otherFeeFatherName} onChange={e => setOtherFeeFatherName(e.target.value)} placeholder="e.g. Mr. Rakesh Yadav" style={{ fontSize: '0.825rem' }} />
+                                    </div>
+                                </div>
+
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                                    <div className="form-group" style={{ marginBottom: 0 }}>
+                                        <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b' }}>Class</label>
+                                        <input type="text" className="form-control" value={otherFeeClass} onChange={e => setOtherFeeClass(e.target.value)} placeholder="e.g. Class 2" style={{ fontSize: '0.825rem' }} />
+                                    </div>
+                                    <div className="form-group" style={{ marginBottom: 0 }}>
+                                        <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b' }}>Address</label>
+                                        <input type="text" className="form-control" value={otherFeeAddress} onChange={e => setOtherFeeAddress(e.target.value)} placeholder="Village / City" style={{ fontSize: '0.825rem' }} />
+                                    </div>
+                                </div>
+
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                                    <div className="form-group" style={{ marginBottom: 0 }}>
+                                        <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b' }}>Fee Category</label>
+                                        <select className="form-control" value={otherFeeCategory} onChange={e => setOtherFeeCategory(e.target.value)} style={{ fontSize: '0.825rem', fontWeight: 700 }}>
+                                            <option value="Registration Fee">Registration Fee</option>
+                                            <option value="Late Fee">Late Fee</option>
+                                            <option value="Event Fee">Event Fee</option>
+                                            <option value="Other Misc Fee">Other Misc Fee</option>
+                                        </select>
+                                    </div>
+                                    <div className="form-group" style={{ marginBottom: 0 }}>
+                                        <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b' }}>Amount (₹) *</label>
+                                        <input type="number" className="form-control" value={otherFeeAmount} onChange={e => setOtherFeeAmount(e.target.value)} required placeholder="Amount in ₹" style={{ fontSize: '1rem', fontWeight: 800, color: '#166534', border: '1.5px solid #22c55e' }} />
+                                    </div>
+                                </div>
+
+                                <div className="form-group" style={{ marginBottom: '1rem' }}>
+                                    <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b' }}>Fee Description / Purpose</label>
+                                    <input type="text" className="form-control" value={otherFeeDescription} onChange={e => setOtherFeeDescription(e.target.value)} placeholder="e.g. Prospectus Form / Sports Day / July Fine" style={{ fontSize: '0.825rem' }} />
+                                </div>
+
+                                {/* Payment Mode Selection (Default: Cash & PayU) */}
+                                <div className="form-group" style={{ marginBottom: '1.25rem' }}>
+                                    <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b' }}>Payment Mode</label>
+                                    <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.35rem' }}>
+                                        <label style={{ flex: 1, textAlign: 'center', padding: '0.6rem', background: otherFeePaymentMode === 'Cash' ? '#22c55e' : 'white', color: otherFeePaymentMode === 'Cash' ? 'white' : '#166534', borderRadius: '8px', border: '1px solid #22c55e', cursor: 'pointer', fontWeight: '700', fontSize: '0.825rem', transition: '0.2s' }}>
+                                            <input type="radio" name="otherFeePaymentMode" value="Cash" checked={otherFeePaymentMode === 'Cash'} onChange={() => setOtherFeePaymentMode('Cash')} style={{ display: 'none' }} /> 💵 Cash
+                                        </label>
+                                        <label style={{ flex: 1, textAlign: 'center', padding: '0.6rem', background: otherFeePaymentMode === 'PayU' ? '#047857' : 'white', color: otherFeePaymentMode === 'PayU' ? 'white' : '#047857', borderRadius: '8px', border: '1px solid #047857', cursor: 'pointer', fontWeight: '700', fontSize: '0.825rem', transition: '0.2s' }}>
+                                            <input type="radio" name="otherFeePaymentMode" value="PayU" checked={otherFeePaymentMode === 'PayU'} onChange={() => setOtherFeePaymentMode('PayU')} style={{ display: 'none' }} /> 💳 PayU Gateway
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <button 
+                                    type="submit" 
+                                    disabled={otherFeeSubmitting}
+                                    className="btn-primary" 
+                                    style={{ width: '100%', padding: '0.85rem', backgroundColor: otherFeeSubmitting ? '#94a3b8' : otherFeePaymentMode === 'PayU' ? '#047857' : '#166534', fontSize: '0.95rem', fontWeight: 800, cursor: otherFeeSubmitting ? 'not-allowed' : 'pointer' }}
+                                >
+                                    {otherFeeSubmitting ? 'Processing...' : otherFeePaymentMode === 'PayU' ? 'Proceed to PayU Gateway 💳' : 'Confirm & Print Receipt 🖨️'}
+                                </button>
+                            </form>
+                        </div>
+
+                        {/* Right Side: Real-Time Collection Records Table Frame */}
+                        <div className="stat-card" style={{ display: 'block', background: '#ffffff', border: '1px solid #e2e8f0', padding: '1.5rem', borderRadius: '14px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem', paddingBottom: '0.75rem', borderBottom: '1px solid #e2e8f0' }}>
+                                <div>
+                                    <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: '#1e293b' }}>
+                                        📋 {otherFeeCategory} Collection Records
+                                    </h3>
+                                    <p style={{ margin: '2px 0 0 0', fontSize: '0.75rem', color: '#64748b' }}>
+                                        Recent receipts collected for {otherFeeCategory}
+                                    </p>
+                                </div>
+
+                                <input 
+                                    type="text"
+                                    className="form-control"
+                                    placeholder="Search student or receipt..."
+                                    value={otherFeeTableSearch}
+                                    onChange={e => setOtherFeeTableSearch(e.target.value)}
+                                    style={{ width: '200px', fontSize: '0.8rem', padding: '0.4rem 0.7rem' }}
+                                />
+                            </div>
+
+                            <div style={{ maxHeight: '520px', overflowY: 'auto' }}>
+                                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                    <thead>
+                                        <tr style={{ backgroundColor: '#f8fafc', textAlign: 'left', position: 'sticky', top: 0, zIndex: 2, borderBottom: '2px solid #e2e8f0' }}>
+                                            <th style={{ padding: '0.75rem', color: '#475569', fontSize: '0.75rem', fontWeight: '700' }}>Receipt No</th>
+                                            <th style={{ padding: '0.75rem', color: '#475569', fontSize: '0.75rem', fontWeight: '700' }}>Date</th>
+                                            <th style={{ padding: '0.75rem', color: '#475569', fontSize: '0.75rem', fontWeight: '700' }}>Student Details</th>
+                                            <th style={{ padding: '0.75rem', color: '#475569', fontSize: '0.75rem', fontWeight: '700' }}>Category & Desc</th>
+                                            <th style={{ padding: '0.75rem', color: '#475569', fontSize: '0.75rem', fontWeight: '700', textAlign: 'right' }}>Amount</th>
+                                            <th style={{ padding: '0.75rem', color: '#475569', fontSize: '0.75rem', fontWeight: '700', textAlign: 'center' }}>Mode</th>
+                                            <th style={{ padding: '0.75rem', color: '#475569', fontSize: '0.75rem', fontWeight: '700', textAlign: 'center' }}>Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {(() => {
+                                            const categoryFilter = otherFeeCategory.toLowerCase();
+                                            const otherRecords = feeRecords.filter(r => {
+                                                const headLower = (r.feeHead || '').toLowerCase();
+                                                const isMatchCategory = headLower.includes(categoryFilter) || 
+                                                                       headLower.includes('registration') || 
+                                                                       headLower.includes('late fee') || 
+                                                                       headLower.includes('event') ||
+                                                                       headLower.includes('misc');
+                                                if (!isMatchCategory) return false;
+
+                                                if (otherFeeTableSearch.trim() !== '') {
+                                                    const query = otherFeeTableSearch.toLowerCase();
+                                                    return (r.studentName || '').toLowerCase().includes(query) ||
+                                                           (r.receiptNo || '').toLowerCase().includes(query) ||
+                                                           (r.admissionNo || '').toLowerCase().includes(query);
+                                                }
+                                                return true;
+                                            });
+
+                                            if (otherRecords.length === 0) {
+                                                return (
+                                                    <tr>
+                                                        <td colSpan={7} style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8', fontSize: '0.85rem' }}>
+                                                            No records found for {otherFeeCategory}.
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            }
+
+                                            return otherRecords.map(rec => (
+                                                <tr key={rec.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                                    <td style={{ padding: '0.75rem', fontSize: '0.8rem', fontWeight: 800, color: '#2563eb' }}>
+                                                        {rec.receiptNo || 'N/A'}
+                                                    </td>
+                                                    <td style={{ padding: '0.75rem', fontSize: '0.75rem', color: '#64748b' }}>
+                                                        {rec.date || ((rec as any).paymentDate ? new Date((rec as any).paymentDate).toLocaleDateString('en-GB') : 'N/A')}
+                                                    </td>
+                                                    <td style={{ padding: '0.75rem' }}>
+                                                        <div style={{ fontSize: '0.825rem', fontWeight: 700, color: '#1e293b' }}>{rec.studentName}</div>
+                                                        <div style={{ fontSize: '0.725rem', color: '#64748b' }}>{rec.admissionNo} ({rec.className || 'General'})</div>
+                                                    </td>
+                                                    <td style={{ padding: '0.75rem', fontSize: '0.75rem', color: '#334155' }}>
+                                                        <span style={{ backgroundColor: '#f1f5f9', padding: '0.15rem 0.4rem', borderRadius: '4px', fontWeight: 700, display: 'inline-block', marginBottom: '2px' }}>
+                                                            {rec.feeHead}
+                                                        </span>
+                                                    </td>
+                                                    <td style={{ padding: '0.75rem', textAlign: 'right', fontSize: '0.9rem', fontWeight: 800, color: '#166534' }}>
+                                                        ₹{(rec.paidAmount || (rec as any).amountPaid || 0).toLocaleString()}
+                                                    </td>
+                                                    <td style={{ padding: '0.75rem', textAlign: 'center' }}>
+                                                        <span style={{ fontSize: '0.7rem', padding: '0.15rem 0.45rem', borderRadius: '12px', fontWeight: 700, backgroundColor: rec.paymentMode === 'PayU' ? '#ecfdf5' : '#f0fdf4', color: rec.paymentMode === 'PayU' ? '#047857' : '#166534', border: `1px solid ${rec.paymentMode === 'PayU' ? '#a7f3d0' : '#bbf7d0'}` }}>
+                                                            {rec.paymentMode || 'Cash'}
+                                                        </span>
+                                                    </td>
+                                                    <td style={{ padding: '0.75rem', textAlign: 'center' }}>
+                                                        <button 
+                                                            onClick={() => {
+                                                                setSelectedReceipt(rec);
+                                                                setShowReceipt(true);
+                                                            }}
+                                                            style={{ backgroundColor: '#4f46e5', color: 'white', border: 'none', padding: '0.35rem 0.7rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700 }}
+                                                        >
+                                                            Print Receipt
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ));
+                                        })()}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
                 </div>
             )}
@@ -3308,28 +4128,22 @@ const Fees: React.FC = () => {
                                 <tbody>
                                     {loadingTransportDues ? (
                                         <tr><td colSpan={7} style={{ padding: '4rem', textAlign: 'center', color: '#64748b' }}>Loading transport dues...</td></tr>
-                                    ) : transportDues.length > 0 ? (
-                                        transportDues
-                                            .filter(d => dueClassFilter === 'All' || d.className === dueClassFilter)
-                                            .filter(d => {
-                                                if (dueRtFilter === 'All') return true;
-                                                if (dueRtFilter === 'RT') return d.isRT;
-                                                return !d.isRT;
-                                            })
-                                            .filter(d => {
-                                                if (dueSearchQuery === '') return true;
-                                                const query = dueSearchQuery.toLowerCase();
-                                                return (d.studentName || '').toLowerCase().includes(query) ||
-                                                       (d.fatherName || '').toLowerCase().includes(query);
-                                            })
-                                            .filter(d => {
-                                                if (dueStatusFilter === 'Paid') return d.pending === 0;
-                                                if (dueStatusFilter === 'Unpaid') return d.totalPaid === 0 && d.monthlyFare > 0;
-                                                if (dueStatusFilter === 'Partially Paid') return d.totalPaid > 0 && d.pending > 0;
-                                                if (dueStatusFilter === 'Any Outstanding') return d.pending > 0;
-                                                return true;
-                                            })
-                                            .map((due: any) => (
+                                    ) : getFilteredTransportDues().length > 0 ? (
+                                        <>
+                                            {dueMonthFilter !== 'All' && (
+                                                <tr style={{ backgroundColor: '#fff7ed' }}>
+                                                    <td colSpan={7} style={{ padding: '0.75rem 1rem', fontSize: '0.85rem', color: '#c2410c', fontWeight: '700', borderBottom: '2px solid #fed7aa' }}>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                            <span>🚌 Transport Dues Summary for <strong>{dueMonthFilter}</strong> ({getFilteredTransportDues().length} student(s) matching "{dueStatusFilter}")</span>
+                                                            <div style={{ display: 'flex', gap: '1.5rem' }}>
+                                                                <span>Monthly Rate: <strong>₹{getFilteredTransportDues().reduce((s: number, d: any) => s + (d.monthlyFare || 0), 0).toLocaleString()}</strong></span>
+                                                                <span style={{ color: '#ef4444' }}>Total Unpaid ({dueMonthFilter}): <strong>₹{getFilteredTransportDues().filter((d: any) => !(d.paidMonths || []).includes(dueMonthFilter)).reduce((s: number, d: any) => s + (d.monthlyFare || 0), 0).toLocaleString()}</strong></span>
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            )}
+                                            {getFilteredTransportDues().map((due: any) => (
                                                 <tr key={due.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
                                                     <td style={{ padding: '1rem', fontWeight: '600' }}>{due.studentName}</td>
                                                     <td style={{ padding: '1rem' }}>{due.fatherName || 'N/A'}</td>
@@ -3344,16 +4158,18 @@ const Fees: React.FC = () => {
                                                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.2rem' }}>
                                                             {['April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December', 'January', 'February', 'March'].map(m => {
                                                                 const isPaid = due.paidMonths?.includes(m);
+                                                                const isSelectedMonth = dueMonthFilter === m;
                                                                 return (
                                                                     <span 
                                                                         key={m}
                                                                         style={{ 
                                                                             fontSize: '0.6rem', 
-                                                                            padding: '0.1rem 0.3rem', 
-                                                                            borderRadius: '3px',
-                                                                            backgroundColor: isPaid ? '#dcfce7' : '#fee2e2',
-                                                                            color: isPaid ? '#166534' : '#991b1b',
-                                                                            fontWeight: '700'
+                                                                            padding: '0.1rem 0.35rem', 
+                                                                            borderRadius: '4px',
+                                                                            backgroundColor: isPaid ? '#dcfce7' : isSelectedMonth ? '#fee2e2' : '#fee2e2',
+                                                                            color: isPaid ? '#166534' : isSelectedMonth ? '#dc2626' : '#991b1b',
+                                                                            fontWeight: '700',
+                                                                            border: isSelectedMonth ? '1.5px solid #ef4444' : 'none'
                                                                         }}
                                                                     >
                                                                         {m.substring(0, 3)}
@@ -3366,7 +4182,8 @@ const Fees: React.FC = () => {
                                                         ₹{due.pending.toLocaleString()}
                                                     </td>
                                                 </tr>
-                                            ))
+                                            ))}
+                                        </>
                                     ) : (
                                         <tr><td colSpan={7} style={{ padding: '4rem', textAlign: 'center', color: '#94a3b8' }}>No transport students found.</td></tr>
                                     )}
@@ -3591,7 +4408,7 @@ const Fees: React.FC = () => {
 
 
 
-            {activeTab === 'approvals' && (user?.role === 'PRINCIPAL' || user?.role === 'ADMIN') && (
+            {activeTab === 'approvals' && isApproverRole(user?.role) && (
                 <div className="data-table-container shadow-lg">
                     <div className="table-header">
                         <div>
@@ -3749,20 +4566,50 @@ const Fees: React.FC = () => {
 
             {activeTab === 'reports' && (
                 <div style={{ animation: 'fadeIn 0.4s ease' }}>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                        {/* Today's Card */}
-                        {/* Today's Card */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                        {/* Today's Total Card */}
                         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-5 hover:shadow-md transition-all">
                             <div className="w-14 h-14 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center text-2xl">
                                 <TrendingUp size={28} />
                             </div>
                             <div>
-                                <p className="text-slate-500 text-sm font-medium">Today's Collection</p>
+                                <p className="text-slate-500 text-sm font-medium">Today's Total Collection</p>
                                 <h3 className="text-2xl font-bold text-slate-900 mt-1">
                                     ₹ {reportData.daily.filter(d => d.date === new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })).reduce((s, d) => s + d.paidAmount, 0).toLocaleString('en-IN')}
                                 </h3>
                             </div>
                         </div>
+
+                        {/* Today's Cash vs Online Breakdown Card */}
+                        {(() => {
+                            const todayStr = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+                            const todayRecs = reportData.daily.filter(d => d.date === todayStr);
+                            const cashRecs = todayRecs.filter(d => !(d.paymentMode || '').toLowerCase().includes('payu') && !(d.paymentMode || '').toLowerCase().includes('online'));
+                            const onlineRecs = todayRecs.filter(d => (d.paymentMode || '').toLowerCase().includes('payu') || (d.paymentMode || '').toLowerCase().includes('online'));
+                            
+                            const cashTotal = cashRecs.reduce((s, d) => s + d.paidAmount, 0);
+                            const onlineTotal = onlineRecs.reduce((s, d) => s + d.paidAmount, 0);
+                            return (
+                                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-5 hover:shadow-md transition-all">
+                                    <div className="w-14 h-14 bg-sky-50 text-sky-600 rounded-xl flex items-center justify-center text-2xl">
+                                        <CreditCard size={28} />
+                                    </div>
+                                    <div style={{ flex: 1 }}>
+                                        <p className="text-slate-500 text-sm font-medium">Today's Mode Breakdown</p>
+                                        <div style={{ display: 'flex', gap: '0.85rem', marginTop: '0.35rem' }}>
+                                            <div>
+                                                <span style={{ fontSize: '0.65rem', fontWeight: '800', color: '#475569', textTransform: 'uppercase' }}>💵 Cash ({cashRecs.length})</span>
+                                                <div style={{ fontSize: '1.05rem', fontWeight: '800', color: '#1e293b' }}>₹ {cashTotal.toLocaleString('en-IN')}</div>
+                                            </div>
+                                            <div style={{ borderLeft: '1px solid #cbd5e1', paddingLeft: '0.75rem' }}>
+                                                <span style={{ fontSize: '0.65rem', fontWeight: '800', color: '#047857', textTransform: 'uppercase' }}>💳 Online ({onlineRecs.length})</span>
+                                                <div style={{ fontSize: '1.05rem', fontWeight: '800', color: '#047857' }}>₹ {onlineTotal.toLocaleString('en-IN')}</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })()}
 
                         {/* Selected Month Card */}
                         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-5 hover:shadow-md transition-all">
@@ -3787,8 +4634,8 @@ const Fees: React.FC = () => {
                                 <h3 className="text-2xl font-bold text-slate-900 mt-1">
                                     ₹ {reportData.monthly.reduce((s, m) => s + m.total, 0).toLocaleString('en-IN')}
                                 </h3>
-                                <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '6px', fontWeight: '500', lineHeight: '1.2' }}>
-                                    * Cumulative collection from session start (April) to present day
+                                <div style={{ fontSize: '0.65rem', color: '#64748b', marginTop: '4px', fontWeight: '500', lineHeight: '1.2' }}>
+                                    * Cumulative collection from session start
                                 </div>
                             </div>
                         </div>
@@ -3797,7 +4644,7 @@ const Fees: React.FC = () => {
                     <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', background: '#f8fafc', padding: '0.75rem', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                         {[
                             { id: 'daily', label: 'Daily Collection', disabled: false },
-                            { id: 'monthly', label: 'Monthly Collection', disabled: false }
+                            { id: 'monthly', label: 'Monthly Collection Fee Report', disabled: false }
                         ].map(r => (
                             <button
                                 key={r.id}
@@ -3829,24 +4676,28 @@ const Fees: React.FC = () => {
                             <h2 style={{ fontSize: '1.25rem', fontWeight: 700 }}>
                                 {activeReport === 'daily' && 'Daily Collection Report'}
                                 {activeReport === 'monthly' && (
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                                        Monthly Collection Summary
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                                        <span>Monthly Collection Fee Report</span>
+                                        <span style={{ fontSize: '0.75rem', color: '#4f46e5', fontWeight: '700', backgroundColor: '#eef2ff', padding: '0.25rem 0.65rem', borderRadius: '6px', border: '1px solid #c7d2fe' }}>
+                                            Session: {localStorage.getItem('activeSession') || '2026-2027'}
+                                        </span>
                                         <select 
                                             value={reportFilterMonth} 
                                             onChange={(e) => setReportFilterMonth(e.target.value)}
                                             style={{ 
-                                                marginLeft: '1rem', 
+                                                marginLeft: '0.5rem', 
                                                 padding: '0.4rem 0.8rem', 
                                                 borderRadius: '8px', 
-                                                border: '1px solid #e2e8f0', 
+                                                border: '1px solid #cbd5e1', 
                                                 fontSize: '0.85rem', 
                                                 fontWeight: '600', 
                                                 color: '#475569',
-                                                backgroundColor: '#f8fafc',
+                                                backgroundColor: '#ffffff',
                                                 cursor: 'pointer'
                                             }}
                                         >
-                                            {['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'].map(m => (
+                                            <option value="All">All Months (April to March)</option>
+                                            {['April','May','June','July','August','September','October','November','December','January','February','March'].map(m => (
                                                 <option key={m} value={m}>{m}</option>
                                             ))}
                                         </select>
@@ -3944,22 +4795,32 @@ const Fees: React.FC = () => {
                             </h2>
                             <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
                                 {activeReport === 'daily' && (
-                                    <input 
-                                        type="text" 
-                                        placeholder="Search Receipt No..." 
-                                        value={receiptSearchQuery}
-                                        onChange={(e) => setReceiptSearchQuery(e.target.value)}
-                                        style={{ 
-                                            padding: '0.4rem 0.8rem', 
-                                            borderRadius: '8px', 
-                                            border: '1px solid #cbd5e1', 
-                                            fontSize: '0.85rem', 
-                                            width: '220px',
-                                            outline: 'none',
-                                            transition: 'border-color 0.2s'
-                                        }}
-                                        className="focus:border-indigo-500"
-                                    />
+                                    <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #cbd5e1', borderRadius: '8px', overflow: 'hidden', backgroundColor: '#ffffff', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
+                                        <span style={{ padding: '0.4rem 0.65rem', fontWeight: '800', color: '#2563eb', backgroundColor: '#eff6ff', fontSize: '0.85rem', borderRight: '1px solid #cbd5e1' }}>RCP</span>
+                                        <input 
+                                            type="text" 
+                                            placeholder="Search Receipt No..." 
+                                            value={receiptSearchQuery.replace(/^rcp/i, '')}
+                                            onChange={(e) => {
+                                                const raw = e.target.value.trim();
+                                                if (!raw) {
+                                                    setReceiptSearchQuery('');
+                                                } else if (raw.toLowerCase().startsWith('rcp')) {
+                                                    setReceiptSearchQuery(raw.toUpperCase());
+                                                } else {
+                                                    setReceiptSearchQuery('RCP' + raw);
+                                                }
+                                            }}
+                                            style={{ 
+                                                padding: '0.4rem 0.75rem', 
+                                                border: 'none', 
+                                                fontSize: '0.85rem', 
+                                                width: '170px',
+                                                outline: 'none',
+                                                fontWeight: '600'
+                                            }}
+                                        />
+                                    </div>
                                 )}
                                 <button onClick={exportToPDF} className="btn-primary" style={{ width: 'auto', padding: '0.5rem 1.5rem', backgroundColor: '#ec4899' }}>Export PDF</button>
                             </div>
@@ -3969,8 +4830,7 @@ const Fees: React.FC = () => {
                           <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
                               <thead style={{ position: 'sticky', top: 0, zIndex: 20 }}>
                                   <tr style={{ backgroundColor: '#f1f5f9' }}>
-
-                                     {activeReport === 'daily' && (<><th style={{ padding: '1rem 1.5rem' }}>Date</th><th style={{ padding: '1rem 1.5rem' }}>Student Name</th><th style={{ padding: '1rem 1.5rem' }}>Father Name</th><th style={{ padding: '1rem 1.5rem' }}>Class</th><th style={{ padding: '1rem 1.5rem' }}>Receipt No</th><th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Amount (₹)</th><th style={{ padding: '1rem 1.5rem', textAlign: 'center' }}>Actions</th></>)}
+                                     {activeReport === 'daily' && (<><th style={{ padding: '1rem 1.5rem' }}>Date</th><th style={{ padding: '1rem 1.5rem' }}>Student Name</th><th style={{ padding: '1rem 1.5rem' }}>Father Name</th><th style={{ padding: '1rem 1.5rem' }}>Class</th><th style={{ padding: '1rem 1.5rem' }}>Receipt No</th><th style={{ padding: '1rem 1.5rem' }}>Payment Mode</th><th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Amount (₹)</th><th style={{ padding: '1rem 1.5rem', textAlign: 'center' }}>Actions</th></>)}
                                      {activeReport === 'monthly' && (<><th style={{ padding: '1rem 1.5rem' }}>Month</th><th style={{ padding: '1rem 1.5rem' }}>Year</th><th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Total Collection (₹)</th></>)}
                                      {activeReport === 'class' && (<><th style={{ padding: '1rem 1.5rem' }}>Class</th><th style={{ padding: '1rem 1.5rem' }}>Students</th><th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Collected Amount (₹)</th></>)}
                                      {activeReport === 'pending' && (<><th style={{ padding: '1rem 1.5rem' }}>Student Name</th><th style={{ padding: '1rem 1.5rem' }}>Adm No</th><th style={{ padding: '1rem 1.5rem' }}>Class</th><th style={{ padding: '1rem 1.5rem' }}>This Month (₹)</th><th style={{ padding: '1rem 1.5rem' }}>Month Paid (₹)</th><th style={{ padding: '1rem 1.5rem' }}>Month Due (₹)</th><th style={{ padding: '1rem 1.5rem' }}>Pending Months</th><th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Total Due (₹)</th></>)}
@@ -3978,78 +4838,133 @@ const Fees: React.FC = () => {
                              </thead>
                              <tbody>
                                  {activeReport === 'daily' && (() => {
-                                     const query = receiptSearchQuery.trim().toLowerCase();
-                                     const filteredData = query !== ''
-                                         ? reportData.daily.filter(d => 
-                                             (d.receiptNo || '').toLowerCase().includes(query) ||
-                                             (d.studentName || '').toLowerCase().includes(query) ||
-                                             (d.admissionNo || '').toLowerCase().includes(query)
-                                           )
-                                         : reportData.daily.filter(d => d.date === new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }));
+                                     const rawQuery = receiptSearchQuery.trim().toLowerCase();
+                                     const numOnlyQuery = rawQuery.replace(/^rcp/i, '');
                                      
-                                     if (filteredData.length === 0) return <tr><td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8', fontStyle: 'italic' }}>{query !== '' ? 'No receipt found matching search query.' : 'No collections today.'}</td></tr>;
-                                     return filteredData.map((d, i) => (
-                                         <tr key={i}>
-                                             <td style={{ padding: '1rem 1.5rem' }}>{d.date}</td>
-                                             <td style={{ padding: '1rem 1.5rem', fontWeight: '600' }}>{d.studentName}</td>
-                                             <td style={{ padding: '1rem 1.5rem' }}>{d.fatherName || 'N/A'}</td>
-                                             <td style={{ padding: '1rem 1.5rem' }}>{d.className}</td>
-                                             <td style={{ padding: '1rem 1.5rem', fontWeight: '900', color: '#2563eb' }}>{d.receiptNo}</td>
-                                             <td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontWeight: '800', color: '#059669' }}>₹{d.paidAmount.toLocaleString()}</td>
-                                             <td style={{ padding: '1rem 1.5rem', textAlign: 'center' }}>
-                                                 <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
-                                                     <button 
-                                                         onClick={() => { setSelectedReceipt(d); setShowReceipt(true); }}
-                                                         style={{ 
-                                                             padding: '0.4rem 0.8rem', 
-                                                             backgroundColor: '#eff6ff', 
-                                                             border: '1px solid #bfdbfe', 
-                                                             color: '#2563eb', 
-                                                             borderRadius: '6px', 
-                                                             cursor: 'pointer', 
-                                                             fontSize: '0.75rem', 
-                                                             fontWeight: '800' 
-                                                         }}
-                                                     >
-                                                         View Recipt
-                                                     </button>
-                                                     <button 
-                                                         onClick={() => handleDeleteReceipt(d.id, d.receiptNo)}
-                                                         style={{ 
-                                                             padding: '0.4rem', 
-                                                             backgroundColor: '#fee2e2', 
-                                                             border: '1px solid #fecaca', 
-                                                             color: '#ef4444', 
-                                                             borderRadius: '6px', 
-                                                             cursor: 'pointer',
-                                                             display: 'flex',
-                                                             alignItems: 'center',
-                                                             justifyContent: 'center'
-                                                         }}
-                                                         title="Delete Receipt"
-                                                     >
-                                                         <Trash2 size={16} />
-                                                     </button>
-                                                 </div>
-                                             </td>
-                                         </tr>
-                                     ));
+                                     let filteredData: any[] = [];
+                                     if (rawQuery !== '') {
+                                         const rNoMatches = reportData.daily.filter(d => {
+                                             const rNo = (d.receiptNo || '').toLowerCase();
+                                             return rNo.includes(rawQuery) || (numOnlyQuery !== '' && rNo.includes(numOnlyQuery));
+                                         });
+
+                                         if (rNoMatches.length > 0) {
+                                             filteredData = rNoMatches;
+                                         } else {
+                                             filteredData = reportData.daily.filter(d => {
+                                                 const sName = (d.studentName || '').toLowerCase();
+                                                 const admNo = (d.admissionNo || '').toLowerCase();
+                                                 return sName.includes(rawQuery) || (numOnlyQuery !== '' && sName.includes(numOnlyQuery)) ||
+                                                        admNo.includes(rawQuery) || (numOnlyQuery !== '' && admNo.includes(numOnlyQuery));
+                                             });
+                                         }
+                                     } else {
+                                         filteredData = reportData.daily.filter(d => d.date === new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }));
+                                     }
+                                     
+                                     if (filteredData.length === 0) return <tr><td colSpan={8} style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8', fontStyle: 'italic' }}>{rawQuery !== '' ? 'No receipt found matching search query.' : 'No collections today.'}</td></tr>;
+                                     return filteredData.map((d, i) => {
+                                          const isOnlineRow = (d.paymentMode || '').toLowerCase().includes('payu') || (d.paymentMode || '').toLowerCase().includes('online');
+                                          return (
+                                              <tr key={i} style={{ backgroundColor: isOnlineRow ? '#ecfdf5' : 'transparent' }}>
+                                                  <td style={{ padding: '1rem 1.5rem', color: isOnlineRow ? '#047857' : 'inherit' }}>{d.date}</td>
+                                                  <td style={{ padding: '1rem 1.5rem', fontWeight: '600', color: isOnlineRow ? '#047857' : 'inherit' }}>{d.studentName}</td>
+                                                  <td style={{ padding: '1rem 1.5rem', color: isOnlineRow ? '#047857' : 'inherit' }}>{d.fatherName || 'N/A'}</td>
+                                                  <td style={{ padding: '1rem 1.5rem', color: isOnlineRow ? '#047857' : 'inherit' }}>{d.className}</td>
+                                                  <td style={{ padding: '1rem 1.5rem', fontWeight: '900', color: isOnlineRow ? '#047857' : '#2563eb' }}>{d.receiptNo}</td>
+                                                  <td style={{ padding: '1rem 1.5rem' }}>
+                                                      <span style={{ 
+                                                          fontSize: '0.75rem', 
+                                                          fontWeight: '700', 
+                                                          padding: '0.25rem 0.6rem', 
+                                                          borderRadius: '6px',
+                                                          backgroundColor: isOnlineRow ? '#d1fae5' : '#f1f5f9',
+                                                          color: isOnlineRow ? '#047857' : '#334155',
+                                                          border: `1px solid ${isOnlineRow ? '#a7f3d0' : '#cbd5e1'}`,
+                                                          whiteSpace: 'nowrap'
+                                                      }}>
+                                                          {isOnlineRow ? '💳 Online (PayU)' : '💵 Cash'}
+                                                      </span>
+                                                  </td>
+                                                  <td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontWeight: '800', color: isOnlineRow ? '#047857' : '#059669' }}>₹{d.paidAmount.toLocaleString()}</td>
+                                                  <td style={{ padding: '1rem 1.5rem', textAlign: 'center' }}>
+                                                      <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
+                                                          <button 
+                                                              onClick={() => { setSelectedReceipt(d); setShowReceipt(true); }}
+                                                              style={{ 
+                                                                  padding: '0.4rem 0.8rem', 
+                                                                  backgroundColor: isOnlineRow ? '#ffffff' : '#eff6ff', 
+                                                                  border: `1px solid ${isOnlineRow ? '#a7f3d0' : '#bfdbfe'}`, 
+                                                                  color: isOnlineRow ? '#047857' : '#2563eb', 
+                                                                  borderRadius: '6px', 
+                                                                  cursor: 'pointer', 
+                                                                  fontSize: '0.75rem', 
+                                                                  fontWeight: '800' 
+                                                              }}
+                                                          >
+                                                              View Recipt
+                                                          </button>
+                                                          <button 
+                                                              onClick={() => handleDeleteReceipt(d.id, d.receiptNo)}
+                                                              style={{ 
+                                                                  padding: '0.4rem', 
+                                                                  backgroundColor: '#fee2e2', 
+                                                                  border: '1px solid #fecaca', 
+                                                                  color: '#ef4444', 
+                                                                  borderRadius: '6px', 
+                                                                  cursor: 'pointer',
+                                                                  display: 'flex',
+                                                                  alignItems: 'center',
+                                                                  justifyContent: 'center'
+                                                              }}
+                                                              title="Delete Receipt"
+                                                          >
+                                                              <Trash2 size={16} />
+                                                          </button>
+                                                      </div>
+                                                  </td>
+                                              </tr>
+                                          );
+                                      });
                                  })()}
-                                 {activeReport === 'monthly' && (
-                                    reportData.monthly.filter(m => m.month === reportFilterMonth).length > 0 ? (
-                                        reportData.monthly.filter(m => m.month === reportFilterMonth).map((m, i) => (
-                                            <tr key={i}>
-                                                <td style={{ padding: '1rem 1.5rem' }}>{m.month}</td>
-                                                <td style={{ padding: '1rem 1.5rem' }}>{m.year}</td>
-                                                <td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontWeight: '800', color: '#4f46e5' }}>₹{m.total.toLocaleString()}</td>
-                                            </tr>
-                                        ))
-                                    ) : (
-                                        <tr>
-                                            <td colSpan={3} style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8', fontStyle: 'italic' }}>No collection data for {reportFilterMonth}.</td>
-                                        </tr>
-                                    )
-                                 )}
+                                 {activeReport === 'monthly' && (() => {
+                                     const activeSessionStr = localStorage.getItem('activeSession') || '2026-2027';
+                                     const academicMonths = ['April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December', 'January', 'February', 'March'];
+                                     
+                                     const monthlyList = academicMonths.map(m => {
+                                         const found = (reportData.monthly || []).find((rec: any) => rec.month?.trim().toLowerCase() === m.toLowerCase());
+                                         return {
+                                             month: m,
+                                             year: found ? found.year : activeSessionStr,
+                                             total: found ? found.total : 0
+                                         };
+                                     }).filter(m => reportFilterMonth === 'All' || m.month.toLowerCase() === reportFilterMonth.toLowerCase());
+
+                                     const totalSum = monthlyList.reduce((acc, curr) => acc + curr.total, 0);
+
+                                     return (
+                                         <>
+                                             {monthlyList.map((m, i) => (
+                                                 <tr key={i} style={{ backgroundColor: reportFilterMonth !== 'All' && m.month === reportFilterMonth ? '#eef2ff' : 'transparent' }}>
+                                                     <td style={{ padding: '1rem 1.5rem', fontWeight: '700', color: '#1e293b' }}>{m.month}</td>
+                                                     <td style={{ padding: '1rem 1.5rem', color: '#64748b' }}>{m.year}</td>
+                                                     <td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontWeight: '800', color: m.total > 0 ? '#4f46e5' : '#94a3b8' }}>
+                                                         ₹{m.total.toLocaleString()}
+                                                     </td>
+                                                 </tr>
+                                             ))}
+                                             {/* GRAND TOTAL Footer Row */}
+                                             <tr style={{ backgroundColor: '#f8fafc', borderTop: '2px solid #cbd5e1' }}>
+                                                 <td colSpan={2} style={{ padding: '1rem 1.5rem', textAlign: 'right', fontWeight: '800', color: '#0f172a', fontSize: '0.95rem' }}>
+                                                     GRAND TOTAL:
+                                                 </td>
+                                                 <td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontWeight: '900', color: '#047857', fontSize: '1.1rem' }}>
+                                                     ₹{totalSum.toLocaleString()}
+                                                 </td>
+                                             </tr>
+                                         </>
+                                     );
+                                 })()}
                                  {activeReport === 'class' && reportData.classWise
                                      .filter(c => classReportFilter === 'All' || c.className === classReportFilter)
                                      .map((c, idx) => (
@@ -5062,7 +5977,7 @@ const Fees: React.FC = () => {
                 </div>
             )}
 
-            <style>{`
+            <style dangerouslySetInnerHTML={{ __html: `
                 @media print {
                     .no-print { display: none !important; }
                     body, html { 
@@ -5167,7 +6082,7 @@ const Fees: React.FC = () => {
                         visibility: visible !important;
                     }
                 }
-            `}</style>
+            ` }} />
         </>
     );
 };

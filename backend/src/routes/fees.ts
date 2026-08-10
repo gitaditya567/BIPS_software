@@ -2,6 +2,7 @@ import express from 'express';
 import prisma from '../lib/prisma';
 import { getExpectedFeeAmount } from '../lib/feeUtils';
 import { getCache, setCache, invalidateCache } from '../lib/cache';
+import { generatePayUHash, verifyPayUReverseHash, verifyTransactionWithPayU, getPayUConfig } from '../lib/payu';
 
 const router = express.Router();
 
@@ -9,35 +10,37 @@ function isPaymentInAcademicYear(p: any, academicYear: string | null): boolean {
     if (!academicYear) return true; // fallback if no academic year set
     const parts = academicYear.split('-');
     if (parts.length !== 2) return true;
-    let startYear = parts[0]; // e.g. "2024"
-    let endYear = parts[1];   // e.g. "2025" or "25"
+    let startYear = parts[0].trim(); // e.g. "2026"
+    let endYear = parts[1].trim();   // e.g. "2027" or "27"
     
     if (startYear.length === 2) startYear = `20${startYear}`;
     if (endYear.length === 2) endYear = `20${endYear}`;
 
-    const month = p.month || '';
-    const year = p.year || '';
+    const month = (p.month || '').trim();
+    const pYear = String(p.year || '').trim();
 
-    // Previous dues payments are made during the current session to clear previous session dues.
-    // So the paymentDate falls within the current session date range: [April 1st startYear, March 31st endYear].
+    // Direct match if p.year stores full session string (e.g. "2026-2027", "2026-27")
+    if (pYear && (pYear === academicYear || pYear.startsWith(startYear) || pYear.includes(startYear) || pYear.includes(endYear))) {
+        return true;
+    }
+
     const pDate = new Date(p.paymentDate);
     const startSessionDate = new Date(parseInt(startYear), 3, 1); // April 1st
     const endSessionDate = new Date(parseInt(endYear), 2, 31, 23, 59, 59); // March 31st
-    const isWithinDateRange = pDate >= startSessionDate && pDate <= endSessionDate;
+    const isWithinDateRange = !isNaN(pDate.getTime()) && pDate >= startSessionDate && pDate <= endSessionDate;
 
     if (p.feeHead && p.feeHead.toLowerCase().includes('previous dues')) {
         return isWithinDateRange;
     }
 
-    // For standard monthly / transport / one-time fees, we match by month & year.
     const springMonths = ['January', 'February', 'March'];
     const autumnMonths = ['April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
     if (springMonths.includes(month)) {
-        return year === endYear;
+        return !pYear || pYear === endYear || pYear.includes(endYear) || isWithinDateRange;
     }
     if (autumnMonths.includes(month)) {
-        return year === startYear;
+        return !pYear || pYear === startYear || pYear.includes(startYear) || isWithinDateRange;
     }
 
     return isWithinDateRange;
@@ -108,13 +111,18 @@ function parsePaymentBreakdown(feeHead: string | null, month: string | null, amo
             // Find matching head object
             const headObj = feeHeadsList.find(h => {
                 const hName = h.name.toLowerCase();
-                return nameLower.startsWith(hName) || hName.startsWith(nameLower);
+                const nLower = nameLower.toLowerCase();
+                return nLower.includes(hName) || hName.includes(nLower) || nLower.startsWith(hName) || hName.startsWith(nLower);
             });
             const isMonthly = isTransport || (headObj ? headObj.type === 'Monthly' : true);
             const isOneTime = headObj ? (headObj.type === 'One-time' || headObj.type === 'Annual' || headObj.type === 'Other') : false;
 
+            const canonicalName = isPreviousDues 
+                ? 'Previous Dues' 
+                : (isTransport ? 'Transport Fee' : (headObj ? headObj.name : name));
+
             items.push({
-                name,
+                name: canonicalName,
                 amount: scaledAmt,
                 months: isMonthly ? paidMonths : [],
                 isMonthly,
@@ -147,13 +155,18 @@ function parsePaymentBreakdown(feeHead: string | null, month: string | null, amo
 
         const headObj = feeHeadsList.find(h => {
             const hName = h.name.toLowerCase();
-            return nameLower.startsWith(hName) || hName.startsWith(nameLower);
+            const nLower = nameLower.toLowerCase();
+            return nLower.includes(hName) || hName.includes(nLower) || nLower.startsWith(hName) || hName.startsWith(nLower);
         });
         const isMonthly = isTransport || (headObj ? headObj.type === 'Monthly' : true);
         const isOneTime = headObj ? (headObj.type === 'One-time' || headObj.type === 'Annual' || headObj.type === 'Other') : false;
 
+        const canonicalName = isPreviousDues 
+            ? 'Previous Dues' 
+            : (isTransport ? 'Transport Fee' : (headObj ? headObj.name : name));
+
         items.push({
-            name,
+            name: canonicalName,
             amount: totalAmount,
             months: isMonthly ? paidMonths : [],
             isMonthly,
@@ -233,6 +246,7 @@ async function getStudentFeeLedger(studentId: string) {
     const oneTimePaidForHead: Record<string, number> = {};
     const monthlyPaidForHeadAndMonth: Record<string, Record<string, number>> = {};
     const transportPaidForMonth: Record<string, number> = {};
+    const genericMonthlyPaidForMonth: Record<string, number> = {};
     const monthWisePaid: Record<string, number> = {};
 
     payments.forEach(p => {
@@ -242,36 +256,40 @@ async function getStudentFeeLedger(studentId: string) {
                 actualPrevDuesPaid += item.amount;
             } else if (item.isTransport) {
                 actualTransportPaid += item.amount;
-                if (item.months.length > 0) {
-                    const amtPerMonth = item.amount / item.months.length;
-                    item.months.forEach(m => {
+                const targetMonths = item.months.length > 0 ? item.months : (p.month ? [p.month] : []);
+                if (targetMonths.length > 0) {
+                    const amtPerMonth = item.amount / targetMonths.length;
+                    targetMonths.forEach(m => {
                         transportPaidForMonth[m] = (transportPaidForMonth[m] || 0) + amtPerMonth;
                         monthWisePaid[m] = (monthWisePaid[m] || 0) + amtPerMonth;
                     });
-                } else if (p.month) {
-                    transportPaidForMonth[p.month] = (transportPaidForMonth[p.month] || 0) + item.amount;
-                    monthWisePaid[p.month] = (monthWisePaid[p.month] || 0) + item.amount;
                 }
             } else if (item.isOneTime) {
                 actualOneTimePaid += item.amount;
                 oneTimePaidForHead[item.name] = (oneTimePaidForHead[item.name] || 0) + item.amount;
             } else {
                 actualMonthlyPaid += item.amount;
-                if (item.months.length > 0) {
-                    const amtPerMonth = item.amount / item.months.length;
-                    item.months.forEach(m => {
-                        if (!monthlyPaidForHeadAndMonth[item.name]) {
-                            monthlyPaidForHeadAndMonth[item.name] = {};
+                const targetMonths = item.months.length > 0 ? item.months : (p.month ? [p.month] : []);
+                if (targetMonths.length > 0) {
+                    const amtPerMonth = item.amount / targetMonths.length;
+                    targetMonths.forEach(m => {
+                        // Check if item.name matches a known monthly fee head
+                        const matchedHead = feeHeads.find(h => h.type === 'Monthly' && (
+                            item.name.toLowerCase().includes(h.name.toLowerCase()) || 
+                            h.name.toLowerCase().includes(item.name.toLowerCase())
+                        ));
+
+                        if (matchedHead) {
+                            if (!monthlyPaidForHeadAndMonth[matchedHead.name]) {
+                                monthlyPaidForHeadAndMonth[matchedHead.name] = {};
+                            }
+                            monthlyPaidForHeadAndMonth[matchedHead.name][m] = (monthlyPaidForHeadAndMonth[matchedHead.name][m] || 0) + amtPerMonth;
+                        } else {
+                            // Generic unallocated monthly payment
+                            genericMonthlyPaidForMonth[m] = (genericMonthlyPaidForMonth[m] || 0) + amtPerMonth;
                         }
-                        monthlyPaidForHeadAndMonth[item.name][m] = (monthlyPaidForHeadAndMonth[item.name][m] || 0) + amtPerMonth;
                         monthWisePaid[m] = (monthWisePaid[m] || 0) + amtPerMonth;
                     });
-                } else if (p.month) {
-                    if (!monthlyPaidForHeadAndMonth[item.name]) {
-                        monthlyPaidForHeadAndMonth[item.name] = {};
-                    }
-                    monthlyPaidForHeadAndMonth[item.name][p.month] = (monthlyPaidForHeadAndMonth[item.name][p.month] || 0) + item.amount;
-                    monthWisePaid[p.month] = (monthWisePaid[p.month] || 0) + item.amount;
                 }
             }
         });
@@ -304,11 +322,63 @@ async function getStudentFeeLedger(studentId: string) {
         let monthPaidTotal = 0;
         const headsBreakdown: any[] = [];
 
+        // Generic pool of unallocated monthly payment for this month
+        let genericPool = genericMonthlyPaidForMonth[m] || 0;
+
+        // First Pass: Specific paid + exact match with generic pool
+        monthlyExpectedBreakdown.forEach(head => {
+            let paid = (monthlyPaidForHeadAndMonth[head.name] && monthlyPaidForHeadAndMonth[head.name][m]) || 0;
+            const needed = Math.max(0, head.amount - paid);
+            if (needed > 0 && genericPool > 0) {
+                if (Math.abs(genericPool - needed) < 1 || genericPool === needed) {
+                    paid += needed;
+                    genericPool -= needed;
+                    if (!monthlyPaidForHeadAndMonth[head.name]) monthlyPaidForHeadAndMonth[head.name] = {};
+                    monthlyPaidForHeadAndMonth[head.name][m] = paid;
+                }
+            }
+        });
+
+        let transportExpected = transportMonthlyFare;
+        let transportPaid = transportPaidForMonth[m] || 0;
+        const transportNeeded = Math.max(0, transportExpected - transportPaid);
+        if (transportNeeded > 0 && genericPool > 0) {
+            if (Math.abs(genericPool - transportNeeded) < 1 || genericPool === transportNeeded) {
+                transportPaid += transportNeeded;
+                transportPaidForMonth[m] = transportPaid;
+                genericPool -= transportNeeded;
+            }
+        }
+
+        // Second Pass: Sequential allocation of remaining genericPool to unpaid heads
+        if (genericPool > 0) {
+            monthlyExpectedBreakdown.forEach(head => {
+                let paid = (monthlyPaidForHeadAndMonth[head.name] && monthlyPaidForHeadAndMonth[head.name][m]) || 0;
+                const needed = Math.max(0, head.amount - paid);
+                if (needed > 0 && genericPool > 0) {
+                    const alloc = Math.min(genericPool, needed);
+                    paid += alloc;
+                    genericPool -= alloc;
+                    if (!monthlyPaidForHeadAndMonth[head.name]) monthlyPaidForHeadAndMonth[head.name] = {};
+                    monthlyPaidForHeadAndMonth[head.name][m] = paid;
+                }
+            });
+
+            if (genericPool > 0 && (transportExpected - transportPaid) > 0) {
+                const remainingTransportNeeded = Math.max(0, transportExpected - transportPaid);
+                const alloc = Math.min(genericPool, remainingTransportNeeded);
+                transportPaid += alloc;
+                transportPaidForMonth[m] = transportPaid;
+                genericPool -= alloc;
+            }
+        }
+
+        // Build final head breakdown for this month
         monthlyExpectedBreakdown.forEach(head => {
             const expected = head.amount;
             const paid = (monthlyPaidForHeadAndMonth[head.name] && monthlyPaidForHeadAndMonth[head.name][m]) || 0;
             const pending = isElapsed ? Math.max(0, expected - paid) : 0;
-            
+
             if (isElapsed) {
                 monthlyPending += pending;
             }
@@ -323,8 +393,6 @@ async function getStudentFeeLedger(studentId: string) {
             });
         });
 
-        const transportExpected = transportMonthlyFare;
-        const transportPaid = transportPaidForMonth[m] || 0;
         const transportPending = isElapsed ? Math.max(0, transportExpected - transportPaid) : 0;
 
         if (isElapsed) {
@@ -457,7 +525,7 @@ router.get('/transport-due-list', async (req, res) => {
 
         const students = await prisma.studentProfile.findMany({
             where: { 
-                status: 'Active',
+                status: { not: 'Inactive' },
                 ...(sessionQuery && sessionQuery !== 'All' ? {
                     OR: [
                         { academicYear: sessionQuery },
@@ -500,10 +568,10 @@ router.get('/transport-due-list', async (req, res) => {
                     const parts = p.feeHead.split('==>');
                     if (parts.length > 1) {
                         const mths = parts[0].split(',').map((m: string) => m.trim());
-                        paidMonths.push(...mths);
                         const heads = parts[1].split('||');
                         const transportHead = heads.find((h: string) => h.toLowerCase().includes('transport') || h.toLowerCase().includes('bus'));
                         if (transportHead) {
+                            paidMonths.push(...mths);
                             if (transportHead.toLowerCase().includes('yearly')) isYearly = true;
                             const match = transportHead.match(/(?:Transport|Bus)\s*(?:\((.*?)\))?(?:\s*\(Yearly\))?:\s*(\d+)/i);
                             if (match) {
@@ -554,17 +622,7 @@ router.get('/transport-due-list', async (req, res) => {
 // Get Next Receipt Number
 router.get('/next-receipt', async (req, res) => {
     try {
-        const lastPayment = await prisma.feePayment.findFirst({
-            orderBy: { paymentDate: 'desc' }
-        });
-        
-        let nextNumber = 1;
-        if (lastPayment && lastPayment.receiptNo) {
-            const lastNoStr = lastPayment.receiptNo.replace('RCP', '');
-            nextNumber = parseInt(lastNoStr) + 1;
-        }
-
-        const nextReceiptNo = 'RCP' + String(nextNumber).padStart(3, '0');
+        const nextReceiptNo = await generateNextReceiptNo();
         res.json({ receiptNo: nextReceiptNo });
     } catch (error) {
         res.status(500).json({ error: 'Failed to generate receipt number' });
@@ -581,15 +639,6 @@ router.post('/collect', async (req, res) => {
 
         const isPending = Number(discount) > 0;
 
-        const lastPayment = await prisma.feePayment.findFirst({
-            orderBy: { paymentDate: 'desc' }
-        });
-        
-        let nextNumber = 1;
-        if (lastPayment && lastPayment.receiptNo) {
-            const lastNoStr = lastPayment.receiptNo.replace('RCP', '');
-            nextNumber = parseInt(lastNoStr) + 1;
-        }
         // Prevent duplicate submissions (same student, month, year, amount, and feeHead within 30 seconds)
         const thirtySecondsAgo = new Date(Date.now() - 30 * 1000);
         const existingRecentPayment = await prisma.feePayment.findFirst({
@@ -607,7 +656,7 @@ router.post('/collect', async (req, res) => {
             return res.status(400).json({ error: 'A duplicate payment was recently processed. Please wait a moment.' });
         }
 
-        const generatedReceiptNo = 'RCP' + String(nextNumber).padStart(3, '0');
+        const generatedReceiptNo = await generateNextReceiptNo();
 
         const feePayment = await prisma.feePayment.create({
             data: {
@@ -645,7 +694,10 @@ router.post('/collect', async (req, res) => {
 router.get('/pending', async (req, res) => {
     try {
         const pending = await prisma.feePayment.findMany({
-            where: { status: 'PENDING' },
+            where: {
+                status: 'PENDING',
+                paymentMode: { not: { contains: 'PayU' } }
+            },
             include: {
                 student: {
                     include: {
@@ -653,15 +705,17 @@ router.get('/pending', async (req, res) => {
                         class: true
                     }
                 }
-            }
+            },
+            orderBy: { paymentDate: 'desc' }
         });
         res.json(pending.map(p => ({
             ...p,
-            studentName: p.student?.user?.name || 'Unknown',
-            className: p.student?.class?.name || 'Unknown',
-            admissionNo: p.student?.admissionNo || 'N/A'
+            studentName: p.student?.user?.name || (p as any).studentName || 'Unknown Student',
+            className: p.student?.class?.name || (p as any).className || 'Unknown Class',
+            admissionNo: p.student?.admissionNo || (p as any).admissionNo || 'N/A'
         })));
     } catch (error) {
+        console.error('Error fetching pending approvals:', error);
         res.status(500).json({ error: 'Failed to fetch pending approvals' });
     }
 });
@@ -746,10 +800,26 @@ router.get('/history/:studentId', async (req, res) => {
         const { studentId } = req.params;
         const history = await prisma.feePayment.findMany({
             where: { studentId },
-            include: { session: true },
+            include: {
+                session: true,
+                student: {
+                    include: {
+                        user: true,
+                        class: true
+                    }
+                }
+            },
             orderBy: { paymentDate: 'desc' }
         });
-        res.json(history);
+
+        const formatted = history.map(p => ({
+            ...p,
+            studentName: p.student?.user?.name || 'N/A',
+            className: p.student?.class?.name || 'N/A',
+            admissionNo: p.student?.admissionNo || 'N/A'
+        }));
+
+        res.json(formatted);
     } catch (error) {
         res.status(500).json({ error: 'Failed to fetch history' });
     }
@@ -1004,6 +1074,117 @@ router.get('/student/:id/balance', async (req, res) => {
     }
 });
 
+// Public Student Fee Search Endpoint for /feeonline portal
+router.get('/public/student-dues', async (req: express.Request, res: express.Response): Promise<any> => {
+    try {
+        const rawQuery = String(req.query.admissionNo || req.query.query || '').trim();
+        if (!rawQuery) {
+            return res.status(400).json({ error: 'Please enter Admission No or SR No.' });
+        }
+
+        const cleanNumStr = rawQuery.replace(/^bips\/26\//i, '').replace(/^rcp/i, '').trim();
+        const isObjectId = /^[0-9a-fA-F]{24}$/.test(rawQuery);
+
+        const searchConditions: any[] = [
+            { admissionNo: { equals: rawQuery, mode: 'insensitive' } },
+            { admissionNo: { equals: `BIPS/26/${rawQuery}`, mode: 'insensitive' } },
+            { admissionNo: { equals: `BIPS/26/${String(cleanNumStr).padStart(3, '0')}`, mode: 'insensitive' } },
+            { admissionNo: { contains: rawQuery, mode: 'insensitive' } },
+            { studentId: { equals: rawQuery, mode: 'insensitive' } },
+            { user: { name: { contains: rawQuery, mode: 'insensitive' } } }
+        ];
+
+        if (isObjectId) {
+            searchConditions.unshift({ id: rawQuery });
+        }
+
+        // 1. Search for StudentProfile
+        const student = await prisma.studentProfile.findFirst({
+            where: {
+                status: { not: 'Inactive' },
+                OR: searchConditions
+            },
+            include: { user: true, class: true, transportStop: true }
+        });
+
+        if (!student || !student.user) {
+            return res.status(404).json({ error: `No student record found matching Admission No: "${rawQuery}"` });
+        }
+
+        // 2. Calculate accurate fee ledger (same core engine used by Admin Accounts module)
+        const ledger = await getStudentFeeLedger(student.id);
+
+        // 3. Fetch Approved Payments for receipt history & download
+        const allPayments = await prisma.feePayment.findMany({
+            where: {
+                studentId: student.id,
+                status: 'APPROVED'
+            },
+            orderBy: { paymentDate: 'desc' }
+        });
+
+        const approvedReceipts = allPayments.map(p => ({
+            id: p.id,
+            receiptNo: p.receiptNo || 'RCP-ONLINE',
+            date: p.approvalDate ? new Date(p.approvalDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : (p.paymentDate ? new Date(p.paymentDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })),
+            feeHead: p.feeHead || 'Fee Payment',
+            month: p.month || 'N/A',
+            year: p.year || student.academicYear || '2026-2027',
+            paymentMode: p.paymentMode || 'Online - PayU',
+            amountPaid: p.amountPaid || 0,
+            txnid: p.txnid || '-'
+        }));
+
+        res.json({
+            student: {
+                id: student.id,
+                studentName: student.user.name,
+                admissionNo: student.admissionNo,
+                className: student.class?.name || 'Unassigned',
+                fatherName: student.fatherName || 'N/A',
+                fatherMobile: student.fatherMobile || student.user.phone || 'N/A',
+                academicYear: student.academicYear || '2026-2027',
+                isThirdChild: student.isThirdChild || false,
+                isRT: student.isRT || false,
+                isOldStudent: student.isOldStudent || false,
+                transportStop: student.transportStop ? {
+                    name: student.transportStop.name,
+                    busFare: student.transportStop.busFare
+                } : null
+            },
+            summary: {
+                totalExpected: ledger.summary.totalExpectedWholeYear,
+                totalPaid: ledger.summary.totalPaidAllTime,
+                totalPending: ledger.summary.netOutstanding,
+                previousSessionDue: ledger.summary.previousSessionDue,
+                previousDuePending: ledger.summary.previousDuesPending
+            },
+            oneTimeBreakdown: ledger.oneTimeStatus.map((ot: any) => ({
+                name: ot.name,
+                expected: ot.expected,
+                paid: ot.paid,
+                pending: ot.pending
+            })),
+            monthlyDues: ledger.monthlyStatus.map((m: any) => {
+                const actualPending = Math.max(0, m.expected - m.paid);
+                const isFullyPaid = m.expected > 0 && m.paid >= m.expected;
+                return {
+                    month: m.month,
+                    expected: m.expected,
+                    paid: m.paid,
+                    pending: actualPending,
+                    isPaid: isFullyPaid,
+                    heads: m.heads || []
+                };
+            }),
+            approvedReceipts
+        });
+    } catch (error: any) {
+        console.error('Public student dues search error:', error);
+        res.status(500).json({ error: 'Failed to fetch student fee details', details: error.message });
+    }
+});
+
 // Get global list of pending fees
 router.get('/due-list', async (req, res) => {
     try {
@@ -1034,7 +1215,7 @@ router.get('/due-list', async (req, res) => {
 
         const students = await prisma.studentProfile.findMany({
             where: {
-                status: 'Active',
+                status: { not: 'Inactive' },
                 ...(sessionQuery && sessionQuery !== 'All' ? {
                     OR: [
                         { academicYear: sessionQuery },
@@ -1083,11 +1264,11 @@ router.get('/due-list', async (req, res) => {
 
         // Process each student
         const dueList = students.map(student => {
-            if (!student.user || !student.class) return null;
+            if (!student.user) return null;
 
             const studentRawPayments = paymentsByStudent.get(student.id) || [];
             const studentPayments = studentRawPayments.filter(p => isPaymentInAcademicYear(p, student.academicYear));
-            const structure: any = student.class.feeStructure || {};
+            const structure: any = student.class?.feeStructure || {};
             
             // Calculate Expected Fees for this student
             let expectedOneTimeTotal = 0;
@@ -1219,7 +1400,7 @@ router.get('/due-list', async (req, res) => {
             currentMonthPaid += transportPaidForMonth[targetMonth] || 0;
             const currentMonthPending = Math.max(0, currentMonthExpected - currentMonthPaid);
 
-            if (netPending <= 0) return null;
+            // Include all active students (including 0 pending / fully paid students)
 
             return {
                 id: student.id,
@@ -1506,6 +1687,373 @@ router.get('/dashboard/revenue/class/:classId', async (req, res) => {
     }
 });
 
+
+// Helper to generate next receipt number
+async function generateNextReceiptNo(): Promise<string> {
+    const paymentsWithReceipt = await prisma.feePayment.findMany({
+        where: {
+            receiptNo: {
+                not: null,
+                startsWith: 'RCP'
+            }
+        },
+        select: { receiptNo: true }
+    });
+
+    let maxNum = 0;
+    paymentsWithReceipt.forEach(p => {
+        if (p.receiptNo) {
+            const numStr = p.receiptNo.replace('RCP', '');
+            const parsed = parseInt(numStr, 10);
+            if (!isNaN(parsed) && parsed > maxNum) {
+                maxNum = parsed;
+            }
+        }
+    });
+
+    const nextNumber = maxNum + 1;
+    return 'RCP' + String(nextNumber).padStart(3, '0');
+}
+
+// ── PayU Online Payment Endpoints ──
+
+// 1. Initiate PayU Online Payment
+router.post('/payu/initiate', async (req: express.Request, res: express.Response): Promise<any> => {
+    try {
+        const {
+            studentId,
+            amountPaid,
+            totalFee,
+            discount = 0,
+            feeHead,
+            month,
+            year,
+            remark,
+            customerName,
+            customerEmail,
+            customerPhone
+        } = req.body;
+
+        if (!studentId || !amountPaid) {
+            return res.status(400).json({ error: 'studentId and amountPaid are required' });
+        }
+
+        const student = await prisma.studentProfile.findUnique({
+            where: { id: studentId },
+            include: { user: true, class: true }
+        });
+
+        if (!student) {
+            return res.status(404).json({ error: 'Student not found' });
+        }
+
+        const txnid = `PAYU_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
+        const config = getPayUConfig();
+
+        const draftReceiptNo = `DRAFT-${txnid}`;
+
+        // Create pending FeePayment record in DB
+        const pendingPayment = await prisma.feePayment.create({
+            data: {
+                studentId,
+                amountPaid: Number(amountPaid),
+                totalFee: Number(totalFee || amountPaid),
+                discount: Number(discount),
+                feeHead: feeHead || 'Online Fee Payment',
+                month: month || null,
+                year: year || null,
+                paymentMode: 'Online - PayU',
+                status: 'PENDING',
+                receiptNo: draftReceiptNo,
+                txnid,
+                gatewayStatus: 'PENDING',
+                remark: remark || 'Online PayU Payment Initiated',
+                submittedBy: student.user.name || 'Student/Parent'
+            }
+        });
+
+        const firstname = (customerName || student.user.name || 'Student').trim().replace(/[^a-zA-Z0-9 ]/g, '');
+        const email = customerEmail || student.user.email || 'student@school.com';
+        const phone = customerPhone || student.user.phone || '9999999999';
+        const productinfo = `Fee Payment ${month ? '- ' + month : ''}`.trim();
+
+        const sourceFlag = req.body.udf4 || 'Admin';
+        const payuParams = {
+            txnid,
+            amount: Number(amountPaid),
+            productinfo,
+            firstname,
+            email,
+            phone,
+            udf1: studentId,
+            udf2: month || '',
+            udf3: year || '',
+            udf4: `${sourceFlag}::${feeHead || ''}`,
+            udf5: pendingPayment.id
+        };
+
+        const hash = generatePayUHash(payuParams);
+        const actionUrl = `${config.baseUrl}/_payment`;
+
+        res.json({
+            success: true,
+            action: actionUrl,
+            params: {
+                key: config.key,
+                txnid,
+                amount: Number(amountPaid).toFixed(2),
+                productinfo,
+                firstname,
+                email,
+                phone,
+                surl: config.surl,
+                furl: config.furl,
+                hash,
+                udf1: payuParams.udf1,
+                udf2: payuParams.udf2,
+                udf3: payuParams.udf3,
+                udf4: payuParams.udf4,
+                udf5: payuParams.udf5
+            }
+        });
+    } catch (error: any) {
+        console.error('PayU Initiate Error:', error);
+        res.status(500).json({ error: 'Failed to initiate PayU payment: ' + (error.message || error) });
+    }
+});
+
+// 2. PayU Response Handler (surl / furl callback - Handles both POST and GET)
+const payuResponse = async (req: express.Request, res: express.Response): Promise<any> => {
+    try {
+        console.log('===== PAYU RESPONSE =====');
+        console.log('Method:', req.method);
+        console.log('Body:', req.body);
+        console.log('Query:', req.query);
+
+        // Combine query and body params to handle both POST and GET redirects
+        const postData = { ...req.query, ...req.body };
+        const { txnid, status, mihpayid, udf5, hash } = postData;
+
+        // If no payment parameters are present (direct browser navigation test)
+        if (!txnid && !status && !hash && !udf5) {
+            return res.send(`
+                <!DOCTYPE html>
+                <html>
+                <head><title>PayU Response Endpoint</title></head>
+                <body style="font-family: sans-serif; text-align: center; padding: 4rem;">
+                    <h3 style="color: #2b6cb0;">PayU Response Callback Endpoint is Active</h3>
+                    <p style="color: #4a5568;">This URL is used by PayU Gateway to postback payment status after checkout.</p>
+                    <a href="http://localhost:5173/admin/fees" style="display: inline-block; margin-top: 1rem; padding: 10px 20px; background: #3182ce; color: white; text-decoration: none; border-radius: 8px;">Back to Fee Portal</a>
+                </body>
+                </html>
+            `);
+        }
+
+        console.log(`PayU Postback received for txnid: ${txnid}, status: ${status}`);
+
+        // A. Reverse Hash Verification (Mandatory PayU Security Requirement)
+        const isReverseHashValid = verifyPayUReverseHash(postData);
+
+        let feePaymentRecord = null;
+        const isValidObjectId = udf5 && /^[0-9a-fA-F]{24}$/.test(String(udf5));
+        if (isValidObjectId) {
+            feePaymentRecord = await prisma.feePayment.findUnique({ where: { id: String(udf5) } });
+        }
+        if (!feePaymentRecord && txnid) {
+            feePaymentRecord = await prisma.feePayment.findFirst({ where: { txnid: String(txnid) } });
+        }
+
+        if (!isReverseHashValid) {
+            console.error(`PayU REVERSE HASH TAMPERING DETECTED for txnid: ${txnid}`);
+            if (feePaymentRecord) {
+                await prisma.feePayment.update({
+                    where: { id: feePaymentRecord.id },
+                    data: {
+                        status: 'REJECTED',
+                        gatewayStatus: 'TAMPERED',
+                        rawGatewayResponse: JSON.stringify(postData)
+                    }
+                });
+            }
+            return res.send(`
+                <!DOCTYPE html>
+                <html>
+                <head><title>Payment Security Error</title></head>
+                <body style="font-family: sans-serif; text-align: center; padding: 3rem;">
+                    <h2 style="color: #e53e3e;">Security Warning: Payment Data Verification Failed</h2>
+                    <p>The transaction response signature failed security verification.</p>
+                    <a href="/student/fees" style="padding: 10px 20px; background: #3182ce; color: white; text-decoration: none; border-radius: 8px;">Back to Fee Portal</a>
+                </body>
+                </html>
+            `);
+        }
+
+        // B. Secondary Confirmation via PayU S2S Verify Payment Web Service
+        let finalStatus = 'REJECTED';
+
+        if (status === 'success' && txnid) {
+            const s2sResult = await verifyTransactionWithPayU(String(txnid));
+            if (s2sResult.success || status === 'success') {
+                finalStatus = 'APPROVED';
+            }
+        }
+
+        let assignedReceiptNo = feePaymentRecord?.receiptNo || '';
+
+        if (feePaymentRecord) {
+            if (finalStatus === 'APPROVED' && (!assignedReceiptNo || assignedReceiptNo.startsWith('DRAFT-'))) {
+                assignedReceiptNo = await generateNextReceiptNo();
+            }
+
+            await prisma.feePayment.update({
+                where: { id: feePaymentRecord.id },
+                data: {
+                    status: finalStatus,
+                    gatewayStatus: String(status || 'UNKNOWN'),
+                    payuMoneyId: mihpayid ? String(mihpayid) : null,
+                    receiptNo: finalStatus === 'APPROVED' ? assignedReceiptNo : null,
+                    approvalDate: finalStatus === 'APPROVED' ? new Date() : null,
+                    rawGatewayResponse: JSON.stringify(postData)
+                }
+            });
+
+            invalidateCache('fees:');
+            invalidateCache('dashboard');
+        }
+
+        // Return HTML response to redirect back to frontend portal
+        const isFromAdmin = postData.udf4 && String(postData.udf4).includes('Admin');
+        const isFromPublic = postData.udf4 && (String(postData.udf4).includes('Public') || String(postData.udf4).includes('FeeOnline'));
+        const redirectPath = isFromPublic ? '/erp/feeonline' : (isFromAdmin ? '/erp/admin/fees' : '/erp/student/fees');
+        const stId = feePaymentRecord?.studentId || postData.udf1 || '';
+
+        let targetAdmNo = '';
+        if (stId) {
+            const stProfile = await prisma.studentProfile.findUnique({
+                where: { id: stId },
+                select: { admissionNo: true }
+            });
+            if (stProfile) targetAdmNo = stProfile.admissionNo;
+        }
+
+        const paidAmountVal = feePaymentRecord?.amountPaid || postData.amount || 0;
+        const feeHeadVal = feePaymentRecord?.feeHead || 'Online Fee Payment';
+
+        const redirectUrl = `http://localhost:5173${redirectPath}?payment=${finalStatus.toLowerCase()}&txnid=${txnid || ''}&receipt=${assignedReceiptNo || ''}&studentId=${stId}&admissionNo=${encodeURIComponent(targetAdmNo)}&amount=${paidAmountVal}&feeHead=${encodeURIComponent(feeHeadVal)}`;
+        
+        return res.send(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Payment ${finalStatus}</title>
+                <script>
+                    setTimeout(function() {
+                        window.location.href = "${redirectUrl}";
+                    }, 1000);
+                </script>
+            </head>
+            <body style="font-family: sans-serif; text-align: center; padding: 4rem;">
+                <h3 style="color: ${finalStatus === 'APPROVED' ? '#2e7d32' : '#c62828'};">Payment ${finalStatus === 'APPROVED' ? 'Successful!' : 'Failed or Cancelled'}</h3>
+                <p>Redirecting back to your school fee portal...</p>
+                <a href="${redirectUrl}">Click here if not redirected automatically</a>
+            </body>
+            </html>
+        `);
+    } catch (error: any) {
+        console.error('PayU Response Error Stack:', error);
+        res.status(500).send('Error processing PayU payment response: ' + (error.message || String(error)));
+    }
+};
+
+router.post('/payu/response', payuResponse);
+router.get('/payu/response', payuResponse);
+
+// 3. PayU Webhook Endpoint (Server to Server background notification)
+router.post('/payu/webhook', async (req: express.Request, res: express.Response): Promise<any> => {
+    try {
+        const postData = req.body || {};
+        const { txnid, status, mihpayid, udf5 } = postData;
+
+        console.log(`PayU Webhook received for txnid: ${txnid}, status: ${status}`);
+
+        const isValidHash = verifyPayUReverseHash(postData);
+        if (!isValidHash) {
+            console.error('PayU Webhook Reverse Hash invalid!');
+            return res.status(400).json({ error: 'Invalid reverse hash signature' });
+        }
+
+        let payment = null;
+        if (udf5) {
+            payment = await prisma.feePayment.findUnique({ where: { id: udf5 } });
+        }
+        if (!payment && txnid) {
+            payment = await prisma.feePayment.findFirst({ where: { txnid } });
+        }
+
+        if (payment && payment.status === 'PENDING') {
+            const s2s = await verifyTransactionWithPayU(txnid);
+            const isApproved = status === 'success' || s2s.success;
+            let receiptNo = payment.receiptNo;
+            if (isApproved && !receiptNo) {
+                receiptNo = await generateNextReceiptNo();
+            }
+
+            await prisma.feePayment.update({
+                where: { id: payment.id },
+                data: {
+                    status: isApproved ? 'APPROVED' : 'REJECTED',
+                    gatewayStatus: status || 'UNKNOWN',
+                    payuMoneyId: mihpayid ? String(mihpayid) : null,
+                    receiptNo: isApproved ? receiptNo : null,
+                    approvalDate: isApproved ? new Date() : null,
+                    rawGatewayResponse: JSON.stringify(postData)
+                }
+            });
+
+            invalidateCache('fees:');
+            invalidateCache('dashboard');
+        }
+
+        res.json({ status: 'success', message: 'Webhook processed' });
+    } catch (error: any) {
+        console.error('PayU Webhook Error:', error);
+        res.status(500).json({ error: 'Webhook processing error' });
+    }
+});
+
+// 4. PayU Manual Transaction Status Verification Endpoint
+router.get('/payu/verify-status/:txnid', async (req: express.Request, res: express.Response): Promise<any> => {
+    try {
+        const txnid = String(req.params.txnid || '');
+        if (!txnid) return res.status(400).json({ error: 'txnid is required' });
+
+        const s2sResult = await verifyTransactionWithPayU(txnid);
+        const payment = await prisma.feePayment.findFirst({ where: { txnid } });
+
+        if (payment && payment.status === 'PENDING' && s2sResult.success) {
+            const receiptNo = payment.receiptNo || (await generateNextReceiptNo());
+            const updated = await prisma.feePayment.update({
+                where: { id: payment.id },
+                data: {
+                    status: 'APPROVED',
+                    gatewayStatus: 'SUCCESS',
+                    payuMoneyId: s2sResult.mihpayid ? String(s2sResult.mihpayid) : payment.payuMoneyId,
+                    receiptNo,
+                    approvalDate: new Date(),
+                    rawGatewayResponse: JSON.stringify(s2sResult.raw)
+                }
+            });
+            invalidateCache('fees:');
+            invalidateCache('dashboard');
+            return res.json({ success: true, verified: true, payment: updated });
+        }
+
+        res.json({ success: true, verified: s2sResult.success, s2sResult, payment });
+    } catch (error: any) {
+        console.error('PayU Verify Status Route Error:', error);
+        res.status(500).json({ error: 'Failed to verify transaction status' });
+    }
+});
 
 export default router;
 

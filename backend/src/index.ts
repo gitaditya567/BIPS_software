@@ -160,6 +160,7 @@ const loginHandler = async (req: express.Request, res: express.Response): Promis
                 email: fullUser.email,
                 name: fullUser.name,
                 role: role === 'PARENT' ? 'PARENT' : fullUser.role,
+                permissions: (fullUser as any).permissions || [],
                 studentInfo: fullUser.studentProfile,
                 teacherInfo: fullUser.teacherProfile
             }

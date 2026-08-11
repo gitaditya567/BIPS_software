@@ -78,8 +78,6 @@ function parsePaymentBreakdown(feeHead: string | null, month: string | null, amo
         const paidMonths = monthsStr ? monthsStr.split(',').map(m => m.trim()).filter(Boolean) : [];
         const itemParts = breakdownStr.split('||').map(item => item.trim()).filter(Boolean);
 
-        // First pass: parse items and compute sum of breakdown amounts
-        let sumOfBreakdown = 0;
         const tempItems: { name: string; amt: number }[] = [];
         itemParts.forEach(itemPart => {
             const splitColon = itemPart.split(':');
@@ -87,28 +85,29 @@ function parsePaymentBreakdown(feeHead: string | null, month: string | null, amo
                 const name = splitColon[0].trim();
                 const amt = parseFloat(splitColon[1].trim()) || 0;
                 tempItems.push({ name, amt });
-                sumOfBreakdown += amt;
             } else {
                 const name = itemPart.trim();
                 tempItems.push({ name, amt: totalAmount });
-                sumOfBreakdown += totalAmount;
             }
         });
 
-        // Calculate scaling factor if there's a mismatch
-        const factor = sumOfBreakdown > 0 ? (totalAmount / sumOfBreakdown) : 1;
-
-        let currentSum = 0;
-        tempItems.forEach(tempItem => {
+        // Allocate totalAmount sequentially to tempItems (prevents fractional scaling!)
+        let remainingToAllocate = totalAmount;
+        tempItems.forEach((tempItem, idx) => {
             const { name, amt } = tempItem;
-            const scaledAmt = Math.round(amt * factor);
-            currentSum += scaledAmt;
-            const nameLower = name.toLowerCase();
+            // If last item and remaining money left over, take remaining, otherwise cap at amt
+            let allocatedAmt = 0;
+            if (idx === tempItems.length - 1 && remainingToAllocate > amt) {
+                allocatedAmt = remainingToAllocate;
+            } else {
+                allocatedAmt = Math.min(remainingToAllocate, amt);
+            }
+            remainingToAllocate = Math.max(0, remainingToAllocate - allocatedAmt);
 
+            const nameLower = name.toLowerCase();
             const isPreviousDues = nameLower === 'previous dues';
             const isTransport = nameLower.includes('transport') || nameLower.includes('bus');
-            
-            // Find matching head object
+
             const headObj = feeHeadsList.find(h => {
                 const hName = h.name.toLowerCase();
                 const nLower = nameLower.toLowerCase();
@@ -123,7 +122,7 @@ function parsePaymentBreakdown(feeHead: string | null, month: string | null, amo
 
             items.push({
                 name: canonicalName,
-                amount: scaledAmt,
+                amount: Math.round(allocatedAmt),
                 months: isMonthly ? paidMonths : [],
                 isMonthly,
                 isOneTime,
@@ -131,20 +130,6 @@ function parsePaymentBreakdown(feeHead: string | null, month: string | null, amo
                 isPreviousDues
             });
         });
-
-        // Adjust for any rounding difference
-        const diff = totalAmount - currentSum;
-        if (diff !== 0 && items.length > 0) {
-            let maxItemIdx = 0;
-            let maxAmt = -1;
-            items.forEach((item, idx) => {
-                if (item.amount > maxAmt) {
-                    maxAmt = item.amount;
-                    maxItemIdx = idx;
-                }
-            });
-            items[maxItemIdx].amount += diff;
-        }
     } else {
         const name = feeHead.trim();
         const nameLower = name.toLowerCase();
@@ -179,7 +164,7 @@ function parsePaymentBreakdown(feeHead: string | null, month: string | null, amo
     return items;
 }
 
-async function getStudentFeeLedger(studentId: string) {
+export async function getStudentFeeLedger(studentId: string) {
     const student = await prisma.studentProfile.findUnique({
         where: { id: studentId },
         include: { class: true, transportStop: true, user: true }
@@ -312,9 +297,14 @@ async function getStudentFeeLedger(studentId: string) {
         };
     });
 
+    // Chronological Monthly Fee Allocation per Month
     let monthlyPending = 0;
     const monthlyStatus: any[] = [];
     const pendingMonthsList: string[] = [];
+
+    // Track unused/rollover monthly payment pool
+    let rolloverMonthlyPool = 0;
+    let rolloverTransportPool = actualTransportPaid;
 
     allMonths.forEach(m => {
         const isElapsed = elapsedMonths.includes(m);
@@ -322,93 +312,75 @@ async function getStudentFeeLedger(studentId: string) {
         let monthPaidTotal = 0;
         const headsBreakdown: any[] = [];
 
-        // Generic pool of unallocated monthly payment for this month
-        let genericPool = genericMonthlyPaidForMonth[m] || 0;
+        // Total money collected specifically for this month
+        let currentMonthMoney = (monthWisePaid[m] || 0) + rolloverMonthlyPool;
+        rolloverMonthlyPool = 0;
 
-        // First Pass: Specific paid + exact match with generic pool
-        monthlyExpectedBreakdown.forEach(head => {
-            let paid = (monthlyPaidForHeadAndMonth[head.name] && monthlyPaidForHeadAndMonth[head.name][m]) || 0;
-            const needed = Math.max(0, head.amount - paid);
-            if (needed > 0 && genericPool > 0) {
-                if (Math.abs(genericPool - needed) < 1 || genericPool === needed) {
-                    paid += needed;
-                    genericPool -= needed;
-                    if (!monthlyPaidForHeadAndMonth[head.name]) monthlyPaidForHeadAndMonth[head.name] = {};
-                    monthlyPaidForHeadAndMonth[head.name][m] = paid;
-                }
-            }
-        });
-
-        let transportExpected = transportMonthlyFare;
-        let transportPaid = transportPaidForMonth[m] || 0;
-        const transportNeeded = Math.max(0, transportExpected - transportPaid);
-        if (transportNeeded > 0 && genericPool > 0) {
-            if (Math.abs(genericPool - transportNeeded) < 1 || genericPool === transportNeeded) {
-                transportPaid += transportNeeded;
-                transportPaidForMonth[m] = transportPaid;
-                genericPool -= transportNeeded;
-            }
-        }
-
-        // Second Pass: Sequential allocation of remaining genericPool to unpaid heads
-        if (genericPool > 0) {
-            monthlyExpectedBreakdown.forEach(head => {
-                let paid = (monthlyPaidForHeadAndMonth[head.name] && monthlyPaidForHeadAndMonth[head.name][m]) || 0;
-                const needed = Math.max(0, head.amount - paid);
-                if (needed > 0 && genericPool > 0) {
-                    const alloc = Math.min(genericPool, needed);
-                    paid += alloc;
-                    genericPool -= alloc;
-                    if (!monthlyPaidForHeadAndMonth[head.name]) monthlyPaidForHeadAndMonth[head.name] = {};
-                    monthlyPaidForHeadAndMonth[head.name][m] = paid;
-                }
-            });
-
-            if (genericPool > 0 && (transportExpected - transportPaid) > 0) {
-                const remainingTransportNeeded = Math.max(0, transportExpected - transportPaid);
-                const alloc = Math.min(genericPool, remainingTransportNeeded);
-                transportPaid += alloc;
-                transportPaidForMonth[m] = transportPaid;
-                genericPool -= alloc;
-            }
-        }
-
-        // Build final head breakdown for this month
+        // 1. Allocate monthly fee heads sequentially for month m
         monthlyExpectedBreakdown.forEach(head => {
             const expected = head.amount;
-            const paid = (monthlyPaidForHeadAndMonth[head.name] && monthlyPaidForHeadAndMonth[head.name][m]) || 0;
-            const pending = isElapsed ? Math.max(0, expected - paid) : 0;
+            let directPaid = monthlyPaidForHeadAndMonth[head.name]?.[m] || 0;
+            
+            let allocated = 0;
+            if (directPaid > 0 && directPaid >= expected) {
+                allocated = expected;
+                currentMonthMoney = Math.max(0, currentMonthMoney - expected);
+            } else {
+                allocated = Math.min(currentMonthMoney, expected);
+                currentMonthMoney -= allocated;
+            }
+
+            allocated = Math.round(allocated);
+            const pending = Math.max(0, expected - allocated);
 
             if (isElapsed) {
                 monthlyPending += pending;
             }
             monthExpectedTotal += expected;
-            monthPaidTotal += paid;
+            monthPaidTotal += allocated;
 
             headsBreakdown.push({
                 name: head.name,
                 expected,
-                paid,
+                paid: allocated,
                 pending
             });
         });
 
-        const transportPending = isElapsed ? Math.max(0, transportExpected - transportPaid) : 0;
+        // Save leftover money for subsequent months
+        if (currentMonthMoney > 0) {
+            rolloverMonthlyPool += currentMonthMoney;
+        }
+
+        // 2. Allocate transport fee chronologically
+        const transportExpected = transportMonthlyFare;
+        let directTransport = transportPaidForMonth[m] || 0;
+        let transportAllocated = 0;
+        if (directTransport > 0) {
+            transportAllocated = Math.min(transportExpected, Math.round(directTransport));
+            rolloverTransportPool = Math.max(0, rolloverTransportPool - transportAllocated);
+        } else {
+            transportAllocated = Math.min(transportExpected, rolloverTransportPool);
+            rolloverTransportPool -= transportAllocated;
+        }
+
+        transportAllocated = Math.round(transportAllocated);
+        const transportPending = Math.max(0, transportExpected - transportAllocated);
 
         if (isElapsed) {
             monthlyPending += transportPending;
         }
         monthExpectedTotal += transportExpected;
-        monthPaidTotal += transportPaid;
+        monthPaidTotal += transportAllocated;
 
         headsBreakdown.push({
             name: 'Transport Fee',
             expected: transportExpected,
-            paid: transportPaid,
+            paid: transportAllocated,
             pending: transportPending
         });
 
-        const isMonthFullyPaid = monthPaidTotal >= monthExpectedTotal;
+        const isMonthFullyPaid = monthExpectedTotal > 0 && monthPaidTotal >= monthExpectedTotal;
         if (isElapsed && !isMonthFullyPaid && monthExpectedTotal > 0) {
             pendingMonthsList.push(m);
         }
@@ -418,7 +390,8 @@ async function getStudentFeeLedger(studentId: string) {
             isElapsed,
             expected: monthExpectedTotal,
             paid: monthPaidTotal,
-            pending: isElapsed ? Math.max(0, monthExpectedTotal - monthPaidTotal) : 0,
+            pending: Math.max(0, monthExpectedTotal - monthPaidTotal),
+            isPaid: isMonthFullyPaid,
             heads: headsBreakdown
         });
     });
@@ -1074,12 +1047,47 @@ router.get('/student/:id/balance', async (req, res) => {
     }
 });
 
+function normalizeDob(dobStr: string | null | undefined): string {
+    if (!dobStr) return '';
+    const clean = dobStr.trim().split('T')[0];
+    const parts = clean.split(/[-/.\s]+/);
+    if (parts.length === 3) {
+        let p1 = parts[0].padStart(2, '0');
+        let p2 = parts[1].padStart(2, '0');
+        let p3 = parts[2].padStart(2, '0');
+
+        if (p3.length === 2) {
+            p3 = Number(p3) > 30 ? `19${p3}` : `20${p3}`;
+        }
+        if (p1.length === 2 && Number(p1) > 30) {
+            p1 = `19${p1}`;
+        }
+
+        let y = '', m = '', d = '';
+        if (p1.length === 4) {
+            y = p1; m = p2; d = p3;
+        } else if (p3.length === 4) {
+            y = p3; m = p2; d = p1;
+        }
+
+        if (y && m && d) {
+            return `${y}-${m}-${d}`;
+        }
+    }
+    return clean.replace(/[^0-9]/g, '');
+}
+
 // Public Student Fee Search Endpoint for /feeonline portal
 router.get('/public/student-dues', async (req: express.Request, res: express.Response): Promise<any> => {
     try {
         const rawQuery = String(req.query.admissionNo || req.query.query || '').trim();
+        const rawDob = String(req.query.dob || req.query.dateOfBirth || '').trim();
+
         if (!rawQuery) {
             return res.status(400).json({ error: 'Please enter Admission No or SR No.' });
+        }
+        if (!rawDob) {
+            return res.status(400).json({ error: 'Please enter Student Date of Birth (DOB) for verification.' });
         }
 
         const cleanNumStr = rawQuery.replace(/^bips\/26\//i, '').replace(/^rcp/i, '').trim();
@@ -1109,6 +1117,16 @@ router.get('/public/student-dues', async (req: express.Request, res: express.Res
 
         if (!student || !student.user) {
             return res.status(404).json({ error: `No student record found matching Admission No: "${rawQuery}"` });
+        }
+
+        // Verify Student DOB
+        if (student.dateOfBirth) {
+            const normStudentDob = normalizeDob(student.dateOfBirth);
+            const normInputDob = normalizeDob(rawDob);
+
+            if (normStudentDob && normInputDob && normStudentDob !== normInputDob) {
+                return res.status(401).json({ error: 'Invalid Date of Birth for this Student. Verification failed. Please check and enter the correct Date of Birth.' });
+            }
         }
 
         // 2. Calculate accurate fee ledger (same core engine used by Admin Accounts module)
@@ -1156,6 +1174,8 @@ router.get('/public/student-dues', async (req: express.Request, res: express.Res
                 totalExpected: ledger.summary.totalExpectedWholeYear,
                 totalPaid: ledger.summary.totalPaidAllTime,
                 totalPending: ledger.summary.netOutstanding,
+                dueTillDate: ledger.summary.netOutstanding,
+                fullSessionBalance: Math.max(0, ledger.summary.totalExpectedWholeYear - ledger.summary.totalPaidAllTime),
                 previousSessionDue: ledger.summary.previousSessionDue,
                 previousDuePending: ledger.summary.previousDuesPending
             },

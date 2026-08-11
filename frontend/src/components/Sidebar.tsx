@@ -53,6 +53,7 @@ const ROLE_DEFAULT_IDS: Record<string, string[]> = {
 const Sidebar: React.FC = () => {
     const [role, setRole] = useState('ADMIN');
     const [permissions, setPermissions] = useState<Record<string, string[]>>({});
+    const [userObj, setUserObj] = useState<any>(null);
     const navigate = useNavigate();
 
     const loadPermissions = () => {
@@ -64,6 +65,7 @@ const Sidebar: React.FC = () => {
         const userData = localStorage.getItem('user');
         if (userData) {
             const parsed = JSON.parse(userData);
+            setUserObj(parsed);
             setRole(parsed.role || 'ADMIN');
         }
         loadPermissions();
@@ -82,12 +84,26 @@ const Sidebar: React.FC = () => {
     const rolePerms = permissions[role];
     let links: typeof allLinks;
 
-    if (role === 'ADMIN' || !rolePerms || rolePerms.length === 0) {
-        // Force ADMIN to default links, or fallback for others
+    // Check user-level custom permissions first
+    const customPermsRaw = localStorage.getItem('custom_user_permissions');
+    const customPermsMap = customPermsRaw ? JSON.parse(customPermsRaw) : {};
+    const userCustomPerms: string[] = (userObj && userObj.permissions && userObj.permissions.length > 0)
+        ? userObj.permissions
+        : (userObj && userObj.email && customPermsMap[userObj.email])
+        ? customPermsMap[userObj.email]
+        : [];
+
+    if (userCustomPerms && userCustomPerms.length > 0) {
+        links = allLinks.filter(l => {
+            return userCustomPerms.includes(l.id) || userCustomPerms.some(p => p.startsWith(l.id + '.'));
+        });
+    } else if (role === 'ADMIN') {
+        links = allLinks;
+    } else if (rolePerms && rolePerms.length > 0) {
+        links = allLinks.filter(l => rolePerms.includes(l.id) || rolePerms.some(p => p.startsWith(l.id + '.')));
+    } else {
         const defaultIds = ROLE_DEFAULT_IDS[role] || ROLE_DEFAULT_IDS['ADMIN'];
         links = allLinks.filter(l => defaultIds.includes(l.id));
-    } else {
-        links = allLinks.filter(l => rolePerms.includes(l.id));
     }
 
     const meta = ROLE_META[role] || ROLE_META['ADMIN'];

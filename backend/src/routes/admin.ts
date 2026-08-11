@@ -1695,17 +1695,117 @@ router.post('/tc-records', async (req, res) => {
     }
 });
 
-// Delete TC record
-router.delete('/tc-records/:id', async (req, res) => {
+// ─── System Users & Role Permissions ──────────────────────────────────────────
+
+// Get all system users
+router.get('/system-users', async (req, res) => {
+    try {
+        const users = await prisma.user.findMany({
+            select: {
+                id: true,
+                email: true,
+                name: true,
+                phone: true,
+                role: true,
+                permissions: true,
+                createdAt: true
+            },
+            orderBy: { createdAt: 'desc' }
+        });
+        res.json(users);
+    } catch (error: any) {
+        console.error('Error fetching system users:', error);
+        res.status(500).json({ error: 'Failed to fetch system users' });
+    }
+});
+
+// Create new system user
+router.post('/system-users', async (req, res) => {
+    try {
+        const { email, password, name, phone, role, permissions } = req.body;
+
+        if (!email || !password || !name) {
+            return res.status(400).json({ error: 'Email, Name, and Password are required' });
+        }
+
+        const existing = await prisma.user.findUnique({ where: { email } });
+        if (existing) {
+            return res.status(400).json({ error: 'User with this email already exists' });
+        }
+
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const newUser = await prisma.user.create({
+            data: {
+                email,
+                password: hashedPassword,
+                name,
+                phone: phone || null,
+                role: (role || 'ACCOUNTS') as any,
+                permissions: Array.isArray(permissions) ? permissions : []
+            },
+            select: {
+                id: true,
+                email: true,
+                name: true,
+                phone: true,
+                role: true,
+                permissions: true,
+                createdAt: true
+            }
+        });
+
+        res.status(201).json({ success: true, user: newUser });
+    } catch (error: any) {
+        console.error('Error creating system user:', error);
+        res.status(500).json({ error: error.message || 'Failed to create user' });
+    }
+});
+
+// Update permissions or user details for a system user
+router.put('/system-users/:id/permissions', async (req, res) => {
     try {
         const { id } = req.params;
-        await (prisma as any).transferCertificate.delete({ where: { id } });
-        res.json({ success: true, message: 'TC record deleted' });
+        const { permissions, role, name, phone } = req.body;
+
+        const updateData: any = {};
+        if (Array.isArray(permissions)) updateData.permissions = permissions;
+        if (role) updateData.role = role;
+        if (name) updateData.name = name;
+        if (phone !== undefined) updateData.phone = phone;
+
+        const updatedUser = await prisma.user.update({
+            where: { id },
+            data: updateData,
+            select: {
+                id: true,
+                email: true,
+                name: true,
+                phone: true,
+                role: true,
+                permissions: true,
+                createdAt: true
+            }
+        });
+
+        res.json({ success: true, user: updatedUser });
     } catch (error: any) {
-        console.error('Error deleting TC record:', error);
-        res.status(500).json({ error: 'Failed to delete TC record' });
+        console.error('Error updating user permissions:', error);
+        res.status(500).json({ error: 'Failed to update user permissions' });
+    }
+});
+
+// Delete system user
+router.delete('/system-users/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        await prisma.user.delete({ where: { id } });
+        res.json({ success: true, message: 'User deleted successfully' });
+    } catch (error: any) {
+        console.error('Error deleting user:', error);
+        res.status(500).json({ error: 'Failed to delete user' });
     }
 });
 
 export default router;
+
 

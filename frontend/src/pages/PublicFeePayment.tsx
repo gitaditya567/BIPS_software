@@ -3,11 +3,12 @@ import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { Search, CreditCard, CheckCircle2, AlertCircle, Download, Calendar, Check, ShieldCheck, RefreshCw, Bus } from 'lucide-react';
+import { CreditCard, CheckCircle2, AlertCircle, Download, Calendar, Check, ShieldCheck, RefreshCw } from 'lucide-react';
 
 export const PublicFeePayment: React.FC = () => {
     const [searchParams] = useSearchParams();
     const [searchQuery, setSearchQuery] = useState('');
+    const [dobQuery, setDobQuery] = useState('');
     const [loading, setLoading] = useState(false);
     const [errorMsg, setErrorMsg] = useState('');
 
@@ -16,10 +17,10 @@ export const PublicFeePayment: React.FC = () => {
     // Selected Fee Items state
     const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
     const [selectedOneTimeHeads, setSelectedOneTimeHeads] = useState<string[]>([]);
-    const [deselectedMonthlyHeads, setDeselectedMonthlyHeads] = useState<string[]>([]);
     const [includePrevDues, setIncludePrevDues] = useState(false);
     const [includeTransport, setIncludeTransport] = useState(true);
-    const [customAmount, setCustomAmount] = useState<string>('');
+    const [isTransportYearly, setIsTransportYearly] = useState(false);
+    const [deselectedMonthlyHeads, setDeselectedMonthlyHeads] = useState<string[]>([]);
     const [remark, setRemark] = useState<string>('');
     const [paymentProcessing, setPaymentProcessing] = useState(false);
 
@@ -66,33 +67,34 @@ export const PublicFeePayment: React.FC = () => {
         setSelectedMonths([]);
         setSelectedOneTimeHeads([]);
         setDeselectedMonthlyHeads([]);
-        setCustomAmount('');
+        setIsTransportYearly(false);
         setRemark('');
         window.history.replaceState({}, document.title, window.location.pathname);
     };
 
-    const fetchStudentByAdmissionNo = async (queryStr: string) => {
-        if (!queryStr.trim()) return;
+    const fetchStudentByAdmissionNo = async (queryStr: string, dobStr?: string) => {
+        const targetQuery = queryStr.trim();
+        const targetDob = (dobStr || dobQuery).trim();
+        if (!targetQuery) return;
+
         setLoading(true);
         setErrorMsg('');
         try {
             const res = await axios.get(`/erp-api/fees/public/student-dues`, {
-                params: { admissionNo: queryStr.trim() }
+                params: { admissionNo: targetQuery, dob: targetDob }
             });
             setStudentData(res.data);
 
-            // Default selections: select all unpaid one-time heads and unpaid elapsed months (up to current month)
-            const unpaidOt = (res.data.oneTimeBreakdown || []).filter((h: any) => h.pending > 0).map((h: any) => h.name);
             const unpaidM = (res.data.monthlyDues || []).filter((m: any) => m.isElapsed && m.pending > 0).map((m: any) => m.month);
 
-            setSelectedOneTimeHeads(unpaidOt);
-            setSelectedMonths(unpaidM);
+            setSelectedOneTimeHeads([]);
             setDeselectedMonthlyHeads([]);
+            setSelectedMonths(unpaidM);
             setIncludePrevDues((res.data.summary?.previousDuePending || 0) > 0);
             setIncludeTransport(!!res.data.student?.transportStop);
         } catch (err: any) {
             console.error(err);
-            setErrorMsg(err.response?.data?.error || 'No active student record found with this Admission Number.');
+            setErrorMsg(err.response?.data?.error || 'No active student record found with this Admission Number and Date of Birth.');
         } finally {
             setLoading(false);
         }
@@ -103,27 +105,24 @@ export const PublicFeePayment: React.FC = () => {
         fetchStudentByAdmissionNo(searchQuery);
     };
 
+    const toggleMonthlyHead = (hName: string) => {
+        setDeselectedMonthlyHeads(prev =>
+            prev.includes(hName) ? prev.filter(x => x !== hName) : [...prev, hName]
+        );
+    };
+
     // Helper checks
     const isMonthPaid = (mName: string) => {
         if (!studentData) return false;
         const m = (studentData.monthlyDues || []).find((x: any) => x.month === mName);
-        return m ? m.isPaid : false;
-    };
-
-    const toggleMonthlyHead = (mName: string, hName: string) => {
-        const key = `${mName}::${hName}`;
-        setDeselectedMonthlyHeads(prev =>
-            prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
-        );
+        if (!m) return false;
+        if (studentData.student?.isRT) return true;
+        return m.isPaid !== undefined ? m.isPaid : (m.expected > 0 ? m.paid >= m.expected : m.pending <= 0);
     };
 
     // Calculate total selected amount
     const calculateSelectedTotal = () => {
         if (!studentData) return 0;
-
-        if (customAmount && !isNaN(Number(customAmount)) && Number(customAmount) > 0) {
-            return Number(customAmount);
-        }
 
         let total = 0;
 
@@ -140,30 +139,64 @@ export const PublicFeePayment: React.FC = () => {
 
         // Add selected Monthly Dues (only selected heads for selected months)
         (studentData.monthlyDues || []).forEach((m: any) => {
-            if (selectedMonths.includes(m.month) && !m.isPaid) {
+            if (selectedMonths.includes(m.month)) {
                 (m.heads || []).forEach((h: any) => {
                     const isThirdChildExempt = studentData.student?.isThirdChild && h.name.toLowerCase().includes('tuition');
-                    const isTransportExempt = !includeTransport && h.name.toLowerCase().includes('transport');
-                    const key = `${m.month}::${h.name}`;
-                    const isHeadSelected = !deselectedMonthlyHeads.includes(key);
+                    const isTransportHead = h.name.toLowerCase().includes('transport') || h.name.toLowerCase().includes('bus');
+                    if (isTransportHead) return;
+
+                    if (deselectedMonthlyHeads.includes(h.name)) return;
+
                     const headPending = h.pending !== undefined ? h.pending : Math.max(0, (h.expected || 0) - (h.paid || 0));
 
-                    if (isHeadSelected && !isThirdChildExempt && !isTransportExempt && headPending > 0) {
+                    if (!isThirdChildExempt && headPending > 0) {
                         total += headPending;
                     }
                 });
             }
         });
 
+        // Add Transport Fee if enabled and not unselected
+        if (includeTransport && studentData.student?.transportStop && !deselectedMonthlyHeads.includes('Transport Fee')) {
+            const busFare = studentData.student.transportStop.busFare || 0;
+            const targetTransportMonths = isTransportYearly ? allMonths : selectedMonths;
+
+            targetTransportMonths.forEach((mName: string) => {
+                const mObj = (studentData.monthlyDues || []).find((x: any) => x.month === mName);
+                const trHead = (mObj?.heads || []).find((h: any) => h.name.toLowerCase().includes('transport') || h.name.toLowerCase().includes('bus'));
+                const trPending = trHead ? (trHead.pending !== undefined ? trHead.pending : Math.max(0, (trHead.expected || 0) - (trHead.paid || 0))) : busFare;
+                if (trPending > 0) {
+                    total += trPending;
+                }
+            });
+        }
+
         return total;
     };
 
-    // Toggle individual month selection freely
+    // Select month and auto-select all previous unpaid months up to that month
     const handleMonthClick = (mName: string) => {
         if (isMonthPaid(mName)) return;
-        setSelectedMonths(prev =>
-            prev.includes(mName) ? prev.filter(m => m !== mName) : [...prev, mName]
-        );
+        const mIdx = allMonths.indexOf(mName);
+        if (mIdx === -1) return;
+
+        const isCurrentlySelected = selectedMonths.includes(mName);
+
+        if (isCurrentlySelected) {
+            // Keep only selected months that come before mIdx
+            const remaining = selectedMonths.filter(m => allMonths.indexOf(m) < mIdx);
+            setSelectedMonths(remaining);
+        } else {
+            // Select all unpaid months from April up to mIdx
+            const newSelection: string[] = [];
+            for (let i = 0; i <= mIdx; i++) {
+                const monthName = allMonths[i];
+                if (!isMonthPaid(monthName)) {
+                    newSelection.push(monthName);
+                }
+            }
+            setSelectedMonths(newSelection);
+        }
     };
 
     const handleSelectAllUnpaid = () => {
@@ -173,14 +206,12 @@ export const PublicFeePayment: React.FC = () => {
 
         setSelectedOneTimeHeads(unpaidOt);
         setSelectedMonths(unpaidM);
-        setDeselectedMonthlyHeads([]);
         setIncludePrevDues((studentData.summary?.previousDuePending || 0) > 0);
     };
 
     const handleDeselectAll = () => {
         setSelectedOneTimeHeads([]);
         setSelectedMonths([]);
-        setDeselectedMonthlyHeads([]);
         setIncludePrevDues(false);
     };
 
@@ -213,15 +244,17 @@ export const PublicFeePayment: React.FC = () => {
             const activeSelectedMonths: string[] = [];
             selectedMonths.forEach(mName => {
                 const mObj = (studentData.monthlyDues || []).find((x: any) => x.month === mName);
-                if (mObj && !mObj.isPaid) {
+                if (mObj) {
                     let monthHasHeadSelected = false;
                     (mObj.heads || []).forEach((h: any) => {
                         const isThirdChildExempt = studentData.student?.isThirdChild && h.name.toLowerCase().includes('tuition');
-                        const key = `${mName}::${h.name}`;
-                        const isHeadSelected = !deselectedMonthlyHeads.includes(key);
+                        const isTransportHead = h.name.toLowerCase().includes('transport') || h.name.toLowerCase().includes('bus');
+                        if (isTransportHead) return;
+                        if (deselectedMonthlyHeads.includes(h.name)) return;
+
                         const headPending = h.pending !== undefined ? h.pending : Math.max(0, (h.expected || 0) - (h.paid || 0));
 
-                        if (isHeadSelected && !isThirdChildExempt && headPending > 0) {
+                        if (!isThirdChildExempt && headPending > 0) {
                             monthHasHeadSelected = true;
                             breakdownParts.push(`${h.name}: ${headPending}`);
                         }
@@ -231,6 +264,23 @@ export const PublicFeePayment: React.FC = () => {
                     }
                 }
             });
+
+            if (includeTransport && studentData.student?.transportStop && !deselectedMonthlyHeads.includes('Transport Fee')) {
+                const busFare = studentData.student.transportStop.busFare || 0;
+                const targetTransportMonths = isTransportYearly ? allMonths : selectedMonths;
+                let trTotal = 0;
+                targetTransportMonths.forEach((mName: string) => {
+                    const mObj = (studentData.monthlyDues || []).find((x: any) => x.month === mName);
+                    const trHead = (mObj?.heads || []).find((h: any) => h.name.toLowerCase().includes('transport') || h.name.toLowerCase().includes('bus'));
+                    const trPending = trHead ? (trHead.pending !== undefined ? trHead.pending : Math.max(0, (trHead.expected || 0) - (trHead.paid || 0))) : busFare;
+                    if (trPending > 0) {
+                        trTotal += trPending;
+                    }
+                });
+                if (trTotal > 0) {
+                    breakdownParts.push(`Transport Fee (${studentData.student.transportStop.name}): ${trTotal}`);
+                }
+            }
 
             const hasMonthly = activeSelectedMonths.length > 0;
             const feeHeadValue = hasMonthly 
@@ -405,46 +455,69 @@ export const PublicFeePayment: React.FC = () => {
                 {/* Step 1: Search Box Card */}
                 <div style={{ backgroundColor: 'white', borderRadius: '16px', padding: '1.75rem', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0', marginBottom: '1.75rem' }}>
                     <form onSubmit={handleSearchSubmit}>
-                        <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: 700, color: '#334155', marginBottom: '0.5rem' }}>
-                            1. Search Student by Admission Number (SR No) <span style={{ color: '#ef4444' }}>*</span>
-                        </label>
-                        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-                            <div style={{ flex: 1, minWidth: '260px', display: 'flex', alignItems: 'center', border: '2px solid #3b82f6', borderRadius: '10px', overflow: 'hidden', backgroundColor: '#f8fafc' }}>
-                                <span style={{ backgroundColor: '#eff6ff', padding: '0.75rem 1rem', fontWeight: 800, color: '#1d4ed8', fontSize: '0.95rem', borderRight: '1px solid #bfdbfe' }}>
-                                    SR No / Name:
-                                </span>
-                                <input 
-                                    type="text" 
-                                    placeholder="Enter Admission No (e.g. 297, 680, 100 or Student Name)" 
-                                    value={searchQuery}
-                                    onChange={e => setSearchQuery(e.target.value)}
-                                    style={{ flex: 1, padding: '0.75rem 1rem', border: 'none', outline: 'none', fontSize: '1rem', fontWeight: 600 }}
-                                    required
-                                />
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
+                            <div>
+                                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 800, color: '#334155', marginBottom: '0.4rem' }}>
+                                    1. Admission Number (SR No) <span style={{ color: '#ef4444' }}>*</span>
+                                </label>
+                                <div style={{ display: 'flex', alignItems: 'center', border: '2px solid #3b82f6', borderRadius: '10px', overflow: 'hidden', backgroundColor: '#f8fafc' }}>
+                                    <span style={{ backgroundColor: '#eff6ff', padding: '0.75rem 0.85rem', fontWeight: 800, color: '#1d4ed8', fontSize: '0.85rem', borderRight: '1px solid #bfdbfe' }}>
+                                        SR No:
+                                    </span>
+                                    <input 
+                                        type="text" 
+                                        placeholder="e.g. BIPS/26/1447 or 1447" 
+                                        value={searchQuery}
+                                        onChange={e => setSearchQuery(e.target.value)}
+                                        style={{ flex: 1, padding: '0.75rem 0.85rem', border: 'none', outline: 'none', fontSize: '0.95rem', fontWeight: 700 }}
+                                        required
+                                    />
+                                </div>
                             </div>
-                            <button 
-                                type="submit"
-                                disabled={loading}
-                                style={{ 
-                                    padding: '0.75rem 1.75rem', 
-                                    backgroundColor: '#2563eb', 
-                                    color: 'white', 
-                                    border: 'none', 
-                                    borderRadius: '10px', 
-                                    fontWeight: 700, 
-                                    fontSize: '1rem', 
-                                    cursor: loading ? 'not-allowed' : 'pointer',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '0.5rem',
-                                    boxShadow: '0 4px 12px rgba(37, 99, 235, 0.25)',
-                                    transition: 'all 0.2s'
-                                }}
-                            >
-                                {loading ? <RefreshCw className="animate-spin" size={20} /> : <Search size={20} />}
-                                Fetch Fee Details
-                            </button>
+
+                            <div>
+                                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 800, color: '#334155', marginBottom: '0.4rem' }}>
+                                    2. Student Date of Birth (DOB) <span style={{ color: '#ef4444' }}>*</span>
+                                </label>
+                                <div style={{ display: 'flex', alignItems: 'center', border: '2px solid #3b82f6', borderRadius: '10px', overflow: 'hidden', backgroundColor: '#f8fafc' }}>
+                                    <span style={{ backgroundColor: '#eff6ff', padding: '0.75rem 0.85rem', fontWeight: 800, color: '#1d4ed8', fontSize: '0.85rem', borderRight: '1px solid #bfdbfe' }}>
+                                        DOB:
+                                    </span>
+                                    <input 
+                                        type="date" 
+                                        value={dobQuery}
+                                        onChange={e => setDobQuery(e.target.value)}
+                                        style={{ flex: 1, padding: '0.75rem 0.85rem', border: 'none', outline: 'none', fontSize: '0.95rem', fontWeight: 700 }}
+                                        required
+                                    />
+                                </div>
+                            </div>
                         </div>
+
+                        <button 
+                            type="submit"
+                            disabled={loading}
+                            style={{ 
+                                width: '100%',
+                                padding: '0.85rem 1.75rem', 
+                                backgroundColor: '#2563eb', 
+                                color: 'white', 
+                                border: 'none', 
+                                borderRadius: '10px', 
+                                fontWeight: 800, 
+                                fontSize: '1rem', 
+                                cursor: loading ? 'not-allowed' : 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '0.5rem',
+                                boxShadow: '0 4px 12px rgba(37, 99, 235, 0.25)',
+                                transition: 'all 0.2s'
+                            }}
+                        >
+                            {loading ? <RefreshCw className="animate-spin" size={20} /> : <ShieldCheck size={20} />}
+                            Verify DOB & Fetch Fee Details
+                        </button>
                     </form>
 
                     {errorMsg && (
@@ -547,6 +620,97 @@ export const PublicFeePayment: React.FC = () => {
                             </div>
                         </div>
 
+                        {/* Step 2.5: Parent Fee Summary Dashboard */}
+                        <div style={{ backgroundColor: 'white', borderRadius: '16px', padding: '1.75rem', border: '1px solid #e2e8f0', boxShadow: '0 4px 12px -2px rgba(0,0,0,0.06)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                                <div>
+                                    <h3 style={{ color: '#0f172a', fontSize: '1.15rem', fontWeight: 800, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                        📊 Parent Fee Summary Dashboard
+                                    </h3>
+                                    <p style={{ color: '#64748b', fontSize: '0.8rem', margin: '2px 0 0 0' }}>
+                                        Complete Fee Summary & Status for {studentData.student.studentName} ({studentData.student.className})
+                                    </p>
+                                </div>
+                                <span style={{ backgroundColor: '#eff6ff', color: '#1d4ed8', padding: '0.3rem 0.75rem', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 700, border: '1px solid #bfdbfe' }}>
+                                    Academic Session: {studentData.student.academicYear || '2026-2027'}
+                                </span>
+                            </div>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+                                {/* Card 1: Total Fee Expected */}
+                                <div style={{ backgroundColor: '#f8fafc', border: '1.5px solid #cbd5e1', borderRadius: '14px', padding: '1.15rem', position: 'relative', overflow: 'hidden' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                        <div>
+                                            <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Fee (Annual)</div>
+                                            <div style={{ fontSize: '1.35rem', fontWeight: 900, color: '#0f172a', marginTop: '0.25rem' }}>
+                                                ₹{(studentData.summary?.totalExpected || 0).toLocaleString('en-IN')}
+                                            </div>
+                                        </div>
+                                        <div style={{ width: '36px', height: '36px', borderRadius: '10px', backgroundColor: '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#334155', fontWeight: 800 }}>
+                                            📖
+                                        </div>
+                                    </div>
+                                    <div style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '0.5rem', fontWeight: 600 }}>
+                                        Full Session Fee (12 Mos + Annual)
+                                    </div>
+                                </div>
+
+                                {/* Card 2: Total Paid Till Date */}
+                                <div style={{ backgroundColor: '#ecfdf5', border: '1.5px solid #a7f3d0', borderRadius: '14px', padding: '1.15rem', position: 'relative', overflow: 'hidden' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                        <div>
+                                            <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#047857', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Fee Paid</div>
+                                            <div style={{ fontSize: '1.35rem', fontWeight: 900, color: '#065f46', marginTop: '0.25rem' }}>
+                                                ₹{(studentData.summary?.totalPaid || 0).toLocaleString('en-IN')}
+                                            </div>
+                                        </div>
+                                        <div style={{ width: '36px', height: '36px', borderRadius: '10px', backgroundColor: '#d1fae5', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#047857', fontWeight: 800 }}>
+                                            ✓
+                                        </div>
+                                    </div>
+                                    <div style={{ fontSize: '0.7rem', color: '#047857', marginTop: '0.5rem', fontWeight: 600 }}>
+                                        Submitted Amount Till Date
+                                    </div>
+                                </div>
+
+                                {/* Card 3: Net Outstanding Dues Till Current Month */}
+                                <div style={{ backgroundColor: '#fef2f2', border: '1.5px solid #fecaca', borderRadius: '14px', padding: '1.15rem', position: 'relative', overflow: 'hidden' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                        <div>
+                                            <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#b91c1c', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Dues (Till {new Date().toLocaleString('en-US', { month: 'short' })})</div>
+                                            <div style={{ fontSize: '1.35rem', fontWeight: 900, color: '#991b1b', marginTop: '0.25rem' }}>
+                                                ₹{(studentData.summary?.totalPending || 0).toLocaleString('en-IN')}
+                                            </div>
+                                        </div>
+                                        <div style={{ width: '36px', height: '36px', borderRadius: '10px', backgroundColor: '#fee2e2', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#b91c1c', fontWeight: 800 }}>
+                                            ⚠️
+                                        </div>
+                                    </div>
+                                    <div style={{ fontSize: '0.7rem', color: '#b91c1c', marginTop: '0.5rem', fontWeight: 600 }}>
+                                        {(studentData.summary?.totalPending || 0) <= 0 ? 'Up To Date Cleared ✓' : `Dues Pending Up To ${new Date().toLocaleString('en-US', { month: 'long' })}`}
+                                    </div>
+                                </div>
+
+                                {/* Card 4: Session Remaining Balance */}
+                                <div style={{ backgroundColor: '#eff6ff', border: '1.5px solid #bfdbfe', borderRadius: '14px', padding: '1.15rem', position: 'relative', overflow: 'hidden' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                        <div>
+                                            <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#1d4ed8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Session Balance</div>
+                                            <div style={{ fontSize: '1.35rem', fontWeight: 900, color: '#1e40af', marginTop: '0.25rem' }}>
+                                                ₹{Math.max(0, (studentData.summary?.totalExpected || 0) - (studentData.summary?.totalPaid || 0)).toLocaleString('en-IN')}
+                                            </div>
+                                        </div>
+                                        <div style={{ width: '36px', height: '36px', borderRadius: '10px', backgroundColor: '#dbeafe', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#1d4ed8', fontWeight: 800 }}>
+                                            💳
+                                        </div>
+                                    </div>
+                                    <div style={{ fontSize: '0.7rem', color: '#1d4ed8', marginTop: '0.5rem', fontWeight: 600 }}>
+                                        Remaining Fee For Full Year
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         {/* Step 3: Fee Collection Tracker & Structure Card */}
                         <div style={{ backgroundColor: 'white', borderRadius: '16px', padding: '1.75rem', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '0.75rem' }}>
@@ -571,6 +735,28 @@ export const PublicFeePayment: React.FC = () => {
                                 </div>
                             </div>
 
+                            {/* Previous Session Dues Alert Banner */}
+                            {studentData.summary?.previousDuePending > 0 && (
+                                <div style={{ backgroundColor: '#fffbe7', border: '1.5px solid #fde047', borderRadius: '12px', padding: '1rem 1.25rem', marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                        <AlertCircle size={22} style={{ color: '#b45309', flexShrink: 0 }} />
+                                        <div>
+                                            <div style={{ fontWeight: 800, color: '#78350f', fontSize: '0.95rem' }}>Previous Session Dues Outstanding</div>
+                                            <div style={{ fontSize: '0.8rem', color: '#92400e' }}>Pending dues of ₹{studentData.summary.previousDuePending.toLocaleString('en-IN')} from previous academic session.</div>
+                                        </div>
+                                    </div>
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', backgroundColor: '#fef3c7', padding: '0.5rem 0.85rem', borderRadius: '8px', border: '1px solid #fde68a', fontWeight: 700, fontSize: '0.85rem', color: '#92400e' }}>
+                                        <input 
+                                            type="checkbox" 
+                                            checked={includePrevDues} 
+                                            onChange={e => setIncludePrevDues(e.target.checked)} 
+                                            style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                                        />
+                                        Include Previous Dues (₹{studentData.summary.previousDuePending.toLocaleString('en-IN')})
+                                    </label>
+                                </div>
+                            )}
+
                             {/* Monthly Payment Status Grid (Session 2026-27) */}
                             <div style={{ marginBottom: '2rem', background: '#f8fafc', padding: '1.25rem', borderRadius: '14px', border: '1px solid #e2e8f0' }}>
                                 <p style={{ fontSize: '0.8rem', fontWeight: 800, color: '#64748b', marginBottom: '1rem', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -591,14 +777,14 @@ export const PublicFeePayment: React.FC = () => {
                                                     textAlign: 'center', 
                                                     padding: '0.6rem 0.25rem', 
                                                     borderRadius: '10px', 
-                                                    background: isSelected ? '#4f46e5' : paid ? '#dcfce7' : isPartiallyPaid ? '#fef3c7' : 'white',
-                                                    border: `1px solid ${isSelected ? '#4f46e5' : paid ? '#16653440' : isPartiallyPaid ? '#f59e0b' : '#cbd5e1'}`,
+                                                    background: isSelected ? '#4f46e5' : paid ? '#dcfce7' : isPartiallyPaid ? '#fef3c7' : '#fef2f2',
+                                                    border: `1.5px solid ${isSelected ? '#4f46e5' : paid ? '#16653440' : isPartiallyPaid ? '#f59e0b' : '#ef4444'}`,
                                                     cursor: paid ? 'default' : 'pointer',
                                                     transition: '0.2s',
                                                     boxShadow: isSelected ? '0 4px 8px rgba(79, 70, 229, 0.3)' : 'none'
                                                 }}
                                             >
-                                                <div style={{ fontSize: '0.75rem', fontWeight: 800, color: isSelected ? 'white' : paid ? '#166534' : isPartiallyPaid ? '#92400e' : '#64748b' }}>
+                                                <div style={{ fontSize: '0.75rem', fontWeight: 800, color: isSelected ? 'white' : paid ? '#166534' : isPartiallyPaid ? '#92400e' : '#b91c1c' }}>
                                                     {m.substring(0, 3)}
                                                 </div>
                                                 <div style={{ marginTop: '0.3rem', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
@@ -609,7 +795,9 @@ export const PublicFeePayment: React.FC = () => {
                                                             Partial
                                                         </span>
                                                     ) : (
-                                                        <div style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: isSelected ? 'white' : '#cbd5e1' }} />
+                                                        <span style={{ fontSize: '0.6rem', fontWeight: 900, color: isSelected ? 'white' : '#dc2626', textTransform: 'uppercase' }}>
+                                                            DUE
+                                                        </span>
                                                     )}
                                                 </div>
                                             </div>
@@ -646,81 +834,153 @@ export const PublicFeePayment: React.FC = () => {
                                                 Select month(s) above to view monthly tuition breakdown
                                             </div>
                                         ) : (
-                                            (studentData.monthlyDues || [])
-                                                .filter((m: any) => selectedMonths.includes(m.month))
-                                                .map((m: any) => (
-                                                    <div key={m.month} style={{ border: '1px solid #e2e8f0', borderRadius: '12px', padding: '0.85rem 1rem', backgroundColor: '#fafafa' }}>
-                                                        <div style={{ fontWeight: 800, fontSize: '0.85rem', color: '#4f46e5', marginBottom: '0.5rem', textTransform: 'uppercase' }}>
-                                                            {m.month} Dues:
-                                                        </div>
-                                                        {(m.heads || []).map((h: any, idx: number) => {
-                                                            const isThirdChildExempt = studentData.student.isThirdChild && h.name.toLowerCase().includes('tuition');
-                                                            const key = `${m.month}::${h.name}`;
-                                                            const isHeadSelected = !deselectedMonthlyHeads.includes(key);
-                                                            const headPending = h.pending !== undefined ? h.pending : Math.max(0, (h.expected || 0) - (h.paid || 0));
-                                                            const isHeadPaid = headPending <= 0;
+                                            (() => {
+                                                const currentStudent = studentData.student;
+                                                const headMap = new Map<string, {
+                                                    name: string;
+                                                    amount: number;
+                                                    isPaid: boolean;
+                                                    isExempt: boolean;
+                                                    unpaidMonthsCount: number;
+                                                    isThirdChildExempt: boolean;
+                                                    isRteExempt: boolean;
+                                                    headNamesList: string[];
+                                                }>();
 
-                                                            return (
-                                                                <div 
-                                                                    key={idx} 
-                                                                    onClick={isHeadPaid ? undefined : () => toggleMonthlyHead(m.month, h.name)}
-                                                                    style={{ 
-                                                                        display: 'flex', 
-                                                                        justifyContent: 'space-between', 
-                                                                        alignItems: 'center', 
-                                                                        padding: '0.45rem 0.6rem', 
-                                                                        borderRadius: '8px',
-                                                                        fontSize: '0.85rem', 
-                                                                        borderBottom: idx < (m.heads.length - 1) ? '1px dashed #e2e8f0' : 'none',
-                                                                        cursor: isHeadPaid ? 'default' : 'pointer',
-                                                                        backgroundColor: isHeadPaid ? '#f0fdf4' : (isHeadSelected ? '#ffffff' : '#f8fafc'),
-                                                                        opacity: isHeadPaid ? 1 : (isHeadSelected ? 1 : 0.65),
-                                                                        transition: 'all 0.15s ease'
-                                                                    }}
-                                                                >
-                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                                                                        {isHeadPaid ? (
-                                                                            <Check size={16} color="#166534" strokeWidth={3} />
-                                                                        ) : (
-                                                                            <input 
-                                                                                type="checkbox" 
-                                                                                checked={isHeadSelected} 
-                                                                                onChange={() => toggleMonthlyHead(m.month, h.name)}
-                                                                                onClick={(e) => e.stopPropagation()} 
-                                                                                style={{ width: '16px', height: '16px', cursor: 'pointer' }} 
-                                                                            />
-                                                                        )}
-                                                                        <span style={{ 
-                                                                            fontWeight: 600, 
-                                                                            color: isHeadPaid ? '#166534' : (isHeadSelected ? '#334155' : '#94a3b8'),
-                                                                            textDecoration: (!isHeadPaid && !isHeadSelected) ? 'line-through' : 'none'
-                                                                        }}>
-                                                                            {h.name}
+                                                (studentData.monthlyDues || [])
+                                                    .filter((m: any) => selectedMonths.includes(m.month))
+                                                    .forEach((m: any) => {
+                                                        (m.heads || []).forEach((h: any) => {
+                                                            const isThirdChildExempt = Boolean(currentStudent.isThirdChild && h.name.toLowerCase().includes('tuition'));
+                                                            const isRteExempt = Boolean(currentStudent.isRT);
+                                                            const isExempt = isThirdChildExempt || isRteExempt;
+                                                            
+                                                            const key = h.name;
+                                                            const existing = headMap.get(key) || {
+                                                                name: h.name,
+                                                                amount: 0,
+                                                                isPaid: true,
+                                                                isExempt,
+                                                                unpaidMonthsCount: 0,
+                                                                isThirdChildExempt,
+                                                                isRteExempt,
+                                                                headNamesList: []
+                                                            };
+
+                                                            const hPending = isExempt ? 0 : (h.pending !== undefined ? h.pending : Math.max(0, (h.expected || 0) - (h.paid || 0)));
+                                                            existing.amount += hPending;
+                                                            if (hPending > 0) {
+                                                                existing.isPaid = false;
+                                                                existing.unpaidMonthsCount += 1;
+                                                            }
+
+                                                            headMap.set(key, existing);
+                                                        });
+                                                    });
+
+                                                // Process transport fee if assigned
+                                                if (currentStudent.transportStop && includeTransport) {
+                                                    let trPendingTotal = 0;
+                                                    let trUnpaidCount = 0;
+                                                    const busFare = currentStudent.transportStop.busFare || 0;
+                                                    const stopName = currentStudent.transportStop.name || 'Bus';
+
+                                                    const targetTransportMonths = isTransportYearly ? allMonths : selectedMonths;
+
+                                                    targetTransportMonths.forEach((mName: string) => {
+                                                        const mObj = (studentData.monthlyDues || []).find((x: any) => x.month === mName);
+                                                        const trHead = (mObj?.heads || []).find((h: any) => h.name.toLowerCase().includes('transport') || h.name.toLowerCase().includes('bus'));
+                                                        const p = trHead ? (trHead.pending !== undefined ? trHead.pending : Math.max(0, (trHead.expected || 0) - (trHead.paid || 0))) : busFare;
+                                                        if (p > 0) {
+                                                            trPendingTotal += p;
+                                                            trUnpaidCount += 1;
+                                                        }
+                                                    });
+
+                                                    headMap.set('Transport Fee', {
+                                                        name: `Transport Fee (${stopName})${isTransportYearly ? ' (Yearly)' : ''}`,
+                                                        amount: trPendingTotal,
+                                                        isPaid: trUnpaidCount === 0,
+                                                        isExempt: false,
+                                                        unpaidMonthsCount: trUnpaidCount,
+                                                        isThirdChildExempt: false,
+                                                        isRteExempt: false,
+                                                        headNamesList: []
+                                                    });
+                                                }
+
+                                                return Array.from(headMap.values()).map(item => {
+                                                    const isHeadDeselected = deselectedMonthlyHeads.includes(item.name) || (item.name.startsWith('Transport Fee') && deselectedMonthlyHeads.includes('Transport Fee'));
+                                                    const isSelected = !item.isPaid && !isHeadDeselected;
+
+                                                    return (
+                                                        <div 
+                                                            key={item.name}
+                                                            onClick={item.isPaid ? undefined : () => {
+                                                                const rawName = item.name.startsWith('Transport Fee') ? 'Transport Fee' : item.name;
+                                                                toggleMonthlyHead(rawName);
+                                                            }}
+                                                            style={{ 
+                                                                display: 'flex', 
+                                                                justifyContent: 'space-between', 
+                                                                alignItems: 'center', 
+                                                                padding: '0.85rem 1rem', 
+                                                                borderRadius: '12px', 
+                                                                background: item.isPaid ? '#f0fdf4' : isSelected ? '#eff6ff' : 'white',
+                                                                border: `1px solid ${item.isPaid ? '#bbf7d0' : isSelected ? '#bfdbfe' : '#e2e8f0'}`,
+                                                                cursor: item.isPaid ? 'default' : 'pointer',
+                                                                transition: '0.2s'
+                                                            }}
+                                                        >
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                                                {item.isPaid ? (
+                                                                    <Check size={18} color="#166534" strokeWidth={3} />
+                                                                ) : (
+                                                                    <input 
+                                                                        type="checkbox" 
+                                                                        checked={isSelected} 
+                                                                        onChange={(e) => {
+                                                                            e.stopPropagation();
+                                                                            const rawName = item.name.startsWith('Transport Fee') ? 'Transport Fee' : item.name;
+                                                                            toggleMonthlyHead(rawName);
+                                                                        }} 
+                                                                        style={{ width: '18px', height: '18px', cursor: 'pointer' }} 
+                                                                    />
+                                                                )}
+                                                                <span style={{ fontWeight: 600, color: item.isPaid ? '#166534' : (isSelected ? '#1e293b' : '#94a3b8'), fontSize: '0.9rem' }}>
+                                                                    {item.name}
+                                                                    {item.isThirdChildExempt && (
+                                                                        <span style={{ marginLeft: '0.5rem', fontSize: '0.65rem', backgroundColor: '#e0f2fe', color: '#0369a1', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>
+                                                                            Third Child Exempt
                                                                         </span>
-                                                                        {isThirdChildExempt && (
-                                                                            <span style={{ fontSize: '0.65rem', padding: '0.1rem 0.4rem', backgroundColor: '#fef3c7', color: '#92400e', borderRadius: '6px', fontWeight: 700 }}>
-                                                                                Third Child Exempt
-                                                                            </span>
-                                                                        )}
-                                                                    </div>
-                                                                    <div style={{ textAlign: 'right' }}>
-                                                                        <span style={{ 
-                                                                            fontWeight: 800, 
-                                                                            color: isThirdChildExempt ? '#059669' : (isHeadPaid ? '#166534' : (isHeadSelected ? '#0f172a' : '#94a3b8')) 
-                                                                        }}>
-                                                                            ₹{isThirdChildExempt ? '0' : headPending.toLocaleString()}
+                                                                    )}
+                                                                    {item.isRteExempt && (
+                                                                        <span style={{ marginLeft: '0.5rem', fontSize: '0.65rem', backgroundColor: '#e0f2fe', color: '#0369a1', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>
+                                                                            RTE Exempt
                                                                         </span>
-                                                                        {isHeadPaid && (
-                                                                            <span style={{ marginLeft: '0.4rem', fontSize: '0.65rem', fontWeight: 800, color: '#166534', textTransform: 'uppercase' }}>
-                                                                                PAID
-                                                                            </span>
-                                                                        )}
-                                                                    </div>
+                                                                    )}
+                                                                </span>
+                                                            </div>
+                                                            <div style={{ textAlign: 'right' }}>
+                                                                <div style={{ fontWeight: 900, color: item.isPaid ? '#166534' : '#dc2626', fontSize: '0.95rem' }}>
+                                                                    ₹{item.isExempt ? '0' : item.amount.toLocaleString('en-IN')}
                                                                 </div>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                ))
+                                                                {item.isThirdChildExempt ? (
+                                                                    <span style={{ fontSize: '0.65rem', fontWeight: 800, color: '#166534', textTransform: 'uppercase' }}>THIRD CHILD EXEMPT</span>
+                                                                ) : item.isRteExempt ? (
+                                                                    <span style={{ fontSize: '0.65rem', fontWeight: 800, color: '#166534', textTransform: 'uppercase' }}>RTE EXEMPT</span>
+                                                                ) : item.isPaid ? (
+                                                                    <span style={{ fontSize: '0.65rem', fontWeight: 800, color: '#166534', textTransform: 'uppercase' }}>ALREADY PAID</span>
+                                                                ) : (
+                                                                    <span style={{ fontSize: '0.65rem', fontWeight: 900, backgroundColor: '#fee2e2', color: '#b91c1c', border: '1px solid #fca5a5', padding: '2px 8px', borderRadius: '6px', textTransform: 'uppercase', display: 'inline-block', marginTop: '3px' }}>
+                                                                        {item.unpaidMonthsCount} Month(s) Remaining (UNPAID DUE)
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                });
+                                            })()
                                         )}
                                     </div>
                                 </div>
@@ -759,13 +1019,27 @@ export const PublicFeePayment: React.FC = () => {
                                                         {isPaid ? (
                                                             <Check size={18} color="#166534" strokeWidth={3} />
                                                         ) : (
-                                                            <input type="checkbox" checked={isSelected} readOnly style={{ width: '18px', height: '18px' }} />
+                                                            <input 
+                                                                type="checkbox" 
+                                                                checked={isSelected} 
+                                                                onChange={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setSelectedOneTimeHeads(prev => isSelected ? prev.filter(x => x !== ot.name) : [...prev, ot.name]);
+                                                                }} 
+                                                                style={{ width: '18px', height: '18px', cursor: 'pointer' }} 
+                                                            />
                                                         )}
-                                                        <span style={{ fontWeight: 700, color: isPaid ? '#166534' : '#1e293b', fontSize: '0.9rem' }}>{ot.name}</span>
+                                                        <span style={{ fontWeight: 700, color: isPaid ? '#166534' : (isSelected ? '#1e293b' : '#94a3b8'), fontSize: '0.9rem' }}>{ot.name}</span>
                                                     </div>
                                                     <div style={{ textAlign: 'right' }}>
-                                                        <div style={{ fontWeight: 800, color: isPaid ? '#166534' : '#1e293b', fontSize: '0.95rem' }}>₹{ot.expected.toLocaleString()}</div>
-                                                        {isPaid && <span style={{ fontSize: '0.65rem', fontWeight: 800, color: '#166534', textTransform: 'uppercase' }}>ALREADY PAID</span>}
+                                                        <div style={{ fontWeight: 900, color: isPaid ? '#166534' : '#dc2626', fontSize: '0.95rem' }}>₹{ot.expected.toLocaleString()}</div>
+                                                        {isPaid ? (
+                                                            <span style={{ fontSize: '0.65rem', fontWeight: 800, color: '#166534', textTransform: 'uppercase' }}>ALREADY PAID</span>
+                                                        ) : (
+                                                            <span style={{ fontSize: '0.65rem', fontWeight: 900, backgroundColor: '#fee2e2', color: '#b91c1c', border: '1px solid #fca5a5', padding: '2px 8px', borderRadius: '6px', textTransform: 'uppercase', display: 'inline-block', marginTop: '3px' }}>
+                                                                UNPAID DUE
+                                                            </span>
+                                                        )}
                                                     </div>
                                                 </div>
                                             );
@@ -776,51 +1050,113 @@ export const PublicFeePayment: React.FC = () => {
 
                             {/* Step 3.5: Transport Section Card */}
                             {studentData.student.transportStop && (
-                                <div style={{ backgroundColor: '#fdfcfe', border: '1px solid #f3e8ff', borderRadius: '12px', padding: '1.25rem' }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+                                <div style={{ backgroundColor: '#fdfcfe', border: '1px solid #f3e8ff', borderRadius: '14px', padding: '1.25rem 1.5rem', marginTop: '1.5rem', boxShadow: '0 2px 4px rgba(147, 51, 234, 0.04)' }}>
+                                    {/* Top Toggle Bar */}
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                                            <div style={{ backgroundColor: '#f3e8ff', color: '#9333ea', padding: '0.4rem 0.6rem', borderRadius: '8px' }}>
-                                                <Bus size={18} />
-                                            </div>
-                                            <label style={{ fontWeight: 800, fontSize: '1.05rem', color: '#6b21a8' }}>
-                                                Transport Facility (Assigned)
+                                            <input 
+                                                type="checkbox" 
+                                                id="transport-toggle-public"
+                                                checked={includeTransport} 
+                                                onChange={e => setIncludeTransport(e.target.checked)} 
+                                                style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#7e22ce' }}
+                                            />
+                                            <label htmlFor="transport-toggle-public" style={{ fontWeight: 800, fontSize: '1.1rem', color: '#6b21a8', cursor: 'pointer' }}>
+                                                Enable Transport Facility
                                             </label>
                                         </div>
-                                        <div style={{ fontSize: '0.85rem', color: '#9333ea', fontWeight: 600 }}>
-                                            Route: <strong style={{ color: '#6b21a8' }}>{studentData.student.transportStop.name}</strong> (₹{studentData.student.transportStop.busFare}/month)
+
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', flexWrap: 'wrap' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: '#f5f3ff', padding: '0.35rem 0.75rem', borderRadius: '8px', border: '1px solid #ddd6fe' }}>
+                                                <input 
+                                                    type="checkbox" 
+                                                    id="transport-yearly-public"
+                                                    checked={isTransportYearly}
+                                                    onChange={e => {
+                                                        const checked = e.target.checked;
+                                                        setIsTransportYearly(checked);
+                                                        if (checked) {
+                                                            const unpaidM = allMonths.filter(m => !isMonthPaid(m));
+                                                            setSelectedMonths(unpaidM);
+                                                        }
+                                                    }}
+                                                    style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#7e22ce' }}
+                                                />
+                                                <label htmlFor="transport-yearly-public" style={{ fontSize: '0.8rem', color: '#6b21a8', fontWeight: 700, cursor: 'pointer' }}>
+                                                    Pay Yearly (12 Months)
+                                                </label>
+                                            </div>
+                                            <div style={{ fontSize: '0.8rem', color: '#9333ea', fontWeight: 600 }}>
+                                                Transport Fee will be added to the total amount
+                                            </div>
                                         </div>
                                     </div>
 
-                                    {/* Transport Month-wise status tiles */}
-                                    <div style={{ borderTop: '1px dashed #ddd6fe', paddingTop: '0.85rem' }}>
-                                        <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#6d28d9', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                                            TRANSPORT PAYMENT STATUS (MONTH-WISE):
+                                    {/* Route Name & Transport Fee Fields */}
+                                    {includeTransport && (
+                                        <div style={{ marginBottom: '0.5rem' }}>
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 240px', gap: '1rem', alignItems: 'start' }}>
+                                                <div>
+                                                    <label style={{ display: 'block', textAlign: 'left', color: '#6d28d9', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.4rem' }}>
+                                                        ROUTE NAME
+                                                    </label>
+                                                    <input 
+                                                        type="text" 
+                                                        value={studentData.student.transportStop.name || 'Assigned Stop'} 
+                                                        readOnly
+                                                        style={{ width: '100%', border: '1px solid #ddd6fe', borderRadius: '12px', background: '#f5f3ff', padding: '0.75rem 1rem', fontWeight: 700, color: '#1e293b', fontSize: '0.95rem', cursor: 'default' }}
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label style={{ display: 'block', textAlign: 'left', color: '#6d28d9', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.4rem' }}>
+                                                        TRANSPORT FEE (₹)
+                                                    </label>
+                                                    <input 
+                                                        type="text" 
+                                                        value={studentData.student.transportStop.busFare || 0} 
+                                                        readOnly
+                                                        style={{ width: '100%', border: '1px solid #ddd6fe', borderRadius: '12px', background: '#f5f3ff', padding: '0.75rem 1rem', fontWeight: 900, color: '#4f46e5', fontSize: '1rem', cursor: 'default' }}
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            {/* Month-wise status tiles */}
+                                            <div style={{ marginTop: '1.25rem', borderTop: '1px dashed #ddd6fe', paddingTop: '1rem' }}>
+                                                <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#6d28d9', marginBottom: '0.6rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                                    TRANSPORT PAYMENT STATUS (MONTH-WISE):
+                                                </div>
+                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                                                    {allMonths.map(m => {
+                                                        const mObj = (studentData.monthlyDues || []).find((x: any) => x.month === m);
+                                                        const trHead = (mObj?.heads || []).find((h: any) => h.name.toLowerCase().includes('transport') || h.name.toLowerCase().includes('bus'));
+                                                        const trPending = trHead ? (trHead.pending !== undefined ? trHead.pending : Math.max(0, (trHead.expected || 0) - (trHead.paid || 0))) : (studentData.student.transportStop?.busFare || 0);
+                                                        const isPaid = trPending <= 0;
+
+                                                        return (
+                                                            <div 
+                                                                key={m} 
+                                                                style={{ 
+                                                                    padding: '0.35rem 0.75rem', 
+                                                                    borderRadius: '8px', 
+                                                                    fontSize: '0.75rem', 
+                                                                    fontWeight: 800, 
+                                                                    textTransform: 'uppercase',
+                                                                    border: `1px solid ${isPaid ? '#22c55e' : '#cbd5e1'}`,
+                                                                    backgroundColor: isPaid ? '#dcfce7' : '#f1f5f9',
+                                                                    color: isPaid ? '#15803d' : '#64748b',
+                                                                    textAlign: 'center',
+                                                                    minWidth: '46px',
+                                                                    transition: 'all 0.2s'
+                                                                }}
+                                                            >
+                                                                {m.substring(0, 3).toUpperCase()} {isPaid ? '✓' : ''}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
                                         </div>
-                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
-                                            {allMonths.map(m => {
-                                                const isPaid = isMonthPaid(m);
-                                                return (
-                                                    <div 
-                                                        key={m} 
-                                                        style={{ 
-                                                            padding: '0.3rem 0.6rem', 
-                                                            borderRadius: '6px', 
-                                                            fontSize: '0.7rem', 
-                                                            fontWeight: 800, 
-                                                            textTransform: 'uppercase',
-                                                            border: `1px solid ${isPaid ? '#22c55e' : '#cbd5e1'}`,
-                                                            backgroundColor: isPaid ? '#dcfce7' : '#f1f5f9',
-                                                            color: isPaid ? '#15803d' : '#64748b',
-                                                            textAlign: 'center',
-                                                            minWidth: '42px'
-                                                        }}
-                                                    >
-                                                        {m.substring(0, 3)} {isPaid ? '✓' : ''}
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
+                                    )}
                                 </div>
                             )}
 
@@ -914,14 +1250,16 @@ export const PublicFeePayment: React.FC = () => {
                                             })}
                                             {selectedMonths.map(mName => {
                                                 const mObj = (studentData.monthlyDues || []).find((x: any) => x.month === mName);
-                                                if (!mObj || mObj.isPaid) return null;
+                                                if (!mObj) return null;
 
                                                 const activeHeads = (mObj.heads || []).filter((h: any) => {
                                                     const isThirdChildExempt = studentData.student?.isThirdChild && h.name.toLowerCase().includes('tuition');
-                                                    const key = `${mName}::${h.name}`;
-                                                    const isHeadSelected = !deselectedMonthlyHeads.includes(key);
+                                                    const isTransportHead = h.name.toLowerCase().includes('transport') || h.name.toLowerCase().includes('bus');
+                                                    if (isTransportHead) return false;
+                                                    if (deselectedMonthlyHeads.includes(h.name)) return false;
+
                                                     const headPending = h.pending !== undefined ? h.pending : Math.max(0, (h.expected || 0) - (h.paid || 0));
-                                                    return isHeadSelected && !isThirdChildExempt && headPending > 0;
+                                                    return !isThirdChildExempt && headPending > 0;
                                                 });
 
                                                 if (activeHeads.length === 0) return null;
@@ -932,6 +1270,31 @@ export const PublicFeePayment: React.FC = () => {
                                                     </li>
                                                 );
                                             })}
+
+                                            {includeTransport && studentData.student?.transportStop && !deselectedMonthlyHeads.includes('Transport Fee') && (() => {
+                                                const busFare = studentData.student.transportStop.busFare || 0;
+                                                const targetTransportMonths = isTransportYearly ? allMonths : selectedMonths;
+                                                let trTotal = 0;
+                                                let trCount = 0;
+
+                                                targetTransportMonths.forEach((mName: string) => {
+                                                    const mObj = (studentData.monthlyDues || []).find((x: any) => x.month === mName);
+                                                    const trHead = (mObj?.heads || []).find((h: any) => h.name.toLowerCase().includes('transport') || h.name.toLowerCase().includes('bus'));
+                                                    const trPending = trHead ? (trHead.pending !== undefined ? trHead.pending : Math.max(0, (trHead.expected || 0) - (trHead.paid || 0))) : busFare;
+                                                    if (trPending > 0) {
+                                                        trTotal += trPending;
+                                                        trCount += 1;
+                                                    }
+                                                });
+
+                                                if (trTotal <= 0) return null;
+
+                                                return (
+                                                    <li key="Transport Fee">
+                                                        <strong>Transport Fee ({studentData.student.transportStop.name}):</strong> ₹{trTotal.toLocaleString()} ({trCount} Month{trCount > 1 ? 's' : ''})
+                                                    </li>
+                                                );
+                                            })()}
                                         </ul>
                                     )}
                                 </div>
@@ -939,11 +1302,15 @@ export const PublicFeePayment: React.FC = () => {
                                 <div style={{ borderTop: '1px dashed #fed7aa', paddingTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', color: '#475569', fontWeight: 600 }}>
                                         <span>Subtotal:</span>
-                                        <span style={{ fontWeight: 800, color: '#1e293b' }}>₹{calculateSelectedTotal().toLocaleString()}</span>
+                                        <span style={{ fontWeight: 800, color: '#1e293b' }}>₹{calculateSelectedTotal().toLocaleString('en-IN')}</span>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', color: '#475569', fontWeight: 600 }}>
+                                        <span>Discount / Concession:</span>
+                                        <span style={{ fontWeight: 800, color: '#059669' }}>₹0 <span style={{ fontSize: '0.7rem', color: '#64748b' }}>(Read-Only)</span></span>
                                     </div>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.15rem', color: '#c2410c', fontWeight: 900, borderTop: '2px solid #fed7aa', paddingTop: '0.65rem', marginTop: '0.2rem' }}>
-                                        <span>Net Payable:</span>
-                                        <span>₹{calculateSelectedTotal().toLocaleString()}</span>
+                                        <span>Net Payable Amount:</span>
+                                        <span>₹{calculateSelectedTotal().toLocaleString('en-IN')}</span>
                                     </div>
                                 </div>
                             </div>
@@ -956,14 +1323,25 @@ export const PublicFeePayment: React.FC = () => {
 
                                 <div style={{ marginBottom: '1.25rem' }}>
                                     <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, color: '#475569', marginBottom: '0.4rem' }}>
-                                        Amount being Paid (₹)
+                                        Amount being Paid (₹) <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 600 }}>(Read Only - Auto-calculated from DB)</span>
                                     </label>
                                     <input 
-                                        type="number" 
-                                        value={customAmount || (calculateSelectedTotal() > 0 ? calculateSelectedTotal() : '')} 
-                                        onChange={e => setCustomAmount(e.target.value)}
-                                        placeholder="0"
-                                        style={{ width: '100%', padding: '0.75rem 1rem', borderRadius: '10px', border: '2px solid #3b82f6', fontSize: '1.1rem', fontWeight: 900, color: '#1d4ed8', backgroundColor: '#eff6ff' }}
+                                        type="text" 
+                                        value={`₹ ${calculateSelectedTotal().toLocaleString('en-IN')}`} 
+                                        readOnly
+                                        style={{ width: '100%', padding: '0.75rem 1rem', borderRadius: '10px', border: '2px solid #cbd5e1', fontSize: '1.15rem', fontWeight: 900, color: '#0f172a', backgroundColor: '#f1f5f9', cursor: 'not-allowed' }}
+                                    />
+                                </div>
+
+                                <div style={{ marginBottom: '1.25rem' }}>
+                                    <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, color: '#475569', marginBottom: '0.4rem' }}>
+                                        Discount / Concession (₹) <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 600 }}>(Read Only - Locked)</span>
+                                    </label>
+                                    <input 
+                                        type="text" 
+                                        value="₹ 0" 
+                                        readOnly
+                                        style={{ width: '100%', padding: '0.75rem 1rem', borderRadius: '10px', border: '2px solid #cbd5e1', fontSize: '1.05rem', fontWeight: 800, color: '#059669', backgroundColor: '#f1f5f9', cursor: 'not-allowed' }}
                                     />
                                 </div>
 

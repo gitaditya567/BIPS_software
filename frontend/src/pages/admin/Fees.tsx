@@ -227,8 +227,8 @@ const Fees: React.FC = () => {
     const [classReportFilter, setClassReportFilter] = useState('All');
     const [pendingClassFilter, setPendingClassFilter] = useState('All');
     const [prevDueClassFilter, setPrevDueClassFilter] = useState('All');
-    const [dueClassFilter, setDueClassFilter] = useState('All');
-    const [dueMonthFilter, setDueMonthFilter] = useState('All');
+    const [dueClassFilter, setDueClassFilter] = useState('Nursery');
+    const [dueMonthFilter, setDueMonthFilter] = useState(['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][new Date().getMonth()]);
     const [dueSearchQuery, setDueSearchQuery] = useState('');
     const [prevDueSearchQuery, setPrevDueSearchQuery] = useState('');
     const [receiptSearchQuery, setReceiptSearchQuery] = useState('');
@@ -237,9 +237,15 @@ const Fees: React.FC = () => {
     const [studentLedger, setStudentLedger] = useState<any | null>(null);
     const [loadingLedger, setLoadingLedger] = useState(false);
     const [dueRtFilter, setDueRtFilter] = useState('All');
-    const [dueStatusFilter, setDueStatusFilter] = useState('All');
-    const [dueFeeTypeFilter, setDueFeeTypeFilter] = useState('All');
+    const [dueStatusFilter, setDueStatusFilter] = useState('Unpaid');
+    const [dueFeeTypeFilter, setDueFeeTypeFilter] = useState('Monthly Only');
     const [dueView, setDueView] = useState<'general' | 'transport'>('general');
+
+    useEffect(() => {
+        if (dueView === 'transport' && dueFeeTypeFilter === 'One-time Only') {
+            setDueFeeTypeFilter('Monthly Only');
+        }
+    }, [dueView, dueFeeTypeFilter]);
     const [transportDues, setTransportDues] = useState<any[]>([]);
     const [loadingTransportDues, setLoadingTransportDues] = useState(false);
     const [remark, setRemark] = useState('');
@@ -330,10 +336,25 @@ const Fees: React.FC = () => {
             .filter(f => {
                 if (dueFeeTypeFilter === 'One-time Only') return true;
                 if (dueMonthFilter === 'All') return true;
-                // Show student if they have pending OR paid for this month
-                const hasPending = (f.pendingMonths || []).includes(dueMonthFilter);
+                
+                const allMonths = ['April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December', 'January', 'February', 'March'];
+                const currentDate = new Date();
+                const currentMonthIndex = currentDate.getMonth();
+                const sessionStartMonth = 3; // April
+                let elapsedMonthsCount = 0;
+                if (currentMonthIndex >= sessionStartMonth) {
+                    elapsedMonthsCount = (currentMonthIndex - sessionStartMonth) + 1;
+                } else {
+                    elapsedMonthsCount = (currentMonthIndex + 12 - sessionStartMonth) + 1;
+                }
+                const elapsedMonths = allMonths.slice(0, elapsedMonthsCount);
+                const isFutureMonth = !elapsedMonths.includes(dueMonthFilter);
+
+                const isMonthPaid = (f.monthWisePaid?.[dueMonthFilter] || 0) >= (f.monthlyFeeAmount || 0);
+                const hasPending = (f.pendingMonths || []).includes(dueMonthFilter) || (isFutureMonth && (f.monthlyFeeAmount || 0) > 0 && !isMonthPaid);
                 const hasPaid = (f.monthWisePaid?.[dueMonthFilter] || 0) > 0;
-                return hasPending || hasPaid;
+                
+                return hasPending || hasPaid || f.isRT || (f.monthlyFeeAmount || 0) === 0;
             })
             .filter(f => {
                 if (dueSearchQuery === '') return true;
@@ -395,7 +416,7 @@ const Fees: React.FC = () => {
                 }
 
                 if (dueStatusFilter === 'Paid') {
-                    return pending === 0 && expected > 0;
+                    return pending === 0;
                 } else if (dueStatusFilter === 'Unpaid') {
                     return paid === 0 && expected > 0;
                 } else if (dueStatusFilter === 'Partially Paid') {
@@ -770,7 +791,7 @@ const Fees: React.FC = () => {
             const rawQuery = receiptSearchQuery.trim().toLowerCase();
             const numOnlyQuery = rawQuery.replace(/^rcp/i, '');
             reportName = rawQuery !== '' ? `Search Collection Report` : `Daily Collection Report (${todayStr})`;
-            head = [['S.No.', 'Date', 'Student Name', 'Father Name', 'Class', 'Receipt No', 'Payment Mode', 'Amount (INR)']];
+            head = [['S.No.', 'Date', 'Student Name', 'Father Name', 'Class', 'Receipt No', 'Payment Mode', 'Amount (₹)']];
             
             let filtered: any[] = [];
             if (rawQuery !== '') {
@@ -794,7 +815,7 @@ const Fees: React.FC = () => {
 
             body = filtered.map((d, index) => {
                 const isOnline = (d.paymentMode || '').toLowerCase().includes('payu') || (d.paymentMode || '').toLowerCase().includes('online');
-                return [index + 1, d.date, d.studentName, d.fatherName || 'N/A', d.className, d.receiptNo, isOnline ? 'Online (PayU)' : 'Cash', `Rs. ${d.paidAmount.toLocaleString()}`];
+                return [index + 1, d.date, d.studentName, d.fatherName || 'N/A', d.className, d.receiptNo, isOnline ? 'Online (PayU)' : 'Cash', `₹${d.paidAmount.toLocaleString('en-IN')}`];
             });
             
             // Calculate totals and counts for Cash, Online, and Grand Total
@@ -808,22 +829,22 @@ const Fees: React.FC = () => {
             const total = filtered.reduce((s, d) => s + d.paidAmount, 0);
 
             // Separate Top Executive Summary Table
-            summaryHead = [['REPORT DATE', 'TOTAL RECEIPTS', 'CASH TOTAL (INR)', 'ONLINE TOTAL (INR)', 'GRAND TOTAL (INR)']];
+            summaryHead = [['REPORT DATE', 'TOTAL RECEIPTS', 'CASH TOTAL (₹)', 'ONLINE TOTAL (₹)', 'GRAND TOTAL (₹)']];
             summaryBody = [[
                 todayStr,
                 `${filtered.length} Receipt(s)\n(Cash: ${cashCount} | Online: ${onlineCount})`,
-                `Rs. ${cashTotal.toLocaleString()}`,
-                `Rs. ${onlineTotal.toLocaleString()}`,
-                `Rs. ${total.toLocaleString()}`
+                `₹${cashTotal.toLocaleString('en-IN')}`,
+                `₹${onlineTotal.toLocaleString('en-IN')}`,
+                `₹${total.toLocaleString('en-IN')}`
             ]];
 
             // Add Cash Total, Online Total, and Grand Total rows
-            body.push([{ content: 'Cash Collection Total:', colSpan: 7, styles: { halign: 'right', fontStyle: 'bold', textColor: [51, 65, 85] } }, { content: `Rs. ${cashTotal.toLocaleString()}`, styles: { fontStyle: 'bold', textColor: [51, 65, 85] } }]);
-            body.push([{ content: 'Online (PayU) Collection Total:', colSpan: 7, styles: { halign: 'right', fontStyle: 'bold', textColor: [4, 120, 87] } }, { content: `Rs. ${onlineTotal.toLocaleString()}`, styles: { fontStyle: 'bold', textColor: [4, 120, 87] } }]);
-            body.push([{ content: 'GRAND TOTAL:', colSpan: 7, styles: { halign: 'right', fontStyle: 'bold', fillColor: [241, 245, 249] } }, { content: `Rs. ${total.toLocaleString()}`, styles: { fontStyle: 'bold', fillColor: [241, 245, 249] } }]);
+            body.push([{ content: 'Cash Collection Total:', colSpan: 7, styles: { halign: 'right', fontStyle: 'bold', textColor: [51, 65, 85] } }, { content: `₹${cashTotal.toLocaleString('en-IN')}`, styles: { fontStyle: 'bold', textColor: [51, 65, 85] } }]);
+            body.push([{ content: 'Online (PayU) Collection Total:', colSpan: 7, styles: { halign: 'right', fontStyle: 'bold', textColor: [4, 120, 87] } }, { content: `₹${onlineTotal.toLocaleString('en-IN')}`, styles: { fontStyle: 'bold', textColor: [4, 120, 87] } }]);
+            body.push([{ content: 'GRAND TOTAL:', colSpan: 7, styles: { halign: 'right', fontStyle: 'bold', fillColor: [241, 245, 249] } }, { content: `₹${total.toLocaleString('en-IN')}`, styles: { fontStyle: 'bold', fillColor: [241, 245, 249] } }]);
         } else if (activeReport === 'monthly') {
             reportName = `Monthly Collection Fee Report (${reportFilterMonth === 'All' ? 'April to March' : reportFilterMonth})`;
-            head = [['S.No.', 'Month', 'Academic Session', 'Total Collection (INR)']];
+            head = [['S.No.', 'Month', 'Academic Session', 'Total Collection (₹)']];
             const academicMonths = ['April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December', 'January', 'February', 'March'];
             const filteredMonths = academicMonths.map(m => {
                 const found = (reportData.monthly || []).find((rec: any) => rec.month?.trim().toLowerCase() === m.toLowerCase());
@@ -834,22 +855,22 @@ const Fees: React.FC = () => {
                 };
             }).filter(m => reportFilterMonth === 'All' || m.month.toLowerCase() === reportFilterMonth.toLowerCase());
 
-            body = filteredMonths.map((m, idx) => [idx + 1, m.month, m.year, `Rs. ${m.total.toLocaleString()}`]);
+            body = filteredMonths.map((m, idx) => [idx + 1, m.month, m.year, `₹${m.total.toLocaleString('en-IN')}`]);
             
             // Add Grand Total row
             const total = filteredMonths.reduce((s, m) => s + m.total, 0);
-            body.push([{ content: 'GRAND TOTAL:', colSpan: 3, styles: { halign: 'right', fontStyle: 'bold', fillColor: [241, 245, 249] } }, { content: `Rs. ${total.toLocaleString()}`, styles: { fontStyle: 'bold', fillColor: [241, 245, 249] } }]);
+            body.push([{ content: 'GRAND TOTAL:', colSpan: 3, styles: { halign: 'right', fontStyle: 'bold', fillColor: [241, 245, 249] } }, { content: `₹${total.toLocaleString('en-IN')}`, styles: { fontStyle: 'bold', fillColor: [241, 245, 249] } }]);
         } else if (activeReport === 'class') {
             reportName = "Class-wise Fee Collection";
-            head = [['Class', 'Students Paid', 'Collected (INR)']];
-            body = reportData.classWise.map(c => [c.className, c.students, `Rs. ${c.total.toLocaleString()}`]);
+            head = [['Class', 'Students Paid', 'Collected (₹)']];
+            body = reportData.classWise.map(c => [c.className, c.students, `₹${c.total.toLocaleString('en-IN')}`]);
         } else if (activeReport === 'pending') {
             reportName = "Outstanding Dues Report";
             if (pendingClassFilter !== 'All') reportName += ` - ${pendingClassFilter}`;
             if (dueMonthFilter !== 'All') reportName += ` (${dueMonthFilter})`;
             
             const isMonthFiltered = dueMonthFilter !== 'All';
-            head = [['Student Name', 'Adm No', 'Class', isMonthFiltered ? 'Month Due (INR)' : 'Pending Months', 'Total Due (INR)']];
+            head = [['Student Name', 'Adm No', 'Class', isMonthFiltered ? 'Month Due (₹)' : 'Pending Months', 'Total Due (₹)']];
             body = dueFees
                 .filter(f => {
                     const classMatch = pendingClassFilter === 'All' || f.className === pendingClassFilter;
@@ -863,8 +884,8 @@ const Fees: React.FC = () => {
                     f.studentName, 
                     f.admissionNo, 
                     f.className, 
-                    isMonthFiltered ? `Rs. ${Math.max(0, (f.monthlyFeeAmount || 0) - (f.monthWisePaid?.[dueMonthFilter] || 0)).toLocaleString()}` : (f.pendingMonths?.join(', ') || 'None'), 
-                    `Rs. ${f.pending.toLocaleString()}`
+                    isMonthFiltered ? `₹${Math.max(0, (f.monthlyFeeAmount || 0) - (f.monthWisePaid?.[dueMonthFilter] || 0)).toLocaleString('en-IN')}` : (f.pendingMonths?.join(', ') || 'None'), 
+                    `₹${f.pending.toLocaleString('en-IN')}`
                 ]);
             
             const total = dueFees
@@ -877,7 +898,7 @@ const Fees: React.FC = () => {
                     return classMatch && rtMatch && monthMatch;
                 })
                 .reduce((s, f) => s + f.pending, 0);
-            body.push([{ content: 'GRAND TOTAL:', colSpan: 4, styles: { halign: 'right', fontStyle: 'bold' } }, { content: `Rs. ${total.toLocaleString()}`, styles: { fontStyle: 'bold' } }]);
+            body.push([{ content: 'GRAND TOTAL:', colSpan: 4, styles: { halign: 'right', fontStyle: 'bold' } }, { content: `₹${total.toLocaleString('en-IN')}`, styles: { fontStyle: 'bold' } }]);
         }
 
         // Header Section (Clean, non-overlapping vertical Y alignment)
@@ -1204,7 +1225,7 @@ const Fees: React.FC = () => {
                 fetchReports();
                 fetchDueFees();
                 fetchStudents();
-                fetchTransportDues();
+                fetchTransportDues(true);
             };
             window.addEventListener('activeSessionChanged', handleSessionChange);
 
@@ -1560,8 +1581,10 @@ const Fees: React.FC = () => {
         }
     };
 
-    const fetchTransportDues = async () => {
-        setLoadingTransportDues(true);
+    const fetchTransportDues = async (showLoading = false) => {
+        if (showLoading || transportDues.length === 0) {
+            setLoadingTransportDues(true);
+        }
         try {
             const session = localStorage.getItem('activeSession') || '2024-2025';
             const res = await axios.get(`/erp-api/fees/transport-due-list?session=${session}`);
@@ -1576,13 +1599,13 @@ const Fees: React.FC = () => {
     useEffect(() => {
         if (!user) return;
         
-        const refreshData = () => {
+        const refreshData = (showLoading = false) => {
             switch (activeTab) {
                 case 'due':
                     if (dueView === 'general') {
                         fetchDueFees();
                     } else if (dueView === 'transport') {
-                        fetchTransportDues();
+                        fetchTransportDues(showLoading);
                     }
                     break;
                 case 'previous_due':
@@ -1614,11 +1637,7 @@ const Fees: React.FC = () => {
             }
         };
 
-        refreshData();
-
-        const interval = setInterval(refreshData, 10000);
-
-        return () => clearInterval(interval);
+        refreshData(true);
     }, [activeTab, dueView, user]);
 
     // Auto pop-up Printable Thermal Receipt when returning from online PayU payment
@@ -1666,7 +1685,7 @@ const Fees: React.FC = () => {
                     return isMonthSelected ? isMonthPaid : d.pending === 0;
                 }
                 if (dueStatusFilter === 'Unpaid') {
-                    return isMonthSelected ? !isMonthPaid : (d.pending > 0 || d.totalPaid === 0);
+                    return isMonthSelected ? (!isMonthPaid && (d.paidMonths || []).length === 0) : (d.totalPaid === 0 && d.monthlyFare > 0);
                 }
                 if (dueStatusFilter === 'Partially Paid') {
                     return isMonthSelected ? (!isMonthPaid && (d.paidMonths || []).length > 0) : (d.totalPaid > 0 && d.pending > 0);
@@ -1693,9 +1712,9 @@ const Fees: React.FC = () => {
                     "Admission No",
                     "Father Name",
                     "Class",
-                    "One-Time Expected (Rs)",
-                    "One-Time Paid (Rs)",
-                    "One-Time Balance (Rs)",
+                    "One-Time Expected (₹)",
+                    "One-Time Paid (₹)",
+                    "One-Time Balance (₹)",
                     "Status"
                 ];
 
@@ -1738,9 +1757,9 @@ const Fees: React.FC = () => {
                     "Admission No",
                     "Father Name",
                     "Class",
-                    `${monthShort} Expected (Rs)`,
-                    `${monthShort} Paid (Rs)`,
-                    `${monthShort} Balance (Rs)`,
+                    `${monthShort} Expected (₹)`,
+                    `${monthShort} Paid (₹)`,
+                    `${monthShort} Balance (₹)`,
                     "Status"
                 ];
                 
@@ -1783,10 +1802,10 @@ const Fees: React.FC = () => {
                     "Admission No",
                     "Father Name",
                     "Class",
-                    "Session Expected (12 Mos) (Rs)",
-                    "Expected Till Date (Rs)",
-                    "Total Paid (Rs)",
-                    "Dues Pending Till Date (Rs)",
+                    "Session Expected (12 Mos) (₹)",
+                    "Expected Till Date (₹)",
+                    "Total Paid (₹)",
+                    "Dues Pending Till Date (₹)",
                     "Status",
                     "Pending Details"
                 ];
@@ -1928,14 +1947,14 @@ const Fees: React.FC = () => {
             { header: 'Admission No', key: 'admNo', width: 15 },
             { header: 'Father Name', key: 'fatherName', width: 22 },
             { header: 'Class', key: 'class', width: 15 },
-            { header: 'Previous Session Dues (Rs)', key: 'prevSessionDues', width: 25 },
-            { header: 'One-Time Fees Expected (Rs)', key: 'expectedOneTime', width: 25 },
-            { header: 'One-Time Fees Paid (Rs)', key: 'paidOneTime', width: 22 },
-            { header: 'Full Session Monthly Expected (12 Mos) (Rs)', key: 'fullSessionMonthly', width: 32 },
-            { header: 'Monthly Expected Till Date (Rs)', key: 'monthlyExpectedTillNow', width: 28 },
-            { header: 'Monthly Fees Paid (Rs)', key: 'monthlyPaid', width: 22 },
-            { header: 'Dues Pending Till Date (Rs)', key: 'totalOutstanding', width: 25 },
-            { header: 'Total Paid Till Date (Rs)', key: 'totalPaidTillDate', width: 24 },
+            { header: 'Previous Session Dues (₹)', key: 'prevSessionDues', width: 25 },
+            { header: 'One-Time Fees Expected (₹)', key: 'expectedOneTime', width: 25 },
+            { header: 'One-Time Fees Paid (₹)', key: 'paidOneTime', width: 22 },
+            { header: 'Full Session Monthly Expected (12 Mos) (₹)', key: 'fullSessionMonthly', width: 32 },
+            { header: 'Monthly Expected Till Date (₹)', key: 'monthlyExpectedTillNow', width: 28 },
+            { header: 'Monthly Fees Paid (₹)', key: 'monthlyPaid', width: 22 },
+            { header: 'Dues Pending Till Date (₹)', key: 'totalOutstanding', width: 25 },
+            { header: 'Total Paid Till Date (₹)', key: 'totalPaidTillDate', width: 24 },
             { header: 'Payment Status', key: 'status', width: 18 },
             { header: 'Pending Details', key: 'description', width: 35 }
         ];
@@ -2031,13 +2050,90 @@ const Fees: React.FC = () => {
         saveAs(blob, `Full_Details_Dues_${dueMonthFilter}_${activeSessionStr}_${new Date().toISOString().split('T')[0]}.xlsx`);
     };
 
+    const downloadClassWiseTransportSummary = async () => {
+        const classCounts: Record<string, number> = {};
+        
+        transportDues.forEach(s => {
+            const className = s.className || 'Unassigned Class';
+            classCounts[className] = (classCounts[className] || 0) + 1;
+        });
+
+        const CLASS_ORDER = [
+            'Play', 'Nursery', 'Lower Kindergarten (LKG)', 'Upper Kindergarten (UKG)', 
+            'Class 1', 'Class 2', 'Class 3', 'Class 4', 'Class 5', 
+            'Class 6', 'Class 7', 'Class 8', 'Class 9', 'Class 10', 
+            'Class 11 (Maths)', 'Class 11 (Bio)', 'Class 11 (Commerce)', 
+            'Class 12 (Maths)', 'Class 12 (Bio)', 'Class 12 (Commerce)'
+        ];
+
+        const sortedClasses = Object.keys(classCounts).sort((a, b) => {
+            let indexA = CLASS_ORDER.indexOf(a);
+            let indexB = CLASS_ORDER.indexOf(b);
+            if (indexA === -1) indexA = 999;
+            if (indexB === -1) indexB = 999;
+            if (indexA !== indexB) return indexA - indexB;
+            return a.localeCompare(b);
+        });
+
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('Transport Summary');
+
+        worksheet.columns = [
+            { header: 'Class Name', key: 'className', width: 30 },
+            { header: 'Transport Student Count', key: 'studentCount', width: 25 }
+        ];
+
+        const activeSessionStr = localStorage.getItem('activeSession') || '2024-2025';
+        worksheet.insertRow(1, [`Academic Session: ${activeSessionStr} | Class-wise Transport Students Summary`]);
+        worksheet.insertRow(2, []); // Blank spacer
+
+        worksheet.mergeCells('A1:B1');
+        worksheet.getRow(1).font = { bold: true, size: 12, color: { argb: 'FF1F2937' } };
+        worksheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'left' };
+
+        // Style the header (now row 3)
+        worksheet.getRow(3).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        worksheet.getRow(3).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF7C3AED' } }; // Purple color matching the button
+        worksheet.getRow(3).alignment = { vertical: 'middle', horizontal: 'left' };
+
+        sortedClasses.forEach(className => {
+            worksheet.addRow({
+                className: className,
+                studentCount: classCounts[className]
+            });
+        });
+
+        // Add Total Row
+        const totalRow = worksheet.addRow({
+            className: 'Total Transport Students',
+            studentCount: transportDues.length
+        });
+        totalRow.font = { bold: true };
+        totalRow.getCell('studentCount').font = { bold: true };
+        totalRow.border = {
+            top: { style: 'thin' },
+            bottom: { style: 'double' }
+        };
+
+        // Align numbers to right
+        worksheet.eachRow((row, rowNumber) => {
+            if (rowNumber > 3) {
+                row.getCell('studentCount').alignment = { horizontal: 'right' };
+            }
+        });
+
+        const buffer = await workbook.xlsx.writeBuffer();
+        const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        saveAs(blob, `Class_wise_Transport_Summary_${activeSessionStr}.xlsx`);
+    };
+
     const exportPreviousDueExcel = () => {
         const filtered = dueFees
             .filter(f => (f.previousSessionDue || 0) > 0)
             .filter(f => prevDueClassFilter === 'All' || f.className === prevDueClassFilter)
             .filter(f => prevDueSearchQuery === '' || (f.studentName || '').toLowerCase().includes(prevDueSearchQuery.toLowerCase()));
 
-        const headers = ['S.No.', 'Student Name', 'Father Name', 'Class', 'Previous Due (INR)'];
+        const headers = ['S.No.', 'Student Name', 'Father Name', 'Class', 'Previous Due (₹)'];
         const activeSessionStr = localStorage.getItem('activeSession') || '2024-2025';
         const csvContent = [
             `"Academic Session: ${activeSessionStr}"`,
@@ -3962,7 +4058,6 @@ const Fees: React.FC = () => {
                                             onChange={(e) => setDueClassFilter(e.target.value)}
                                             style={{ flex: 1 }}
                                         >
-                                            <option value="All">All Classes</option>
                                             {/* Dynamic classes from DB */}
                                             {classes && classes.length > 0 ? (
                                                 Array.from(new Set(classes.map(c => c.name))).sort((a, b) => sortClassNames(a, b)).map((className, idx) => (
@@ -4002,7 +4097,6 @@ const Fees: React.FC = () => {
                                         disabled={dueFeeTypeFilter === 'One-time Only'}
                                         style={{ opacity: dueFeeTypeFilter === 'One-time Only' ? 0.45 : 1, cursor: dueFeeTypeFilter === 'One-time Only' ? 'not-allowed' : 'pointer', backgroundColor: dueFeeTypeFilter === 'One-time Only' ? '#f1f5f9' : '' }}
                                     >
-                                        <option value="All">All Pending (Full Session)</option>
                                         {['April','May','June','July','August','September','October','November','December','January','February','March'].map(m => <option key={m} value={m}>{m}</option>)}
                                     </select>
                                 </div>
@@ -4025,11 +4119,9 @@ const Fees: React.FC = () => {
                                         value={dueStatusFilter}
                                         onChange={(e) => setDueStatusFilter(e.target.value)}
                                     >
-                                        <option value="All">All Statuses</option>
-                                        <option value="Paid">Fully Paid</option>
-                                        <option value="Unpaid">Fully Unpaid</option>
+                                        <option value="Paid">Paid</option>
+                                        <option value="Unpaid">Unpaid</option>
                                         <option value="Partially Paid">Partially Paid</option>
-                                        <option value="Any Outstanding">Any Outstanding</option>
                                     </select>
                                 </div>
                                 <div className="form-group" style={{ marginBottom: 0, flex: 1, minWidth: '160px' }}>
@@ -4039,10 +4131,10 @@ const Fees: React.FC = () => {
                                         value={dueFeeTypeFilter}
                                         onChange={(e) => setDueFeeTypeFilter(e.target.value)}
                                     >
-                                        <option value="All">All Fees</option>
                                         <option value="Monthly Only">Monthly Fees Only</option>
-                                        <option value="One-time Only">One-Time / Annual Fees Only</option>
-                                        <option value="Dues Only">Dues / Partial Remaining Only</option>
+                                        {dueView === 'general' && (
+                                            <option value="One-time Only">One-Time / Annual Fees Only</option>
+                                        )}
                                     </select>
                                 </div>
                                 <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -4053,13 +4145,15 @@ const Fees: React.FC = () => {
                                     >
                                         Export CSV
                                     </button>
-                                    <button 
-                                        onClick={downloadFullDetailsExcel}
-                                        className="btn-primary" 
-                                        style={{ padding: '0.6rem 1.2rem', width: 'auto', backgroundColor: '#2563eb', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
-                                    >
-                                        <Download size={16} /> Full Details
-                                    </button>
+                                    {dueView === 'general' && (
+                                        <button 
+                                            onClick={downloadFullDetailsExcel}
+                                            className="btn-primary" 
+                                            style={{ padding: '0.6rem 1.2rem', width: 'auto', backgroundColor: '#2563eb', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+                                        >
+                                            <Download size={16} /> Full Details
+                                        </button>
+                                    )}
                                     <button 
                                         onClick={printDuesReport}
                                         className="btn-primary" 
@@ -4067,6 +4161,15 @@ const Fees: React.FC = () => {
                                     >
                                         🖨️ Print Report (PDF)
                                     </button>
+                                    {dueView === 'transport' && (
+                                        <button 
+                                            onClick={downloadClassWiseTransportSummary}
+                                            className="btn-primary" 
+                                            style={{ padding: '0.6rem 1.2rem', width: 'auto', backgroundColor: '#7c3aed', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+                                        >
+                                            <Download size={16} /> Class Summary
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -4107,10 +4210,19 @@ const Fees: React.FC = () => {
                                     const filtered = getFilteredDues(dueFees);
                                     
                                     if (filtered.length === 0) {
+                                        let emptyMsg = `All students have paid for ${dueMonthFilter}. ✓`;
+                                        if (dueStatusFilter === 'Paid') {
+                                            emptyMsg = `No fully paid students found for ${dueMonthFilter}.`;
+                                        } else if (dueStatusFilter === 'Unpaid') {
+                                            emptyMsg = `No unpaid students found for ${dueMonthFilter}.`;
+                                        } else if (dueStatusFilter === 'Partially Paid') {
+                                            emptyMsg = `No partially paid students found for ${dueMonthFilter}.`;
+                                        }
+
                                         return (
                                             <tr>
                                                 <td colSpan={6} style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>
-                                                    {dueFeeTypeFilter === 'One-time Only' ? 'No One-Time / Annual dues found.' : dueMonthFilter === 'All' ? 'No pending dues found.' : `All students have paid for ${dueMonthFilter}. ✓`}
+                                                    {dueFeeTypeFilter === 'One-time Only' ? 'No One-Time / Annual dues found.' : dueMonthFilter === 'All' ? 'No pending dues found.' : emptyMsg}
                                                 </td>
                                             </tr>
                                         );
@@ -4191,13 +4303,15 @@ const Fees: React.FC = () => {
                                                                     <span>Adm: <strong>{fee.admissionNo}</strong></span>
                                                                 </div>
                                                             </td>
-                                                            <td style={{ padding: '1rem', textAlign: 'right' }}><div style={{ fontSize: '0.95rem', fontWeight: '700', color: '#1e293b' }}>Rs {expectedAmt.toLocaleString()}</div></td>
-                                                            <td style={{ padding: '1rem', textAlign: 'right' }}><div style={{ fontSize: '0.95rem', fontWeight: '700', color: '#059669' }}>Rs {paidAmt.toLocaleString()}</div></td>
-                                                            <td style={{ padding: '1rem', textAlign: 'right' }}><div style={{ fontSize: '0.95rem', fontWeight: '800', color: balanceAmt === 0 ? '#16a34a' : '#dc2626' }}>Rs {balanceAmt.toLocaleString()}</div></td>
+                                                            <td style={{ padding: '1rem', textAlign: 'right' }}><div style={{ fontSize: '0.95rem', fontWeight: '700', color: '#1e293b' }}>₹{expectedAmt.toLocaleString('en-IN')}</div></td>
+                                                            <td style={{ padding: '1rem', textAlign: 'right' }}><div style={{ fontSize: '0.95rem', fontWeight: '700', color: '#059669' }}>₹{paidAmt.toLocaleString('en-IN')}</div></td>
+                                                            <td style={{ padding: '1rem', textAlign: 'right' }}><div style={{ fontSize: '0.95rem', fontWeight: '800', color: balanceAmt === 0 ? '#16a34a' : '#dc2626' }}>₹{balanceAmt.toLocaleString('en-IN')}</div></td>
                                                             <td style={{ padding: '1rem', textAlign: 'center' }}><span style={{ background: statusBg, color: statusColor, padding: '0.3rem 0.65rem', borderRadius: '12px', fontSize: '0.75rem', fontWeight: '700', display: 'inline-block' }}>{statusText}</span></td>
                                                             <td style={{ padding: '1rem', textAlign: 'center' }}>
-                                                                <button onClick={() => { setSelectedStudentForHistory(fee); fetchStudentHistory(fee.id, fee.studentName); setShowHistoryModal(true); }} style={{ background: '#4f46e5', color: 'white', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', marginRight: '0.5rem', fontWeight: '600' }}>View Details</button>
-                                                                <button onClick={() => handlePayDuesRedirect(fee, 'All')} style={{ background: '#10b981', color: 'white', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', marginRight: '0.5rem', fontWeight: '700' }}>Pay Now</button>
+                                                                {/* <button onClick={() => { setSelectedStudentForHistory(fee); fetchStudentHistory(fee.id, fee.studentName); setShowHistoryModal(true); }} style={{ background: '#4f46e5', color: 'white', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', marginRight: '0.5rem', fontWeight: '600' }}>View Details</button> */}
+                                                                {balanceAmt > 0 && (
+                                                                    <button onClick={() => handlePayDuesRedirect(fee, 'All')} style={{ background: '#10b981', color: 'white', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', marginRight: '0.5rem', fontWeight: '700' }}>Pay Now</button>
+                                                                )}
                                                             </td>
                                                         </tr>
                                                     );
@@ -4236,13 +4350,15 @@ const Fees: React.FC = () => {
                                                                     <span>Adm: <strong>{fee.admissionNo}</strong></span>
                                                                 </div>
                                                             </td>
-                                                            <td style={{ padding: '1rem', textAlign: 'right' }}><div style={{ fontSize: '0.95rem', fontWeight: '700', color: '#1e293b' }}>Rs {expectedAmt.toLocaleString()}</div></td>
-                                                            <td style={{ padding: '1rem', textAlign: 'right' }}><div style={{ fontSize: '0.95rem', fontWeight: '700', color: '#0f172a' }}>Rs {paidAmt.toLocaleString()}</div></td>
-                                                            <td style={{ padding: '1rem', textAlign: 'right' }}><div style={{ fontSize: '0.95rem', fontWeight: '800', color: balanceAmt === 0 ? '#16a34a' : '#dc2626' }}>Rs {balanceAmt.toLocaleString()}</div></td>
+                                                            <td style={{ padding: '1rem', textAlign: 'right' }}><div style={{ fontSize: '0.95rem', fontWeight: '700', color: '#1e293b' }}>₹{expectedAmt.toLocaleString('en-IN')}</div></td>
+                                                            <td style={{ padding: '1rem', textAlign: 'right' }}><div style={{ fontSize: '0.95rem', fontWeight: '700', color: '#0f172a' }}>₹{paidAmt.toLocaleString('en-IN')}</div></td>
+                                                            <td style={{ padding: '1rem', textAlign: 'right' }}><div style={{ fontSize: '0.95rem', fontWeight: '800', color: balanceAmt === 0 ? '#16a34a' : '#dc2626' }}>₹{balanceAmt.toLocaleString('en-IN')}</div></td>
                                                             <td style={{ padding: '1rem', textAlign: 'center' }}><span style={{ background: statusBg, color: statusColor, padding: '0.3rem 0.65rem', borderRadius: '12px', fontSize: '0.75rem', fontWeight: '700', display: 'inline-block' }}>{statusText}</span></td>
                                                             <td style={{ padding: '1rem', textAlign: 'center' }}>
-                                                                <button onClick={() => { setSelectedStudentForHistory(fee); fetchStudentHistory(fee.id, fee.studentName); setShowHistoryModal(true); }} style={{ background: '#4f46e5', color: 'white', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', marginRight: '0.5rem', fontWeight: '600' }}>View Details</button>
-                                                                <button onClick={() => handlePayDuesRedirect(fee, dueMonthFilter)} style={{ background: '#10b981', color: 'white', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', marginRight: '0.5rem', fontWeight: '700' }}>Pay Now</button>
+                                                                {/* <button onClick={() => { setSelectedStudentForHistory(fee); fetchStudentHistory(fee.id, fee.studentName); setShowHistoryModal(true); }} style={{ background: '#4f46e5', color: 'white', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', marginRight: '0.5rem', fontWeight: '600' }}>View Details</button> */}
+                                                                {balanceAmt > 0 && (
+                                                                    <button onClick={() => handlePayDuesRedirect(fee, dueMonthFilter)} style={{ background: '#10b981', color: 'white', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', marginRight: '0.5rem', fontWeight: '700' }}>Pay Now</button>
+                                                                )}
                                                             </td>
                                                         </tr>
                                                     );
@@ -4297,14 +4413,16 @@ const Fees: React.FC = () => {
                                                                     <span>Adm: <strong>{fee.admissionNo}</strong></span>
                                                                 </div>
                                                             </td>
-                                                            <td style={{ padding: '1rem', textAlign: 'right' }}><div style={{ fontSize: '0.95rem', fontWeight: '700', color: '#1e293b' }}>Rs {sessionExpected.toLocaleString()}</div></td>
-                                                            <td style={{ padding: '1rem', textAlign: 'right' }}><div style={{ fontSize: '0.95rem', fontWeight: '600', color: '#475569' }}>Rs {expectedTillNow.toLocaleString()}</div></td>
-                                                            <td style={{ padding: '1rem', textAlign: 'right' }}><div style={{ fontSize: '0.95rem', fontWeight: '700', color: '#0f172a' }}>Rs {paidAmt.toLocaleString()}</div></td>
-                                                            <td style={{ padding: '1rem', textAlign: 'right' }}><div style={{ fontSize: '0.95rem', fontWeight: '800', color: duesTillNow === 0 ? '#16a34a' : '#dc2626' }}>Rs {duesTillNow.toLocaleString()}</div></td>
+                                                            <td style={{ padding: '1rem', textAlign: 'right' }}><div style={{ fontSize: '0.95rem', fontWeight: '700', color: '#1e293b' }}>₹{sessionExpected.toLocaleString('en-IN')}</div></td>
+                                                            <td style={{ padding: '1rem', textAlign: 'right' }}><div style={{ fontSize: '0.95rem', fontWeight: '600', color: '#475569' }}>₹{expectedTillNow.toLocaleString('en-IN')}</div></td>
+                                                            <td style={{ padding: '1rem', textAlign: 'right' }}><div style={{ fontSize: '0.95rem', fontWeight: '700', color: '#0f172a' }}>₹{paidAmt.toLocaleString('en-IN')}</div></td>
+                                                            <td style={{ padding: '1rem', textAlign: 'right' }}><div style={{ fontSize: '0.95rem', fontWeight: '800', color: duesTillNow === 0 ? '#16a34a' : '#dc2626' }}>₹{duesTillNow.toLocaleString('en-IN')}</div></td>
                                                             <td style={{ padding: '1rem', textAlign: 'center' }}><span style={{ background: statusBg, color: statusColor, padding: '0.3rem 0.65rem', borderRadius: '12px', fontSize: '0.75rem', fontWeight: '700', display: 'inline-block' }}>{statusText}</span></td>
                                                             <td style={{ padding: '1rem', textAlign: 'center' }}>
-                                                                <button onClick={() => { setSelectedStudentForHistory(fee); fetchStudentHistory(fee.id, fee.studentName); setShowHistoryModal(true); }} style={{ background: '#4f46e5', color: 'white', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', marginRight: '0.5rem', fontWeight: '600' }}>View Details</button>
-                                                                <button onClick={() => handlePayDuesRedirect(fee, dueMonthFilter)} style={{ background: '#10b981', color: 'white', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', marginRight: '0.5rem', fontWeight: '700' }}>Pay Now</button>
+                                                                {/* <button onClick={() => { setSelectedStudentForHistory(fee); fetchStudentHistory(fee.id, fee.studentName); setShowHistoryModal(true); }} style={{ background: '#4f46e5', color: 'white', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', marginRight: '0.5rem', fontWeight: '600' }}>View Details</button> */}
+                                                                {duesTillNow > 0 && (
+                                                                    <button onClick={() => handlePayDuesRedirect(fee, dueMonthFilter)} style={{ background: '#10b981', color: 'white', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', marginRight: '0.5rem', fontWeight: '700' }}>Pay Now</button>
+                                                                )}
                                                             </td>
                                                         </tr>
                                                     );
@@ -5153,7 +5271,7 @@ const Fees: React.FC = () => {
                                                      <td style={{ padding: '1rem 1.5rem', fontWeight: '700', color: '#1e293b' }}>{m.month}</td>
                                                      <td style={{ padding: '1rem 1.5rem', color: '#64748b' }}>{m.year}</td>
                                                      <td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontWeight: '800', color: m.total > 0 ? '#4f46e5' : '#94a3b8' }}>
-                                                         ₹{m.total.toLocaleString()}
+                                                         ₹{m.total.toLocaleString('en-IN')}
                                                      </td>
                                                  </tr>
                                              ))}
@@ -5163,7 +5281,7 @@ const Fees: React.FC = () => {
                                                      GRAND TOTAL:
                                                  </td>
                                                  <td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontWeight: '900', color: '#047857', fontSize: '1.1rem' }}>
-                                                     ₹{totalSum.toLocaleString()}
+                                                     ₹{totalSum.toLocaleString('en-IN')}
                                                  </td>
                                              </tr>
                                          </>
@@ -5175,7 +5293,7 @@ const Fees: React.FC = () => {
                                          <tr key={idx}>
                                              <td style={{ padding: '1rem 1.5rem' }}>{c.className}</td>
                                              <td style={{ padding: '1rem 1.5rem' }}>{c.students}</td>
-                                             <td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontWeight: '700' }}>₹{c.total.toLocaleString()}</td>
+                                             <td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontWeight: '700' }}>₹{c.total.toLocaleString('en-IN')}</td>
                                          </tr>
                                      ))}
                                  {activeReport === 'pending' && (() => {
@@ -5197,16 +5315,16 @@ const Fees: React.FC = () => {
                                              <td style={{ padding: '1rem 1.5rem' }}>{fee.admissionNo}</td>
                                              <td style={{ padding: '1rem 1.5rem' }}>{fee.className}</td>
                                                                                            <td style={{ padding: '1rem 1.5rem', color: '#64748b' }}>
-                                                  ₹{dueMonthFilter === 'All' ? (fee.currentMonthExpected || 0).toLocaleString() : (fee.monthlyFeeAmount || 0).toLocaleString()}
+                                                  ₹{dueMonthFilter === 'All' ? (fee.currentMonthExpected || 0).toLocaleString('en-IN') : (fee.monthlyFeeAmount || 0).toLocaleString('en-IN')}
                                               </td>
                                                                                            <td style={{ padding: '1rem 1.5rem', color: '#059669', fontWeight: '600' }}>
-                                                  ₹{dueMonthFilter === 'All' ? (fee.currentMonthPaid || 0).toLocaleString() : (fee.monthWisePaid?.[dueMonthFilter] || 0).toLocaleString()}
+                                                  ₹{dueMonthFilter === 'All' ? (fee.currentMonthPaid || 0).toLocaleString('en-IN') : (fee.monthWisePaid?.[dueMonthFilter] || 0).toLocaleString('en-IN')}
                                               </td>
                                                                                            <td style={{ padding: '1rem 1.5rem', color: '#ef4444', fontWeight: '600' }}>
-                                                  ₹{dueMonthFilter === 'All' ? (fee.currentMonthPending || 0).toLocaleString() : Math.max(0, (fee.monthlyFeeAmount || 0) - (fee.monthWisePaid?.[dueMonthFilter] || 0)).toLocaleString()}
+                                                  ₹{dueMonthFilter === 'All' ? (fee.currentMonthPending || 0).toLocaleString('en-IN') : Math.max(0, (fee.monthlyFeeAmount || 0) - (fee.monthWisePaid?.[dueMonthFilter] || 0)).toLocaleString('en-IN')}
                                               </td>
                                              <td style={{ padding: '1rem 1.5rem', fontSize: '0.8rem', color: '#64748b' }}>{fee.pendingMonths?.join(', ') || 'None'}</td>
-                                             <td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontWeight: '800', color: '#dc2626' }}>₹{fee.pending.toLocaleString()}</td>
+                                             <td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontWeight: '800', color: '#dc2626' }}>₹{fee.pending.toLocaleString('en-IN')}</td>
                                          </tr>
                                      ));
                                  })()}
@@ -5216,11 +5334,11 @@ const Fees: React.FC = () => {
                                      <td colSpan={activeReport === 'pending' ? 7 : 2} style={{ padding: '1rem 1.5rem', fontWeight: '800', textAlign: 'right' }}>Grand Total:</td>
                                      <td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontWeight: '900', color: '#111827', fontSize: '1.1rem' }}>
                                          ₹{(() => {
-                                             if (activeReport === 'daily') return reportData.daily.filter(d => d.date === new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })).reduce((s, d) => s + d.paidAmount, 0).toLocaleString();
-                                             if (activeReport === 'monthly') return reportData.monthly.filter(m => m.month === reportFilterMonth).reduce((s, m) => s + m.total, 0).toLocaleString();
+                                             if (activeReport === 'daily') return reportData.daily.filter(d => d.date === new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })).reduce((s, d) => s + d.paidAmount, 0).toLocaleString('en-IN');
+                                             if (activeReport === 'monthly') return reportData.monthly.filter(m => m.month === reportFilterMonth).reduce((s, m) => s + m.total, 0).toLocaleString('en-IN');
                                              if (activeReport === 'class') return reportData.classWise
                                                  .filter(c => classReportFilter === 'All' || c.className === classReportFilter)
-                                                 .reduce((s, c) => s + c.total, 0).toLocaleString();
+                                                 .reduce((s, c) => s + c.total, 0).toLocaleString('en-IN');
                                              if (activeReport === 'pending') return dueFees
                                                  .filter(f => {
                                                      const classMatch = pendingClassFilter === 'All' || f.className === pendingClassFilter;
@@ -5230,7 +5348,7 @@ const Fees: React.FC = () => {
                                                      const monthMatch = dueMonthFilter === 'All' || (f.pendingMonths || []).includes(dueMonthFilter);
                                                      return classMatch && rtMatch && monthMatch;
                                                  })
-                                                 .reduce((s: any, d: any) => s + d.pending, 0).toLocaleString();
+                                                 .reduce((s: any, d: any) => s + d.pending, 0).toLocaleString('en-IN');
                                              return '0';
                                          })()}
                                      </td>
@@ -6200,28 +6318,8 @@ const Fees: React.FC = () => {
                         <div><span style={{ color: '#64748b', fontWeight: '500' }}>Payment Status:</span> <strong style={{ color: '#1e293b' }}>{dueStatusFilter === 'All' ? 'All Statuses' : dueStatusFilter}</strong></div>
                     </div>
 
-                    {/* Summary Metrics */}
                     {(() => {
-                        const filtered = transportDues
-                            .filter(d => dueClassFilter === 'All' || d.className === dueClassFilter)
-                            .filter(d => {
-                                if (dueRtFilter === 'All') return true;
-                                if (dueRtFilter === 'RT') return d.isRT;
-                                return !d.isRT;
-                            })
-                            .filter(d => {
-                                if (dueSearchQuery === '') return true;
-                                const query = dueSearchQuery.toLowerCase();
-                                return (d.studentName || '').toLowerCase().includes(query) ||
-                                       (d.fatherName || '').toLowerCase().includes(query);
-                            })
-                            .filter(d => {
-                                if (dueStatusFilter === 'Paid') return d.pending === 0;
-                                if (dueStatusFilter === 'Unpaid') return d.totalPaid === 0 && d.monthlyFare > 0;
-                                if (dueStatusFilter === 'Partially Paid') return d.totalPaid > 0 && d.pending > 0;
-                                if (dueStatusFilter === 'Any Outstanding') return d.pending > 0;
-                                return true;
-                            });
+                        const filtered = getFilteredTransportDues();
                         
                         const totalFare = filtered.reduce((s, d) => s + (d.monthlyFare || 0) * 12, 0);
                         const totalPaid = filtered.reduce((s, d) => s + (d.totalPaid || 0), 0);

@@ -201,10 +201,9 @@ export const PublicFeePayment: React.FC = () => {
 
     const handleSelectAllUnpaid = () => {
         if (!studentData) return;
-        const unpaidOt = (studentData.oneTimeBreakdown || []).filter((h: any) => h.pending > 0).map((h: any) => h.name);
         const unpaidM = (studentData.monthlyDues || []).filter((m: any) => m.pending > 0).map((m: any) => m.month);
 
-        setSelectedOneTimeHeads(unpaidOt);
+        setSelectedOneTimeHeads([]);
         setSelectedMonths(unpaidM);
         setIncludePrevDues((studentData.summary?.previousDuePending || 0) > 0);
     };
@@ -383,10 +382,10 @@ export const PublicFeePayment: React.FC = () => {
         autoTable(doc, {
             startY: (doc as any).lastAutoTable.finalY + 6,
             theme: 'grid',
-            head: [['Particulars / Fee Head', 'Month / Session', 'Amount Paid (INR)']],
+            head: [['Particulars / Fee Head', 'Month / Session', 'Amount Paid (₹)']],
             body: [
-                [receipt.feeHead || 'Online Fee Collection', receipt.month || 'N/A', `Rs. ${amountVal > 0 ? amountVal.toLocaleString() : (receipt.amount || '0')}`],
-                [{ content: 'TOTAL PAID AMOUNT:', colSpan: 2, styles: { halign: 'right', fontStyle: 'bold' } }, { content: `Rs. ${amountVal > 0 ? amountVal.toLocaleString() : (receipt.amount || '0')}`, styles: { fontStyle: 'bold', textColor: [4, 120, 87] } }]
+                [receipt.feeHead || 'Online Fee Collection', receipt.month || 'N/A', `₹${amountVal > 0 ? amountVal.toLocaleString('en-IN') : Number(receipt.amount || 0).toLocaleString('en-IN')}`],
+                [{ content: 'TOTAL PAID AMOUNT:', colSpan: 2, styles: { halign: 'right', fontStyle: 'bold' } }, { content: `₹${amountVal > 0 ? amountVal.toLocaleString('en-IN') : Number(receipt.amount || 0).toLocaleString('en-IN')}`, styles: { fontStyle: 'bold', textColor: [4, 120, 87] } }]
             ],
             headStyles: { fillColor: [30, 41, 59], textColor: 255, fontStyle: 'bold' },
             styles: { fontSize: 9.5 }
@@ -455,10 +454,10 @@ export const PublicFeePayment: React.FC = () => {
                 {/* Step 1: Search Box Card */}
                 <div style={{ backgroundColor: 'white', borderRadius: '16px', padding: '1.75rem', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0', marginBottom: '1.75rem' }}>
                     <form onSubmit={handleSearchSubmit}>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
+                        <div style={{ marginBottom: '1.25rem' }}>
                             <div>
                                 <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 800, color: '#334155', marginBottom: '0.4rem' }}>
-                                    1. Admission Number (SR No) <span style={{ color: '#ef4444' }}>*</span>
+                                    Admission Number (SR No) <span style={{ color: '#ef4444' }}>*</span>
                                 </label>
                                 <div style={{ display: 'flex', alignItems: 'center', border: '2px solid #3b82f6', borderRadius: '10px', overflow: 'hidden', backgroundColor: '#f8fafc' }}>
                                     <span style={{ backgroundColor: '#eff6ff', padding: '0.75rem 0.85rem', fontWeight: 800, color: '#1d4ed8', fontSize: '0.85rem', borderRight: '1px solid #bfdbfe' }}>
@@ -469,24 +468,6 @@ export const PublicFeePayment: React.FC = () => {
                                         placeholder="e.g. BIPS/26/1447 or 1447" 
                                         value={searchQuery}
                                         onChange={e => setSearchQuery(e.target.value)}
-                                        style={{ flex: 1, padding: '0.75rem 0.85rem', border: 'none', outline: 'none', fontSize: '0.95rem', fontWeight: 700 }}
-                                        required
-                                    />
-                                </div>
-                            </div>
-
-                            <div>
-                                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 800, color: '#334155', marginBottom: '0.4rem' }}>
-                                    2. Student Date of Birth (DOB) <span style={{ color: '#ef4444' }}>*</span>
-                                </label>
-                                <div style={{ display: 'flex', alignItems: 'center', border: '2px solid #3b82f6', borderRadius: '10px', overflow: 'hidden', backgroundColor: '#f8fafc' }}>
-                                    <span style={{ backgroundColor: '#eff6ff', padding: '0.75rem 0.85rem', fontWeight: 800, color: '#1d4ed8', fontSize: '0.85rem', borderRight: '1px solid #bfdbfe' }}>
-                                        DOB:
-                                    </span>
-                                    <input 
-                                        type="date" 
-                                        value={dobQuery}
-                                        onChange={e => setDobQuery(e.target.value)}
                                         style={{ flex: 1, padding: '0.75rem 0.85rem', border: 'none', outline: 'none', fontSize: '0.95rem', fontWeight: 700 }}
                                         required
                                     />
@@ -516,7 +497,7 @@ export const PublicFeePayment: React.FC = () => {
                             }}
                         >
                             {loading ? <RefreshCw className="animate-spin" size={20} /> : <ShieldCheck size={20} />}
-                            Verify DOB & Fetch Fee Details
+                            Fetch Student Fee Details
                         </button>
                     </form>
 
@@ -818,8 +799,8 @@ export const PublicFeePayment: React.FC = () => {
                                 </div>
                             </div>
 
-                            {/* Two-Column Dues Breakdown Grid */}
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '2rem', marginBottom: '2rem' }}>
+                            {/* Monthly Fees Breakdown */}
+                            <div style={{ marginBottom: '2rem' }}>
                                 
                                 {/* Left Column: Monthly Fees for selected month(s) */}
                                 <div>
@@ -982,68 +963,6 @@ export const PublicFeePayment: React.FC = () => {
                                                 });
                                             })()
                                         )}
-                                    </div>
-                                </div>
-
-                                {/* Right Column: Annual & One-Time Fees */}
-                                <div>
-                                    <p style={{ fontSize: '0.85rem', fontWeight: 800, color: '#ea580c', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#ea580c' }} /> 
-                                        Annual & One-time Fees
-                                    </p>
-
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
-                                        {(studentData.oneTimeBreakdown || []).map((ot: any) => {
-                                            const isPaid = ot.pending <= 0;
-                                            const isSelected = selectedOneTimeHeads.includes(ot.name);
-
-                                            return (
-                                                <div 
-                                                    key={ot.name}
-                                                    onClick={isPaid ? undefined : () => {
-                                                        setSelectedOneTimeHeads(prev => isSelected ? prev.filter(x => x !== ot.name) : [...prev, ot.name]);
-                                                    }}
-                                                    style={{ 
-                                                        display: 'flex', 
-                                                        justifyContent: 'space-between', 
-                                                        alignItems: 'center', 
-                                                        padding: '0.85rem 1rem', 
-                                                        borderRadius: '12px', 
-                                                        background: isPaid ? '#f0fdf4' : isSelected ? '#fff7ed' : 'white',
-                                                        border: `1px solid ${isPaid ? '#bbf7d0' : isSelected ? '#fed7aa' : '#e2e8f0'}`,
-                                                        cursor: isPaid ? 'default' : 'pointer',
-                                                        transition: '0.2s'
-                                                    }}
-                                                >
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                                                        {isPaid ? (
-                                                            <Check size={18} color="#166534" strokeWidth={3} />
-                                                        ) : (
-                                                            <input 
-                                                                type="checkbox" 
-                                                                checked={isSelected} 
-                                                                onChange={(e) => {
-                                                                    e.stopPropagation();
-                                                                    setSelectedOneTimeHeads(prev => isSelected ? prev.filter(x => x !== ot.name) : [...prev, ot.name]);
-                                                                }} 
-                                                                style={{ width: '18px', height: '18px', cursor: 'pointer' }} 
-                                                            />
-                                                        )}
-                                                        <span style={{ fontWeight: 700, color: isPaid ? '#166534' : (isSelected ? '#1e293b' : '#94a3b8'), fontSize: '0.9rem' }}>{ot.name}</span>
-                                                    </div>
-                                                    <div style={{ textAlign: 'right' }}>
-                                                        <div style={{ fontWeight: 900, color: isPaid ? '#166534' : '#dc2626', fontSize: '0.95rem' }}>₹{ot.expected.toLocaleString()}</div>
-                                                        {isPaid ? (
-                                                            <span style={{ fontSize: '0.65rem', fontWeight: 800, color: '#166534', textTransform: 'uppercase' }}>ALREADY PAID</span>
-                                                        ) : (
-                                                            <span style={{ fontSize: '0.65rem', fontWeight: 900, backgroundColor: '#fee2e2', color: '#b91c1c', border: '1px solid #fca5a5', padding: '2px 8px', borderRadius: '6px', textTransform: 'uppercase', display: 'inline-block', marginTop: '3px' }}>
-                                                                UNPAID DUE
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
                                     </div>
                                 </div>
                             </div>

@@ -1086,9 +1086,6 @@ router.get('/public/student-dues', async (req: express.Request, res: express.Res
         if (!rawQuery) {
             return res.status(400).json({ error: 'Please enter Admission No or SR No.' });
         }
-        if (!rawDob) {
-            return res.status(400).json({ error: 'Please enter Student Date of Birth (DOB) for verification.' });
-        }
 
         const cleanNumStr = rawQuery.replace(/^bips\/26\//i, '').replace(/^rcp/i, '').trim();
         const isObjectId = /^[0-9a-fA-F]{24}$/.test(rawQuery);
@@ -1117,16 +1114,6 @@ router.get('/public/student-dues', async (req: express.Request, res: express.Res
 
         if (!student || !student.user) {
             return res.status(404).json({ error: `No student record found matching Admission No: "${rawQuery}"` });
-        }
-
-        // Verify Student DOB
-        if (student.dateOfBirth) {
-            const normStudentDob = normalizeDob(student.dateOfBirth);
-            const normInputDob = normalizeDob(rawDob);
-
-            if (normStudentDob && normInputDob && normStudentDob !== normInputDob) {
-                return res.status(401).json({ error: 'Invalid Date of Birth for this Student. Verification failed. Please check and enter the correct Date of Birth.' });
-            }
         }
 
         // 2. Calculate accurate fee ledger (same core engine used by Admin Accounts module)

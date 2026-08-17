@@ -232,7 +232,7 @@ const Fees: React.FC = () => {
     const [dueSearchQuery, setDueSearchQuery] = useState('');
     const [prevDueSearchQuery, setPrevDueSearchQuery] = useState('');
     const [receiptSearchQuery, setReceiptSearchQuery] = useState('');
-    const [selectedStudentForHistory, setSelectedStudentForHistory] = useState<any>(null);
+    const [selectedStudentForHistory] = useState<any>(null);
     const [showHistoryModal, setShowHistoryModal] = useState(false);
     const [studentLedger, setStudentLedger] = useState<any | null>(null);
     const [loadingLedger, setLoadingLedger] = useState(false);

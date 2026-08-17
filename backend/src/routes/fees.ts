@@ -1292,11 +1292,13 @@ router.get('/due-list', async (req, res) => {
             });
 
             let monthlyFeeAmountValue = 0;
+            const monthlyExpectedBreakdown: { name: string, amount: number }[] = [];
             feeHeads.forEach(head => {
                 if (head.type === 'Monthly') {
                     const amount = getExpectedFeeAmount(student, head, structure, student.class?.name);
                     if (amount > 0) {
                         monthlyFeeAmountValue += amount;
+                        monthlyExpectedBreakdown.push({ name: head.name, amount });
                     }
                 }
             });
@@ -1369,26 +1371,99 @@ router.get('/due-list', async (req, res) => {
 
             let monthlyPending = 0;
             const pendingMonthsList: string[] = [];
+            const monthlyStatus: any[] = [];
+
+            // Track unused/rollover monthly payment pool
+            let rolloverMonthlyPool = 0;
+            let rolloverTransportPool = actualTransportPaid;
 
             allMonths.forEach(m => {
-                if (elapsedMonths.includes(m)) {
-                    let expectedThisMonth = monthlyFeeAmountValue + transportMonthlyFare;
-                    let paidThisMonth = 0;
+                const isElapsed = elapsedMonths.includes(m);
+                let monthExpectedTotal = 0;
+                let monthPaidTotal = 0;
+                const headsBreakdown: any[] = [];
 
-                    feeHeads.forEach(head => {
-                        if (head.type === 'Monthly') {
-                            paidThisMonth += (monthlyPaidForHeadAndMonth[head.name] && monthlyPaidForHeadAndMonth[head.name][m]) || 0;
-                        }
-                    });
-                    paidThisMonth += transportPaidForMonth[m] || 0;
+                // Total money collected specifically for this month
+                let currentMonthMoney = (monthWisePaid[m] || 0) + rolloverMonthlyPool;
+                rolloverMonthlyPool = 0;
 
-                    const pendingThisMonth = Math.max(0, expectedThisMonth - paidThisMonth);
-                    monthlyPending += pendingThisMonth;
-
-                    if (pendingThisMonth > 0 && expectedThisMonth > 0) {
-                        pendingMonthsList.push(m);
+                // 1. Allocate monthly fee heads sequentially for month m
+                monthlyExpectedBreakdown.forEach(head => {
+                    const expected = head.amount;
+                    let directPaid = monthlyPaidForHeadAndMonth[head.name]?.[m] || 0;
+                    
+                    let allocated = 0;
+                    if (directPaid > 0 && directPaid >= expected) {
+                        allocated = expected;
+                        currentMonthMoney = Math.max(0, currentMonthMoney - expected);
+                    } else {
+                        allocated = Math.min(currentMonthMoney, expected);
+                        currentMonthMoney -= allocated;
                     }
+
+                    allocated = Math.round(allocated);
+                    const pending = Math.max(0, expected - allocated);
+
+                    if (isElapsed) {
+                        monthlyPending += pending;
+                    }
+                    monthExpectedTotal += expected;
+                    monthPaidTotal += allocated;
+
+                    headsBreakdown.push({
+                        name: head.name,
+                        expected,
+                        paid: allocated,
+                        pending
+                    });
+                });
+
+                // Save leftover money for subsequent months
+                if (currentMonthMoney > 0) {
+                    rolloverMonthlyPool += currentMonthMoney;
                 }
+
+                // 2. Allocate transport fee chronologically
+                const transportExpected = transportMonthlyFare;
+                let directTransport = transportPaidForMonth[m] || 0;
+                let transportAllocated = 0;
+                if (directTransport > 0) {
+                    transportAllocated = Math.min(transportExpected, Math.round(directTransport));
+                    rolloverTransportPool = Math.max(0, rolloverTransportPool - transportAllocated);
+                } else {
+                    transportAllocated = Math.min(transportExpected, rolloverTransportPool);
+                    rolloverTransportPool -= transportAllocated;
+                }
+
+                transportAllocated = Math.round(transportAllocated);
+                const transportPending = Math.max(0, transportExpected - transportAllocated);
+
+                if (isElapsed) {
+                    monthlyPending += transportPending;
+                }
+                monthExpectedTotal += transportExpected;
+                monthPaidTotal += transportAllocated;
+
+                headsBreakdown.push({
+                    name: 'Transport Fee',
+                    expected: transportExpected,
+                    paid: transportAllocated,
+                    pending: transportPending
+                });
+
+                const isMonthFullyPaid = monthExpectedTotal > 0 && monthPaidTotal >= monthExpectedTotal;
+                if (isElapsed && !isMonthFullyPaid && monthExpectedTotal > 0) {
+                    pendingMonthsList.push(m);
+                }
+
+                monthlyStatus.push({
+                    month: m,
+                    expected: monthExpectedTotal,
+                    paid: monthPaidTotal,
+                    pending: Math.max(0, monthExpectedTotal - monthPaidTotal),
+                    isPaid: isMonthFullyPaid,
+                    heads: headsBreakdown
+                });
             });
 
             const netPending = prevDuePending + oneTimePending + monthlyPending;
@@ -1397,15 +1472,10 @@ router.get('/due-list', async (req, res) => {
 
             // Determine target month breakdown for currentMonth fields
             const targetMonth = elapsedMonths[elapsedMonths.length - 1];
-            const currentMonthExpected = monthlyFeeAmountValue + transportMonthlyFare;
-            let currentMonthPaid = 0;
-            feeHeads.forEach(head => {
-                if (head.type === 'Monthly') {
-                    currentMonthPaid += (monthlyPaidForHeadAndMonth[head.name] && monthlyPaidForHeadAndMonth[head.name][targetMonth]) || 0;
-                }
-            });
-            currentMonthPaid += transportPaidForMonth[targetMonth] || 0;
-            const currentMonthPending = Math.max(0, currentMonthExpected - currentMonthPaid);
+            const targetMonthStatus = monthlyStatus.find(ms => ms.month === targetMonth);
+            const currentMonthExpected = targetMonthStatus ? targetMonthStatus.expected : (monthlyFeeAmountValue + transportMonthlyFare);
+            const currentMonthPaid = targetMonthStatus ? targetMonthStatus.paid : 0;
+            const currentMonthPending = targetMonthStatus ? targetMonthStatus.pending : 0;
 
             // Include all active students (including 0 pending / fully paid students)
 

@@ -8,7 +8,7 @@ import { CreditCard, CheckCircle2, AlertCircle, Download, Calendar, Check, Shiel
 export const PublicFeePayment: React.FC = () => {
     const [searchParams] = useSearchParams();
     const [searchQuery, setSearchQuery] = useState('');
-    const [dobQuery, setDobQuery] = useState('');
+    const [dobQuery] = useState('');
     const [loading, setLoading] = useState(false);
     const [errorMsg, setErrorMsg] = useState('');
 
@@ -72,16 +72,15 @@ export const PublicFeePayment: React.FC = () => {
         window.history.replaceState({}, document.title, window.location.pathname);
     };
 
-    const fetchStudentByAdmissionNo = async (queryStr: string, dobStr?: string) => {
+    const fetchStudentByAdmissionNo = async (queryStr: string) => {
         const targetQuery = queryStr.trim();
-        const targetDob = (dobStr || dobQuery).trim();
         if (!targetQuery) return;
 
         setLoading(true);
         setErrorMsg('');
         try {
             const res = await axios.get(`/erp-api/fees/public/student-dues`, {
-                params: { admissionNo: targetQuery, dob: targetDob }
+                params: { admissionNo: targetQuery }
             });
             setStudentData(res.data);
 
@@ -94,7 +93,7 @@ export const PublicFeePayment: React.FC = () => {
             setIncludeTransport(!!res.data.student?.transportStop);
         } catch (err: any) {
             console.error(err);
-            setErrorMsg(err.response?.data?.error || 'No active student record found with this Admission Number and Date of Birth.');
+            setErrorMsg(err.response?.data?.error || 'No active student record found with this Admission Number.');
         } finally {
             setLoading(false);
         }

@@ -312,8 +312,8 @@ export async function getStudentFeeLedger(studentId: string) {
         let monthPaidTotal = 0;
         const headsBreakdown: any[] = [];
 
-        // Total money collected specifically for this month
-        let currentMonthMoney = (monthWisePaid[m] || 0) + rolloverMonthlyPool;
+        // Total money collected specifically for this month (excluding transport paid for this month)
+        let currentMonthMoney = Math.max(0, (monthWisePaid[m] || 0) - (transportPaidForMonth[m] || 0)) + rolloverMonthlyPool;
         rolloverMonthlyPool = 0;
 
         // 1. Allocate monthly fee heads sequentially for month m
@@ -1383,8 +1383,8 @@ router.get('/due-list', async (req, res) => {
                 let monthPaidTotal = 0;
                 const headsBreakdown: any[] = [];
 
-                // Total money collected specifically for this month
-                let currentMonthMoney = (monthWisePaid[m] || 0) + rolloverMonthlyPool;
+                // Total money collected specifically for this month (excluding transport paid for this month)
+                let currentMonthMoney = Math.max(0, (monthWisePaid[m] || 0) - (transportPaidForMonth[m] || 0)) + rolloverMonthlyPool;
                 rolloverMonthlyPool = 0;
 
                 // 1. Allocate monthly fee heads sequentially for month m

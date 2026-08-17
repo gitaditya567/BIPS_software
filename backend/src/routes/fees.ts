@@ -1477,6 +1477,11 @@ router.get('/due-list', async (req, res) => {
             const currentMonthPaid = targetMonthStatus ? targetMonthStatus.paid : 0;
             const currentMonthPending = targetMonthStatus ? targetMonthStatus.pending : 0;
 
+            const rolledOverMonthWisePaid: Record<string, number> = {};
+            monthlyStatus.forEach(ms => {
+                rolledOverMonthWisePaid[ms.month] = ms.paid;
+            });
+
             // Include all active students (including 0 pending / fully paid students)
 
             return {
@@ -1497,7 +1502,7 @@ router.get('/due-list', async (req, res) => {
                 oneTimePending,
                 expectedOneTime: expectedOneTimeTotal,
                 oneTimeBreakdown,
-                monthWisePaid,
+                monthWisePaid: rolledOverMonthWisePaid,
                 previousSessionDue,
                 prevDuePending,
                 monthlyFeeAmount: monthlyFeeAmountValue,

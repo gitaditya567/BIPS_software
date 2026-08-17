@@ -2774,7 +2774,12 @@ const Fees: React.FC = () => {
                         { id: 'previous_due', label: 'Previous Year Dues' },
                         { id: 'structure', label: 'Fee Structure' },
                         { id: 'reports', label: 'Fee Reports' }
-                    ].map(tab => {
+                    ].filter(tab => {
+                        if (user?.role === 'ACCOUNTS') {
+                            return tab.id === 'collection' || tab.id === 'other_fees';
+                        }
+                        return true;
+                    }).map(tab => {
 
                         // Principal, Admin, and Superadmin for Approvals
                         const isAuthorized = isApproverRole(user?.role);

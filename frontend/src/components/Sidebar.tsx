@@ -42,7 +42,7 @@ const ALL_LINKS = (role: string) => [
 const ROLE_DEFAULT_IDS: Record<string, string[]> = {
     ADMIN:     ['dashboard','students','teachers','classes','fees','expenses','roles','transport','attendance','report-card','tc','settings'],
     PRINCIPAL: ['dashboard','students','teachers','fees','attendance','report-card'],
-    ACCOUNTS:  ['dashboard','fees','tc'],
+    ACCOUNTS:  ['fees','tc'],
     TEACHER:   ['dashboard','my-classes','attendance','fees','notice','service-record'],
     TRANSPORT: ['dashboard','transport'],
     PARENT:    ['dashboard','profile','fees','attendance','notice'],

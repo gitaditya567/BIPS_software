@@ -8,7 +8,6 @@ import { CreditCard, CheckCircle2, AlertCircle, Download, Calendar, Check, Shiel
 export const PublicFeePayment: React.FC = () => {
     const [searchParams] = useSearchParams();
     const [searchQuery, setSearchQuery] = useState('');
-    const [dobQuery] = useState('');
     const [loading, setLoading] = useState(false);
     const [errorMsg, setErrorMsg] = useState('');
 

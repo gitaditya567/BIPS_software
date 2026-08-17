@@ -324,6 +324,7 @@ const getQuickLinks = (role: string) => {
 // ─── Main Component ────────────────────────────────────────────────────────────
 
 const RoleDashboard: React.FC = () => {
+    const navigate = useNavigate();
     const [user, setUser] = useState<any>(() => {
         const userRaw = localStorage.getItem('user');
         return userRaw ? JSON.parse(userRaw) : { name: 'User', role: 'ADMIN' };
@@ -331,6 +332,12 @@ const RoleDashboard: React.FC = () => {
     
     const role: string = user.role || 'ADMIN';
     const firstName = user.name?.split(' ')[0] || 'User';
+
+    useEffect(() => {
+        if (role === 'ACCOUNTS') {
+            navigate('/admin/fees');
+        }
+    }, [role, navigate]);
 
     const [statsData, setStatsData] = useState<any>({});
     const [fetchedActivities, setFetchedActivities] = useState<any[]>([]);
@@ -799,7 +806,6 @@ const RoleDashboard: React.FC = () => {
     
     // State for FAB menu
     const [fabOpen, setFabOpen] = useState(false);
-    const navigate = useNavigate();
 
     useEffect(() => {
         // Live Clock

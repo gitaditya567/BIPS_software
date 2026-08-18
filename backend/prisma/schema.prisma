@@ -10,6 +10,7 @@ datasource db {
 enum Role {
   ADMIN
   ACCOUNTS
+  ACCOUNTS2
   PRINCIPAL
   TEACHER
   TRANSPORT

@@ -34,6 +34,19 @@ async function main() {
         },
     });
 
+    const accounts2Password = await bcrypt.hash('bips321', 10);
+    const accounts2 = await prisma.user.upsert({
+        where: { email: 'accounts2@schoolerp.com' },
+        update: {},
+        create: {
+            email: 'accounts2@schoolerp.com',
+            password: accounts2Password,
+            role: 'ACCOUNTS2',
+            name: 'Accounts 2',
+            phone: '0987654322',
+        },
+    });
+
     const principalPassword = await bcrypt.hash('principal123', 10);
     const principal = await prisma.user.upsert({
         where: { email: 'principal@schoolerp.com' },

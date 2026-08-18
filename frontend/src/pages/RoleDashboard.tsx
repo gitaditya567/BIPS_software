@@ -334,7 +334,7 @@ const RoleDashboard: React.FC = () => {
     const firstName = user.name?.split(' ')[0] || 'User';
 
     useEffect(() => {
-        if (role === 'ACCOUNTS') {
+        if (role === 'ACCOUNTS2') {
             navigate('/admin/fees');
         }
     }, [role, navigate]);

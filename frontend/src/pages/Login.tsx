@@ -41,7 +41,7 @@ const Login: React.FC = () => {
             localStorage.setItem('token', token);
             localStorage.setItem('user', JSON.stringify(user));
 
-            if (user.role === 'ADMIN' || user.role === 'PRINCIPAL' || user.role === 'ACCOUNTS' || user.role === 'TRANSPORT') navigate('/admin');
+            if (user.role === 'ADMIN' || user.role === 'PRINCIPAL' || user.role === 'ACCOUNTS' || user.role === 'ACCOUNTS2' || user.role === 'TRANSPORT') navigate('/admin');
             else if (user.role === 'TEACHER') navigate('/teacher');
             else if (user.role === 'PARENT') navigate('/parent');
             else if (user.role === 'STUDENT') navigate('/student');
@@ -105,6 +105,7 @@ const Login: React.FC = () => {
                             <option value="ADMIN">Superadmin (Administrator)</option>
                             <option value="PRINCIPAL">Principal</option>
                             <option value="ACCOUNTS">Accounts</option>
+                            <option value="ACCOUNTS2">Accounts 2</option>
                             <option value="TEACHER">Teacher</option>
                             <option value="TRANSPORT">Transport</option>
                             <option value="PARENT">Parent</option>

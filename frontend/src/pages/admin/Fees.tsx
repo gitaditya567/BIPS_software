@@ -2775,7 +2775,7 @@ const Fees: React.FC = () => {
                         { id: 'structure', label: 'Fee Structure' },
                         { id: 'reports', label: 'Fee Reports' }
                     ].filter(tab => {
-                        if (user?.role === 'ACCOUNTS') {
+                        if (user?.role === 'ACCOUNTS2') {
                             return tab.id === 'collection' || tab.id === 'other_fees';
                         }
                         return true;
@@ -2785,7 +2785,7 @@ const Fees: React.FC = () => {
                         const isAuthorized = isApproverRole(user?.role);
                         if (tab.id === 'approvals' && !isAuthorized) return null;
                              // Accountant only for Drafts
-                        if (tab.id === 'drafts' && user?.role !== 'ACCOUNTS') return null;
+                        if (tab.id === 'drafts' && user?.role !== 'ACCOUNTS' && user?.role !== 'ACCOUNTS2') return null;
 
                         const isDisabled = tab.id === 'heads';
 
@@ -3310,7 +3310,7 @@ const Fees: React.FC = () => {
                             <div className="stat-card" style={{ display: 'block' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
                                     <h3 style={{ color: '#1e293b', fontSize: '1.1rem' }}>4. Previous & Recent Collections</h3>
-                                    {user?.role === 'ACCOUNTS' && <span style={{ fontSize: '0.8rem', color: '#64748b' }}>* Collections with discounts require Principal approval</span>}
+                                    {(user?.role === 'ACCOUNTS' || user?.role === 'ACCOUNTS2') && <span style={{ fontSize: '0.8rem', color: '#64748b' }}>* Collections with discounts require Principal approval</span>}
                                 </div>
                                 <div style={{ maxHeight: '400px', overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: '12px' }}>
                                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -4792,7 +4792,7 @@ const Fees: React.FC = () => {
                 </div>
             )}
 
-            {activeTab === 'drafts' && user?.role === 'ACCOUNTS' && (
+            {activeTab === 'drafts' && (user?.role === 'ACCOUNTS' || user?.role === 'ACCOUNTS2') && (
                 <div className="data-table-container shadow-lg">
                     <div className="table-header">
                         <div>

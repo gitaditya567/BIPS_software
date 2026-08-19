@@ -1659,6 +1659,10 @@ const Fees: React.FC = () => {
             // Clean query parameters from URL so modal doesn't pop up again on refresh
             const cleanUrl = window.location.pathname;
             window.history.replaceState({}, document.title, cleanUrl);
+        } else if (paymentStatus && (paymentStatus.toLowerCase() === 'rejected' || paymentStatus.toLowerCase() === 'failure' || paymentStatus.toLowerCase() === 'failed')) {
+            addNotification('fee', 'Payment Failed / Cancelled', 'Online PayU payment was cancelled or failed. No receipt generated.');
+            const cleanUrl = window.location.pathname;
+            window.history.replaceState({}, document.title, cleanUrl);
         }
     }, []);
 

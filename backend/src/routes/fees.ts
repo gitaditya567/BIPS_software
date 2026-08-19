@@ -699,11 +699,22 @@ router.post('/:id/approve', async (req, res) => {
         const { id } = req.params;
         const { approvedBy } = req.body;
 
+        const existing = await prisma.feePayment.findUnique({ where: { id } });
+        if (!existing) {
+            return res.status(404).json({ error: 'Fee payment not found' });
+        }
+
+        let receiptNo = existing.receiptNo;
+        if (!receiptNo || receiptNo.startsWith('DRAFT-') || receiptNo.startsWith('FAILED-') || receiptNo.startsWith('REJECTED-')) {
+            receiptNo = await generateNextReceiptNo();
+        }
+
         const updated = await prisma.feePayment.update({
             where: { id },
             data: {
                 status: 'APPROVED',
                 approvedBy,
+                receiptNo,
                 approvalDate: new Date()
             }
         });
@@ -712,6 +723,7 @@ router.post('/:id/approve', async (req, res) => {
         invalidateCache('dashboard');
         res.json({ success: true, data: updated });
     } catch (error) {
+        console.error('Approve fee error:', error);
         res.status(500).json({ error: 'Failed to approve fee' });
     }
 });
@@ -1784,17 +1796,29 @@ async function generateNextReceiptNo(): Promise<string> {
 
     let maxNum = 0;
     paymentsWithReceipt.forEach(p => {
-        if (p.receiptNo) {
-            const numStr = p.receiptNo.replace('RCP', '');
-            const parsed = parseInt(numStr, 10);
-            if (!isNaN(parsed) && parsed > maxNum) {
-                maxNum = parsed;
+        if (p.receiptNo && !p.receiptNo.startsWith('DRAFT-') && !p.receiptNo.startsWith('FAILED-') && !p.receiptNo.startsWith('REJECTED-') && !p.receiptNo.startsWith('RCP-FIX')) {
+            const match = p.receiptNo.match(/\d+/);
+            if (match) {
+                const parsed = parseInt(match[0], 10);
+                if (!isNaN(parsed) && parsed > maxNum) {
+                    maxNum = parsed;
+                }
             }
         }
     });
 
-    const nextNumber = maxNum + 1;
-    return 'RCP' + String(nextNumber).padStart(3, '0');
+    let nextNumber = maxNum + 1;
+    let candidate = 'RCP' + String(nextNumber).padStart(3, '0');
+
+    // Double check against collisions in DB
+    let exists = await prisma.feePayment.findFirst({ where: { receiptNo: candidate } });
+    while (exists) {
+        nextNumber++;
+        candidate = 'RCP' + String(nextNumber).padStart(3, '0');
+        exists = await prisma.feePayment.findFirst({ where: { receiptNo: candidate } });
+    }
+
+    return candidate;
 }
 
 // ── PayU Online Payment Endpoints ──
@@ -1983,8 +2007,14 @@ const payuResponse = async (req: express.Request, res: express.Response): Promis
         let assignedReceiptNo = feePaymentRecord?.receiptNo || '';
 
         if (feePaymentRecord) {
-            if (finalStatus === 'APPROVED' && (!assignedReceiptNo || assignedReceiptNo.startsWith('DRAFT-'))) {
-                assignedReceiptNo = await generateNextReceiptNo();
+            if (finalStatus === 'APPROVED') {
+                if (!assignedReceiptNo || assignedReceiptNo.startsWith('DRAFT-') || assignedReceiptNo.startsWith('FAILED-') || assignedReceiptNo.startsWith('REJECTED-')) {
+                    assignedReceiptNo = await generateNextReceiptNo();
+                }
+            } else {
+                if (!assignedReceiptNo || assignedReceiptNo.startsWith('DRAFT-')) {
+                    assignedReceiptNo = `FAILED-${feePaymentRecord.txnid || feePaymentRecord.id}`;
+                }
             }
 
             await prisma.feePayment.update({
@@ -1993,7 +2023,7 @@ const payuResponse = async (req: express.Request, res: express.Response): Promis
                     status: finalStatus,
                     gatewayStatus: String(status || 'UNKNOWN'),
                     payuMoneyId: mihpayid ? String(mihpayid) : null,
-                    receiptNo: finalStatus === 'APPROVED' ? assignedReceiptNo : null,
+                    receiptNo: assignedReceiptNo,
                     approvalDate: finalStatus === 'APPROVED' ? new Date() : null,
                     rawGatewayResponse: JSON.stringify(postData)
                 }
@@ -2088,8 +2118,14 @@ router.post('/payu/webhook', async (req: express.Request, res: express.Response)
             const s2s = await verifyTransactionWithPayU(txnid);
             const isApproved = status === 'success' || s2s.success;
             let receiptNo = payment.receiptNo;
-            if (isApproved && !receiptNo) {
-                receiptNo = await generateNextReceiptNo();
+            if (isApproved) {
+                if (!receiptNo || receiptNo.startsWith('DRAFT-') || receiptNo.startsWith('FAILED-') || receiptNo.startsWith('REJECTED-')) {
+                    receiptNo = await generateNextReceiptNo();
+                }
+            } else {
+                if (!receiptNo || receiptNo.startsWith('DRAFT-')) {
+                    receiptNo = `FAILED-${payment.txnid || payment.id}`;
+                }
             }
 
             await prisma.feePayment.update({
@@ -2098,7 +2134,7 @@ router.post('/payu/webhook', async (req: express.Request, res: express.Response)
                     status: isApproved ? 'APPROVED' : 'REJECTED',
                     gatewayStatus: status || 'UNKNOWN',
                     payuMoneyId: mihpayid ? String(mihpayid) : null,
-                    receiptNo: isApproved ? receiptNo : null,
+                    receiptNo: receiptNo,
                     approvalDate: isApproved ? new Date() : null,
                     rawGatewayResponse: JSON.stringify(postData)
                 }
@@ -2125,7 +2161,10 @@ router.get('/payu/verify-status/:txnid', async (req: express.Request, res: expre
         const payment = await prisma.feePayment.findFirst({ where: { txnid } });
 
         if (payment && payment.status === 'PENDING' && s2sResult.success) {
-            const receiptNo = payment.receiptNo || (await generateNextReceiptNo());
+            let receiptNo = payment.receiptNo;
+            if (!receiptNo || receiptNo.startsWith('DRAFT-') || receiptNo.startsWith('FAILED-') || receiptNo.startsWith('REJECTED-')) {
+                receiptNo = await generateNextReceiptNo();
+            }
             const updated = await prisma.feePayment.update({
                 where: { id: payment.id },
                 data: {

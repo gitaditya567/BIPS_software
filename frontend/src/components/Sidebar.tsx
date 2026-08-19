@@ -11,6 +11,7 @@ const ROLE_META: Record<string, { label: string; color: string; bg: string }> = 
     ADMIN:      { label: 'Superadmin',  color: '#4a90e2', bg: 'rgba(74,144,226,0.15)' },
     PRINCIPAL:  { label: 'Principal',   color: '#805ad5', bg: 'rgba(128,90,213,0.15)' },
     ACCOUNTS:   { label: 'Accounts',    color: '#38a169', bg: 'rgba(56,161,105,0.15)' },
+    ACCOUNTS2:  { label: 'Accounts 2',  color: '#0d9488', bg: 'rgba(13,148,136,0.15)' },
     TEACHER:    { label: 'Teacher',     color: '#3182ce', bg: 'rgba(49,130,206,0.15)' },
     TRANSPORT:  { label: 'Transport',   color: '#d69e2e', bg: 'rgba(214,158,46,0.15)' },
     PARENT:     { label: 'Parent',      color: '#e53e3e', bg: 'rgba(229,62,62,0.15)' },
@@ -42,7 +43,8 @@ const ALL_LINKS = (role: string) => [
 const ROLE_DEFAULT_IDS: Record<string, string[]> = {
     ADMIN:     ['dashboard','students','teachers','classes','fees','expenses','roles','transport','attendance','report-card','tc','settings'],
     PRINCIPAL: ['dashboard','students','teachers','fees','attendance','report-card'],
-    ACCOUNTS:  ['fees','tc'],
+    ACCOUNTS:  ['dashboard','fees','tc'],
+    ACCOUNTS2: ['fees','tc'],
     TEACHER:   ['dashboard','my-classes','attendance','fees','notice','service-record'],
     TRANSPORT: ['dashboard','transport'],
     PARENT:    ['dashboard','profile','fees','attendance','notice'],

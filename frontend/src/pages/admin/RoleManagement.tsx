@@ -182,7 +182,7 @@ export const MODULE_MATRIX: ModulePermission[] = [
     }
 ];
 
-const ROLES = ['ADMIN', 'PRINCIPAL', 'ACCOUNTS', 'TEACHER', 'TRANSPORT', 'PARENT'];
+const ROLES = ['ADMIN', 'PRINCIPAL', 'ACCOUNTS', 'ACCOUNTS2', 'TEACHER', 'TRANSPORT', 'PARENT'];
 
 // Default feature permissions per role
 const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
@@ -204,6 +204,10 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
         'fees', 'fees.view', 'fees.collect', 'fees.other_fees', 'fees.approve', 'fees.structure', 'fees.dues', 'fees.previous_due', 'expenses.view',
         'tc', 'tc.view', 'tc.issue', 'tc.print',
         'notice', 'notice.view'
+    ],
+    ACCOUNTS2: [
+        'fees', 'fees.collect', 'fees.other_fees',
+        'tc', 'tc.view', 'tc.issue', 'tc.print'
     ],
     TEACHER: [
         'dashboard', 'dashboard.view', 'dashboard.quick_links',

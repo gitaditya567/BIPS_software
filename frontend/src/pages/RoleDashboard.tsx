@@ -1408,6 +1408,61 @@ const RoleDashboard: React.FC = () => {
                                             );
                                         })}
                                     </tbody>
+                                    <tfoot>
+                                        <tr style={{ 
+                                            backgroundColor: '#f1f5f9', 
+                                            borderTop: '2px solid #cbd5e1', 
+                                            borderBottom: '2px solid #cbd5e1', 
+                                            fontWeight: '800', 
+                                            fontSize: '0.92rem',
+                                            color: '#1e293b'
+                                        }}>
+                                            <td style={{ padding: '1.1rem 0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                                Total / Grand Total
+                                            </td>
+                                            <td style={{ padding: '1.1rem 0.5rem', textAlign: 'center' }}>
+                                                {revenueData.classMatrix.reduce((sum: number, c: any) => sum + (c.totalStudents || 0), 0)}
+                                            </td>
+                                            <td style={{ padding: '1.1rem 0.5rem', textAlign: 'right', color: '#2b6cb0' }}>
+                                                ₹{revenueData.classMatrix.reduce((sum: number, c: any) => sum + (c.yearlyProjected || 0), 0).toLocaleString('en-IN')}
+                                            </td>
+                                            <td style={{ padding: '1.1rem 0.5rem', textAlign: 'right', color: '#2f855a' }}>
+                                                ₹{revenueData.classMatrix.reduce((sum: number, c: any) => sum + (c.collected || 0), 0).toLocaleString('en-IN')}
+                                            </td>
+                                            <td style={{ padding: '1.1rem 0.5rem', textAlign: 'right', color: '#dd6b20' }}>
+                                                ₹{revenueData.classMatrix.reduce((sum: number, c: any) => sum + (c.discountGiven || 0), 0).toLocaleString('en-IN')}
+                                            </td>
+                                            <td style={{ padding: '1.1rem 0.5rem', textAlign: 'right', color: '#c53030', fontWeight: '800' }}>
+                                                ₹{revenueData.classMatrix.reduce((sum: number, c: any) => sum + (c.dueTillNow || 0), 0).toLocaleString('en-IN')}
+                                            </td>
+                                            <td style={{ padding: '1.1rem 0.5rem', textAlign: 'right', color: '#e53e3e', fontWeight: '800' }}>
+                                                ₹{revenueData.classMatrix.reduce((sum: number, c: any) => sum + (c.outstanding || 0), 0).toLocaleString('en-IN')}
+                                            </td>
+                                            <td style={{ padding: '1.1rem 0.5rem' }}>
+                                                {(() => {
+                                                    const totProj = revenueData.classMatrix.reduce((sum: number, c: any) => sum + (c.yearlyProjected || 0), 0);
+                                                    const totColl = revenueData.classMatrix.reduce((sum: number, c: any) => sum + (c.collected || 0), 0);
+                                                    const totDisc = revenueData.classMatrix.reduce((sum: number, c: any) => sum + (c.discountGiven || 0), 0);
+                                                    const eff = totProj > 0 ? Math.min(100, Math.round(((totColl + totDisc) / totProj) * 100)) : 0;
+                                                    return (
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                            <div style={{ flex: 1, height: '8px', backgroundColor: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
+                                                                <div style={{ 
+                                                                    width: `${eff}%`, 
+                                                                    height: '100%', 
+                                                                    backgroundColor: eff >= 80 ? '#48bb78' : eff >= 50 ? '#d69e2e' : '#e53e3e',
+                                                                    borderRadius: '4px' 
+                                                                }} />
+                                                            </div>
+                                                            <span style={{ fontSize: '0.8rem', fontWeight: '800', color: '#1e293b', width: '35px', textAlign: 'right' }}>
+                                                                {eff}%
+                                                            </span>
+                                                        </div>
+                                                    );
+                                                })()}
+                                            </td>
+                                        </tr>
+                                    </tfoot>
                                 </table>
                             </div>
                         </SectionCard>

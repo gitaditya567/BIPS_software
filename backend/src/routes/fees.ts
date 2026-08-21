@@ -610,6 +610,10 @@ router.post('/collect', async (req, res) => {
             feeHead, paymentMode, month, year, submittedBy, remark
         } = req.body;
 
+        if (!studentId || typeof studentId !== 'string' || !/^[0-9a-fA-F]{24}$/.test(studentId)) {
+            return res.status(400).json({ error: 'A valid studentId is required.' });
+        }
+
         const isPending = Number(discount) > 0;
 
         // Prevent duplicate submissions (same student, month, year, amount, and feeHead within 30 seconds)
@@ -1092,7 +1096,7 @@ function normalizeDob(dobStr: string | null | undefined): string {
 // Public Student Fee Search Endpoint for /feeonline portal
 router.get('/public/student-dues', async (req: express.Request, res: express.Response): Promise<any> => {
     try {
-        const rawQuery = String(req.query.admissionNo || req.query.query || '').trim();
+        const rawQuery = String(req.query.srNo || req.query.admissionNo || req.query.query || '').trim();
         const rawDob = String(req.query.dob || req.query.dateOfBirth || '').trim();
 
         if (!rawQuery) {
@@ -1840,7 +1844,9 @@ router.post('/payu/initiate', async (req: express.Request, res: express.Response
             customerPhone
         } = req.body;
 
-        if (!studentId || !amountPaid) {
+        const effectiveAmountPaid = amountPaid || req.body.amount;
+
+        if (!studentId || !effectiveAmountPaid) {
             return res.status(400).json({ error: 'studentId and amountPaid are required' });
         }
 
@@ -1862,9 +1868,9 @@ router.post('/payu/initiate', async (req: express.Request, res: express.Response
         const pendingPayment = await prisma.feePayment.create({
             data: {
                 studentId,
-                amountPaid: Number(amountPaid),
-                totalFee: Number(totalFee || amountPaid),
-                discount: Number(discount),
+                amountPaid: Number(effectiveAmountPaid),
+                totalFee: Number(totalFee || effectiveAmountPaid),
+                discount: Number(discount || 0),
                 feeHead: feeHead || 'Online Fee Payment',
                 month: month || null,
                 year: year || null,
@@ -1886,7 +1892,7 @@ router.post('/payu/initiate', async (req: express.Request, res: express.Response
         const sourceFlag = req.body.udf4 || 'Admin';
         const payuParams = {
             txnid,
-            amount: Number(amountPaid),
+            amount: Number(effectiveAmountPaid),
             productinfo,
             firstname,
             email,
@@ -1907,7 +1913,7 @@ router.post('/payu/initiate', async (req: express.Request, res: express.Response
             params: {
                 key: config.key,
                 txnid,
-                amount: Number(amountPaid).toFixed(2),
+                amount: Number(effectiveAmountPaid).toFixed(2),
                 productinfo,
                 firstname,
                 email,

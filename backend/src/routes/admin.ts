@@ -12,7 +12,10 @@ import { getCache, setCache, invalidateCache } from '../lib/cache';
 router.post('/classes', async (req, res) => {
     try {
         const { name } = req.body;
-        const newClass = await prisma.class.create({ data: { name } });
+        if (!name || typeof name !== 'string' || !name.trim()) {
+            return res.status(400).json({ error: 'Class name is required' });
+        }
+        const newClass = await prisma.class.create({ data: { name: name.trim() } });
         res.json(newClass);
     } catch (error) {
         res.status(500).json({ error: 'Failed to create class' });
@@ -208,7 +211,9 @@ router.post('/teachers', async (req, res) => {
             assignClass, assignSection, assignSubject
         } = req.body;
 
-        // Generate TCH ID first to ensure uniqueness
+        if (!teacherName || !teacherName.trim()) {
+            return res.status(400).json({ error: 'Teacher name is required' });
+        }
         const year = new Date().getFullYear();
         const latestTeacher = await prisma.teacherProfile.findFirst({
             where: { employeeId: { startsWith: `TCH-${year}` } },
@@ -461,15 +466,23 @@ router.post('/students', async (req, res) => {
             prevSchoolName, prevClass, prevSchoolAddress, prevMarks, transportStopId
         } = req.body;
 
-        const name = `${firstName} ${lastName}`.trim();
+        const name = `${firstName || ''} ${lastName || ''}`.trim() || req.body.name;
+        if (!name || !name.trim()) {
+            return res.status(400).json({ error: 'Student name is required' });
+        }
+        if (!admissionNo || !admissionNo.trim()) {
+            return res.status(400).json({ error: 'Admission number is required' });
+        }
+
+        const studentEmail = email || `${admissionNo.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()}@bips.local`;
 
         // Check if user exists
-        const existing = await prisma.user.findUnique({ where: { email } });
+        const existing = await prisma.user.findUnique({ where: { email: studentEmail } });
         if (existing) {
             return res.status(400).json({ error: 'Email already exists' });
         }
 
-        const hashedPassword = await bcrypt.hash(password, 10);
+        const hashedPassword = await bcrypt.hash(password || dob || '123456', 10);
 
         // Generate Student ID (e.g., STU-YYYY-XXXX)
         const year = new Date().getFullYear();
@@ -1173,6 +1186,7 @@ router.get('/dashboard/revenue', async (req, res) => {
         let schoolCollected = 0; // Fixed: Was double counting by initializing with totalCollectedSession
         let schoolOutstanding = 0;
         let schoolConcessions = 0; // Fixed: Was double counting by initializing with totalConcessionsSession
+        let schoolDueTillNow = 0;
 
         let schoolTuitionExpected = 0;
         let schoolTransportExpected = 0;
@@ -1190,6 +1204,7 @@ router.get('/dashboard/revenue', async (req, res) => {
             let collected = 0;
             let discountGiven = 0;
             let classOutstanding = 0;
+            let classDueTillNow = 0;
 
             let tuitionExpected = 0;
             let transportExpected = 0;
@@ -1251,7 +1266,12 @@ router.get('/dashboard/revenue', async (req, res) => {
                 const totalStudentProjected = prevDue + transportProj + studentMonthlyProj + studentOneTimeProj;
                 yearlyProjected += totalStudentProjected;
 
-                // Calculate outstanding based on full 12 months (Total Expected)
+                // Expected up to elapsed months (Due Till Now)
+                const transportTillNow = busFare * monthsToCalculate;
+                const monthlyFeeTillNow = studentMonthlyFeeAmount * monthsToCalculate;
+                const expectedUpToNow = prevDue + transportTillNow + monthlyFeeTillNow + studentOneTimeProj;
+
+                // Calculate outstanding based on full 12 months (Total Expected) and Due Till Now
                 let totalPaidAndDiscount = 0;
                 (student as any).fees.forEach((payment: any) => {
                     collected += payment.amountPaid || 0;
@@ -1261,14 +1281,19 @@ router.get('/dashboard/revenue', async (req, res) => {
 
                 const studentOutstanding = Math.max(0, totalStudentProjected - totalPaidAndDiscount);
                 classOutstanding += studentOutstanding;
+
+                const studentDueTillNow = Math.max(0, expectedUpToNow - totalPaidAndDiscount);
+                classDueTillNow += studentDueTillNow;
             });
 
             const outstanding = classOutstanding;
+            const dueTillNow = classDueTillNow;
 
             schoolExpectedRevenue += yearlyProjected;
             schoolCollected += collected;
             schoolConcessions += discountGiven;
             schoolOutstanding += outstanding;
+            schoolDueTillNow += dueTillNow;
             schoolTuitionExpected += tuitionExpected;
             schoolTransportExpected += transportExpected;
             schoolAdmissionExpected += admissionExpected;
@@ -1285,6 +1310,7 @@ router.get('/dashboard/revenue', async (req, res) => {
                 collected,
                 outstanding,
                 discountGiven,
+                dueTillNow,
                 breakdown: {
                     tuition: tuitionExpected,
                     transport: transportExpected,
@@ -1305,6 +1331,7 @@ router.get('/dashboard/revenue', async (req, res) => {
                 totalCollected: schoolCollected,
                 totalOutstanding: schoolOutstanding,
                 totalConcessions: schoolConcessions,
+                totalDueTillNow: schoolDueTillNow,
                 breakdown: {
                     tuition: schoolTuitionExpected,
                     transport: schoolTransportExpected,

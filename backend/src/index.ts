@@ -57,14 +57,14 @@ app.get('/api/health', async (req, res) => {
 
 app.get('/api/debug-routes', (req, res) => {
     const routes: any[] = [];
-    app._router.stack.forEach((middleware: any) => {
+    app._router?.stack?.forEach((middleware: any) => {
         if (middleware.route) { // routes registered directly on the app
             routes.push(`${Object.keys(middleware.route.methods).join(',').toUpperCase()} ${middleware.route.path}`);
-        } else if (middleware.name === 'router') { // router middleware
+        } else if (middleware.name === 'router' && Array.isArray(middleware.handle?.stack)) { // router middleware
             middleware.handle.stack.forEach((handler: any) => {
                 const route = handler.route;
                 if (route) {
-                    routes.push(`${Object.keys(route.methods).join(',').toUpperCase()} ${middleware.regexp.toString().replace('/^\\', '').replace('\\/i', '')}${route.path}`);
+                    routes.push(`${Object.keys(route.methods).join(',').toUpperCase()} ${middleware.regexp?.toString().replace('/^\\', '').replace('\\/i', '') || ''}${route.path}`);
                 }
             });
         }

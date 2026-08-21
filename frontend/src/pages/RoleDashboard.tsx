@@ -10,6 +10,8 @@ import axios from 'axios';
 import Chart from 'react-apexcharts';
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 // ─── Time Formatter ──────────────────────────────────────────────────────────
 const formatTimeAgo = (dateStr: string) => {
@@ -639,14 +641,15 @@ const RoleDashboard: React.FC = () => {
                 { header: 'Yearly Projected (Gross)', key: 'yearlyProjected', width: 28 },
                 { header: 'Collected (Net)', key: 'collected', width: 20 },
                 { header: 'Discounts Given', key: 'discountGiven', width: 20 },
-                { header: 'Current Outstanding (Due)', key: 'currentOutstanding', width: 28 },
+                { header: 'Till Month Due', key: 'dueTillNow', width: 22 },
+                { header: 'Yearly Outstanding (Pending)', key: 'currentOutstanding', width: 28 },
                 { header: 'Collection %', key: 'collectionPercent', width: 18 }
             ];
 
             worksheet.columns = cols;
 
             // Report Header
-            worksheet.mergeCells('A1:G1');
+            worksheet.mergeCells('A1:H1');
             const row1Cell = worksheet.getCell('A1');
             row1Cell.value = 'BIPS SENIOR SECONDARY SCHOOL';
             row1Cell.font = { name: 'Arial', size: 16, bold: true, color: { argb: 'FFFFFFFF' } };
@@ -654,7 +657,7 @@ const RoleDashboard: React.FC = () => {
             row1Cell.alignment = { vertical: 'middle', horizontal: 'center' };
             worksheet.getRow(1).height = 40;
 
-            worksheet.mergeCells('A2:G2');
+            worksheet.mergeCells('A2:H2');
             const row2Cell = worksheet.getCell('A2');
             row2Cell.value = 'Class-Wise Financial Matrix (School Snapshot)';
             row2Cell.font = { name: 'Arial', size: 12, bold: true, color: { argb: 'FF334155' } };
@@ -662,7 +665,7 @@ const RoleDashboard: React.FC = () => {
             worksheet.getRow(2).height = 25;
 
             const activeSessionStr = localStorage.getItem('activeSession') || '2026-2027';
-            worksheet.mergeCells('A3:G3');
+            worksheet.mergeCells('A3:H3');
             const row3Cell = worksheet.getCell('A3');
             row3Cell.value = `Academic Session: ${activeSessionStr}  |  Generated On: ${new Date().toLocaleDateString('en-GB')} at ${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`;
             row3Cell.font = { name: 'Arial', size: 10, italic: true, color: { argb: 'FF64748B' } };
@@ -692,6 +695,7 @@ const RoleDashboard: React.FC = () => {
             let grandProjected = 0;
             let grandCollected = 0;
             let grandDiscount = 0;
+            let grandDueTillNow = 0;
             let grandOutstanding = 0;
 
             revenueData.classMatrix.forEach((cls: any, index: number) => {
@@ -699,7 +703,8 @@ const RoleDashboard: React.FC = () => {
                 const yearlyProjected = Math.round(cls.yearlyProjected || 0);
                 const collected = Math.round(cls.collected || 0);
                 const discountGiven = Math.round(cls.discountGiven || 0);
-                const currentOutstanding = Math.round(cls.currentOutstanding || 0);
+                const dueTillNow = Math.round(cls.dueTillNow || 0);
+                const currentOutstanding = Math.round(cls.outstanding || cls.currentOutstanding || 0);
                 const collectionPercent = yearlyProjected > 0 
                     ? Math.round(((collected + discountGiven) / yearlyProjected) * 100) 
                     : 0;
@@ -708,6 +713,7 @@ const RoleDashboard: React.FC = () => {
                 grandProjected += yearlyProjected;
                 grandCollected += collected;
                 grandDiscount += discountGiven;
+                grandDueTillNow += dueTillNow;
                 grandOutstanding += currentOutstanding;
 
                 const rowNum = 6 + index;
@@ -718,6 +724,7 @@ const RoleDashboard: React.FC = () => {
                     yearlyProjected,
                     collected,
                     discountGiven,
+                    dueTillNow,
                     currentOutstanding,
                     `${collectionPercent}%`
                 ];
@@ -740,7 +747,7 @@ const RoleDashboard: React.FC = () => {
                         right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
                     };
 
-                    if ([3, 4, 5, 6].includes(colNumber)) {
+                    if ([3, 4, 5, 6, 7].includes(colNumber)) {
                         cell.numFmt = '₹#,##,##0';
                     }
                 });
@@ -759,6 +766,7 @@ const RoleDashboard: React.FC = () => {
                 grandProjected,
                 grandCollected,
                 grandDiscount,
+                grandDueTillNow,
                 grandOutstanding,
                 `${overallEfficiency}%`
             ];
@@ -788,6 +796,140 @@ const RoleDashboard: React.FC = () => {
         } catch (error) {
             console.error("Failed to export Matrix Excel report:", error);
             alert("Failed to export Excel. Please try again.");
+        }
+    };
+
+    const downloadMatrixPDF = () => {
+        if (!revenueData || !revenueData.classMatrix) {
+            alert("No data available to export.");
+            return;
+        }
+
+        try {
+            const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+            const activeSessionStr = localStorage.getItem('activeSession') || '2026-2027';
+            const generatedOn = `${new Date().toLocaleDateString('en-GB')} at ${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`;
+
+            // Header Banner
+            doc.setFillColor(30, 41, 59); // Slate-800
+            doc.rect(0, 0, 842, 50, 'F');
+
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(16);
+            doc.setTextColor(255, 255, 255);
+            doc.text('BIPS SENIOR SECONDARY SCHOOL', 421, 32, { align: 'center' });
+
+            doc.setFontSize(12);
+            doc.setTextColor(30, 41, 59);
+            doc.text('Class-Wise Financial Matrix (School Snapshot Report)', 421, 75, { align: 'center' });
+
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(9);
+            doc.setTextColor(100, 116, 139);
+            doc.text(`Academic Session: ${activeSessionStr}   |   Generated On: ${generatedOn}`, 421, 92, { align: 'center' });
+
+            const tableHeaders = [
+                ['Class Name', 'Students', 'Yearly Projected', 'Collected (Net)', 'Discounts Given', 'Till Month Due', 'Yearly Outstanding', 'Collection %']
+            ];
+
+            let grandStudents = 0;
+            let grandProjected = 0;
+            let grandCollected = 0;
+            let grandDiscount = 0;
+            let grandDueTillNow = 0;
+            let grandOutstanding = 0;
+
+            const tableRows = revenueData.classMatrix.map((cls: any) => {
+                const totalStudents = cls.totalStudents || 0;
+                const yearlyProjected = Math.round(cls.yearlyProjected || 0);
+                const collected = Math.round(cls.collected || 0);
+                const discountGiven = Math.round(cls.discountGiven || 0);
+                const dueTillNow = Math.round(cls.dueTillNow || 0);
+                const currentOutstanding = Math.round(cls.outstanding || cls.currentOutstanding || 0);
+                const collectionPercent = yearlyProjected > 0 
+                    ? Math.round(((collected + discountGiven) / yearlyProjected) * 100) 
+                    : 0;
+
+                grandStudents += totalStudents;
+                grandProjected += yearlyProjected;
+                grandCollected += collected;
+                grandDiscount += discountGiven;
+                grandDueTillNow += dueTillNow;
+                grandOutstanding += currentOutstanding;
+
+                return [
+                    cls.className,
+                    totalStudents.toString(),
+                    `₹${yearlyProjected.toLocaleString('en-IN')}`,
+                    `₹${collected.toLocaleString('en-IN')}`,
+                    `₹${discountGiven.toLocaleString('en-IN')}`,
+                    `₹${dueTillNow.toLocaleString('en-IN')}`,
+                    `₹${currentOutstanding.toLocaleString('en-IN')}`,
+                    `${collectionPercent}%`
+                ];
+            });
+
+            const overallEfficiency = grandProjected > 0 
+                ? Math.round(((grandCollected + grandDiscount) / grandProjected) * 100) 
+                : 0;
+
+            const footerRow = [
+                'GRAND TOTAL',
+                grandStudents.toString(),
+                `₹${grandProjected.toLocaleString('en-IN')}`,
+                `₹${grandCollected.toLocaleString('en-IN')}`,
+                `₹${grandDiscount.toLocaleString('en-IN')}`,
+                `₹${grandDueTillNow.toLocaleString('en-IN')}`,
+                `₹${grandOutstanding.toLocaleString('en-IN')}`,
+                `${overallEfficiency}%`
+            ];
+
+            autoTable(doc, {
+                startY: 110,
+                head: tableHeaders,
+                body: tableRows,
+                foot: [footerRow],
+                theme: 'grid',
+                headStyles: {
+                    fillColor: [37, 99, 235], // Blue-600
+                    textColor: [255, 255, 255],
+                    fontStyle: 'bold',
+                    fontSize: 9,
+                    halign: 'center',
+                    valign: 'middle'
+                },
+                footStyles: {
+                    fillColor: [226, 232, 240], // Slate-200
+                    textColor: [15, 23, 42],
+                    fontStyle: 'bold',
+                    fontSize: 9,
+                    valign: 'middle'
+                },
+                bodyStyles: {
+                    fontSize: 8.5,
+                    textColor: [51, 65, 85],
+                    valign: 'middle'
+                },
+                columnStyles: {
+                    0: { halign: 'left', fontStyle: 'bold' },
+                    1: { halign: 'center' },
+                    2: { halign: 'right', textColor: [43, 108, 176] },
+                    3: { halign: 'right', textColor: [47, 133, 90] },
+                    4: { halign: 'right', textColor: [221, 107, 32] },
+                    5: { halign: 'right', textColor: [197, 48, 48], fontStyle: 'bold' },
+                    6: { halign: 'right', textColor: [229, 62, 62], fontStyle: 'bold' },
+                    7: { halign: 'center', fontStyle: 'bold' }
+                },
+                alternateRowStyles: {
+                    fillColor: [248, 250, 252]
+                },
+                margin: { left: 30, right: 30 }
+            });
+
+            doc.save(`Class_Wise_Financial_Matrix_${activeSessionStr}_${new Date().toISOString().split('T')[0]}.pdf`);
+        } catch (error) {
+            console.error("Failed to export Matrix PDF report:", error);
+            alert("Failed to export PDF. Please try again.");
         }
     };
 
@@ -1003,37 +1145,70 @@ const RoleDashboard: React.FC = () => {
                         <SectionCard 
                             title="📊 Class-Wise Financial Matrix (School Snapshot)"
                             action={
-                                <button 
-                                    onClick={downloadMatrixExcel}
-                                    style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '0.5rem',
-                                        backgroundColor: '#10B981', // Emerald green for Excel
-                                        color: 'white',
-                                        border: 'none',
-                                        padding: '0.6rem 1.2rem',
-                                        borderRadius: '10px',
-                                        cursor: 'pointer',
-                                        fontWeight: '700',
-                                        fontSize: '0.85rem',
-                                        boxShadow: '0 4px 6px -1px rgba(16, 185, 129, 0.2)',
-                                        transition: 'all 0.2s',
-                                        outline: 'none'
-                                    }}
-                                    onMouseOver={e => {
-                                        e.currentTarget.style.backgroundColor = '#059669';
-                                        e.currentTarget.style.transform = 'translateY(-1px)';
-                                        e.currentTarget.style.boxShadow = '0 6px 8px -1px rgba(16, 185, 129, 0.3)';
-                                    }}
-                                    onMouseOut={e => {
-                                        e.currentTarget.style.backgroundColor = '#10B981';
-                                        e.currentTarget.style.transform = 'translateY(0)';
-                                        e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(16, 185, 129, 0.2)';
-                                    }}
-                                >
-                                    <Download size={16} /> Excel Download
-                                </button>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                    <button 
+                                        onClick={downloadMatrixExcel}
+                                        style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '0.4rem',
+                                            backgroundColor: '#10B981', // Emerald green for Excel
+                                            color: 'white',
+                                            border: 'none',
+                                            padding: '0.55rem 1.1rem',
+                                            borderRadius: '10px',
+                                            cursor: 'pointer',
+                                            fontWeight: '700',
+                                            fontSize: '0.85rem',
+                                            boxShadow: '0 4px 6px -1px rgba(16, 185, 129, 0.2)',
+                                            transition: 'all 0.2s',
+                                            outline: 'none'
+                                        }}
+                                        onMouseOver={e => {
+                                            e.currentTarget.style.backgroundColor = '#059669';
+                                            e.currentTarget.style.transform = 'translateY(-1px)';
+                                            e.currentTarget.style.boxShadow = '0 6px 8px -1px rgba(16, 185, 129, 0.3)';
+                                        }}
+                                        onMouseOut={e => {
+                                            e.currentTarget.style.backgroundColor = '#10B981';
+                                            e.currentTarget.style.transform = 'translateY(0)';
+                                            e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(16, 185, 129, 0.2)';
+                                        }}
+                                    >
+                                        <Download size={15} /> Excel Download
+                                    </button>
+                                    <button 
+                                        onClick={downloadMatrixPDF}
+                                        style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '0.4rem',
+                                            backgroundColor: '#EF4444', // Red for PDF
+                                            color: 'white',
+                                            border: 'none',
+                                            padding: '0.55rem 1.1rem',
+                                            borderRadius: '10px',
+                                            cursor: 'pointer',
+                                            fontWeight: '700',
+                                            fontSize: '0.85rem',
+                                            boxShadow: '0 4px 6px -1px rgba(239, 68, 68, 0.2)',
+                                            transition: 'all 0.2s',
+                                            outline: 'none'
+                                        }}
+                                        onMouseOver={e => {
+                                            e.currentTarget.style.backgroundColor = '#DC2626';
+                                            e.currentTarget.style.transform = 'translateY(-1px)';
+                                            e.currentTarget.style.boxShadow = '0 6px 8px -1px rgba(239, 68, 68, 0.3)';
+                                        }}
+                                        onMouseOut={e => {
+                                            e.currentTarget.style.backgroundColor = '#EF4444';
+                                            e.currentTarget.style.transform = 'translateY(0)';
+                                            e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(239, 68, 68, 0.2)';
+                                        }}
+                                    >
+                                        <FileText size={15} /> PDF Download
+                                    </button>
+                                </div>
                             }
                         >
                             <div style={{ overflowX: 'auto' }}>
@@ -1045,6 +1220,7 @@ const RoleDashboard: React.FC = () => {
                                             <th style={{ padding: '1rem 0.5rem', textAlign: 'right' }}>Yearly Projected (Gross)</th>
                                             <th style={{ padding: '1rem 0.5rem', textAlign: 'right' }}>Collected (Net)</th>
                                             <th style={{ padding: '1rem 0.5rem', textAlign: 'right' }}>Discounts Given</th>
+                                            <th style={{ padding: '1rem 0.5rem', textAlign: 'right', color: '#c53030' }} title="Dues pending for elapsed months up to current date">Till Month Due</th>
                                             <th style={{ padding: '1rem 0.5rem', textAlign: 'right' }}>Yearly Outstanding (Pending)</th>
                                             <th style={{ padding: '1rem 0.5rem', width: '180px' }}>Collection %</th>
                                         </tr>
@@ -1083,6 +1259,9 @@ const RoleDashboard: React.FC = () => {
                                                         <td style={{ padding: '1rem 0.5rem', textAlign: 'right', color: '#dd6b20' }}>
                                                             ₹{cls.discountGiven.toLocaleString('en-IN')}
                                                         </td>
+                                                        <td style={{ padding: '1rem 0.5rem', textAlign: 'right', color: cls.dueTillNow > 0 ? '#c53030' : '#48bb78', fontWeight: '700' }} title="Pending Dues up to current month">
+                                                            ₹{(cls.dueTillNow || 0).toLocaleString('en-IN')}
+                                                        </td>
                                                         <td style={{ padding: '1rem 0.5rem', textAlign: 'right', color: cls.outstanding > 0 ? '#e53e3e' : '#48bb78' }}>
                                                             ₹{cls.outstanding.toLocaleString('en-IN')}
                                                         </td>
@@ -1104,7 +1283,7 @@ const RoleDashboard: React.FC = () => {
                                                     </tr>
                                                     {isExpanded && (
                                                         <tr>
-                                                            <td colSpan={7} style={{ backgroundColor: '#f7fafc', padding: '1.25rem' }}>
+                                                            <td colSpan={8} style={{ backgroundColor: '#f7fafc', padding: '1.25rem' }}>
                                                                 <div style={{
                                                                     display: 'grid',
                                                                     gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',

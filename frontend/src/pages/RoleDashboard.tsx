@@ -59,7 +59,7 @@ const AnimatedNumber = ({ value, isCurrency = false, suffix = '' }: { value: num
 
 // ─── Reusable Subcomponents ──────────────────────────────────────────────────
 
-const StatCard = ({ title, value, icon, color, trend, isNegative, sparklineData }: any) => {
+const StatCard = ({ title, value, icon, color, trend, isNegative, sparklineData, tooltip }: any) => {
     const sparklineOptions = {
         chart: { type: 'area', sparkline: { enabled: true }, animations: { enabled: true, easing: 'easeinout', speed: 800 } },
         stroke: { curve: 'smooth', width: 2 },
@@ -78,7 +78,7 @@ const StatCard = ({ title, value, icon, color, trend, isNegative, sparklineData 
     };
 
     return (
-        <div style={{
+        <div title={tooltip} style={{
             backgroundColor: 'white',
             padding: '1.5rem',
             paddingBottom: sparklineData ? '3rem' : '1.5rem',
@@ -214,11 +214,11 @@ const getRoleConfig = (role: string, statsData: any, revenueData?: any) => {
                     color: role === 'ADMIN' ? '#2b6cb0' : role === 'ACCOUNTS' ? '#276749' : '#6b46c1' 
                 },
                 stats: [
-                    { title: 'Total Students', value: <AnimatedNumber value={revenueData?.summary?.totalStudents || statsData?.totalStudents || 0} />, icon: <GraduationCap size={22} />, color: '#4a90e2', trend: `+${statsData?.newAdmissions || 0} recent` },
-                    { title: 'Expected Revenue (Year)', value: <AnimatedNumber value={revenueData?.summary?.totalExpectedRevenue || 0} isCurrency={true} />, icon: <Wallet size={22} />, color: '#9f7aea', trend: '' },
-                    { title: 'Total Collected', value: <AnimatedNumber value={revenueData?.summary?.totalCollected || 0} isCurrency={true} />, icon: <Wallet size={22} />, color: '#48bb78', trend: '' },
-                    { title: 'Total Outstanding', value: <AnimatedNumber value={revenueData?.summary?.totalOutstanding || 0} isCurrency={true} />, icon: <AlertCircle size={22} />, color: '#e53e3e', trend: '' },
-                    { title: 'Concessions Given', value: <AnimatedNumber value={revenueData?.summary?.totalConcessions || 0} isCurrency={true} />, icon: <TrendingDown size={22} />, color: '#ed8936', trend: '' },
+                    { title: 'Total Students', value: <AnimatedNumber value={revenueData?.summary?.totalStudents || statsData?.totalStudents || 0} />, icon: <GraduationCap size={22} />, color: '#4a90e2', trend: `+${statsData?.newAdmissions || 0} recent`, tooltip: 'Total number of active students currently enrolled in the selected academic session.' },
+                    { title: 'Expected Revenue (Year)', value: <AnimatedNumber value={revenueData?.summary?.totalExpectedRevenue || 0} isCurrency={true} />, icon: <Wallet size={22} />, color: '#9f7aea', trend: '', tooltip: 'Total expected fee collection for the entire academic session (12 months), including tuition, transport, and one-time fees.' },
+                    { title: 'Total Collected', value: <AnimatedNumber value={revenueData?.summary?.totalCollected || 0} isCurrency={true} />, icon: <Wallet size={22} />, color: '#48bb78', trend: '', tooltip: 'Total fee amount that has been successfully collected and approved in the current academic session so far.' },
+                    { title: 'Total Outstanding', value: <AnimatedNumber value={revenueData?.summary?.totalOutstanding || 0} isCurrency={true} />, icon: <AlertCircle size={22} />, color: '#e53e3e', trend: '', tooltip: 'Total pending dues for the entire academic session. Calculated as: Expected Revenue - Total Collected - Total Concessions.' },
+                    { title: 'Concessions Given', value: <AnimatedNumber value={revenueData?.summary?.totalConcessions || 0} isCurrency={true} />, icon: <TrendingDown size={22} />, color: '#ed8936', trend: '', tooltip: 'Total amount of discounts and fee concessions given to students in the current academic session.' },
                 ],
             };
         case 'TEACHER':
@@ -1045,7 +1045,7 @@ const RoleDashboard: React.FC = () => {
                                             <th style={{ padding: '1rem 0.5rem', textAlign: 'right' }}>Yearly Projected (Gross)</th>
                                             <th style={{ padding: '1rem 0.5rem', textAlign: 'right' }}>Collected (Net)</th>
                                             <th style={{ padding: '1rem 0.5rem', textAlign: 'right' }}>Discounts Given</th>
-                                            <th style={{ padding: '1rem 0.5rem', textAlign: 'right' }}>Current Outstanding (Due Till Now)</th>
+                                            <th style={{ padding: '1rem 0.5rem', textAlign: 'right' }}>Yearly Outstanding (Pending)</th>
                                             <th style={{ padding: '1rem 0.5rem', width: '180px' }}>Collection %</th>
                                         </tr>
                                     </thead>

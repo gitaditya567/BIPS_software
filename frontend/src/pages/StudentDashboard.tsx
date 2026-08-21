@@ -1,7 +1,37 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
 import { Calendar, Wallet, BookOpen } from 'lucide-react';
 
 const StudentDashboard: React.FC = () => {
+    const [stats, setStats] = useState<any>({
+        attendance: '0%',
+        feeDues: '₹0',
+        assignments: '0',
+        exams: '0'
+    });
+    const [upcomingExams, setUpcomingExams] = useState<any[]>([]);
+    
+    useEffect(() => {
+        const fetchStats = async () => {
+            try {
+                const userRaw = localStorage.getItem('user');
+                if (userRaw) {
+                    const user = JSON.parse(userRaw);
+                    const studentId = user.studentInfo?.id;
+                    if (studentId) {
+                        const res = await axios.get(`/erp-api/general/dashboard-stats/student/${studentId}`);
+                        if (res.data) {
+                            setStats(res.data.stats);
+                            setUpcomingExams(res.data.upcomingExams || []);
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error("Failed to fetch student stats");
+            }
+        };
+        fetchStats();
+    }, []);
     return (
         <div>
             <h1 style={{ marginBottom: '2rem', fontSize: '1.875rem', fontWeight: 800 }}>Student Dashboard</h1>
@@ -13,7 +43,7 @@ const StudentDashboard: React.FC = () => {
                     </div>
                     <div className="stat-info">
                         <h3>Attendance</h3>
-                        <p>94%</p>
+                        <p>{stats.attendance}</p>
                     </div>
                 </div>
                 <div className="stat-card">
@@ -22,7 +52,7 @@ const StudentDashboard: React.FC = () => {
                     </div>
                     <div className="stat-info">
                         <h3>Fees Dues</h3>
-                        <p>₹0.00</p>
+                        <p>{stats.feeDues}</p>
                     </div>
                 </div>
                 <div className="stat-card">
@@ -31,7 +61,7 @@ const StudentDashboard: React.FC = () => {
                     </div>
                     <div className="stat-info">
                         <h3>Assignments Pending</h3>
-                        <p>3</p>
+                        <p>{stats.assignments}</p>
                     </div>
                 </div>
             </div>
@@ -49,16 +79,19 @@ const StudentDashboard: React.FC = () => {
                         </tr>
                     </thead>
                     <tbody>
-                        <tr>
-                            <td>12 Mar 2026</td>
-                            <td>Mathematics</td>
-                            <td>10:00 AM</td>
-                        </tr>
-                        <tr>
-                            <td>14 Mar 2026</td>
-                            <td>Science</td>
-                            <td>10:00 AM</td>
-                        </tr>
+                        {upcomingExams.length === 0 ? (
+                            <tr>
+                                <td colSpan={3} style={{ textAlign: 'center', padding: '1rem' }}>No upcoming exams scheduled</td>
+                            </tr>
+                        ) : (
+                            upcomingExams.map((exam: any, idx: number) => (
+                                <tr key={idx}>
+                                    <td>{exam.date}</td>
+                                    <td>{exam.subject}</td>
+                                    <td>{exam.time}</td>
+                                </tr>
+                            ))
+                        )}
                     </tbody>
                 </table>
             </div>

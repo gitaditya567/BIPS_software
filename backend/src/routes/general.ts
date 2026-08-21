@@ -181,12 +181,22 @@ router.get('/dashboard-stats/student/:studentId', async (req, res) => {
             take: 5
         });
 
+        // 4. Upcoming Exams
+        const upcomingExams = await prisma.exam.findMany({
+            where: {
+                classId: String(student.classId),
+                date: { gte: new Date() }
+            },
+            orderBy: { date: 'asc' },
+            take: 4
+        });
+
         res.json({
             stats: {
                 attendance: attendancePercentage + '%',
                 feeDues: '₹' + totalPendingFee,
                 assignments: '0', // Placeholder
-                exams: '0' // Placeholder
+                exams: upcomingExams.length.toString()
             },
             recentActivities: notices.map(n => ({
                 id: n.id,
@@ -194,6 +204,12 @@ router.get('/dashboard-stats/student/:studentId', async (req, res) => {
                 title: n.title,
                 date: new Date(n.date).toLocaleString(),
                 location: n.message.substring(0, 50) + '...'
+            })),
+            upcomingExams: upcomingExams.map(e => ({
+                id: e.id,
+                date: new Date(e.date).toLocaleDateString(),
+                subject: e.name, // Usually exam name contains subject or it's a general exam
+                time: new Date(e.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
             }))
         });
 

@@ -2,6 +2,9 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { NotificationProvider } from './context/NotificationContext';
 import { ToastContainer } from './components/NotificationSystem';
+import { PWAInstallPrompt } from './components/PWAInstallPrompt';
+import { PWAUpdateBanner } from './components/PWAUpdateBanner';
+import { OfflineBanner } from './components/OfflineBanner';
 import Login from './pages/Login';
 import Layout from './components/Layout';
 import RoleDashboard from './pages/RoleDashboard';
@@ -32,7 +35,10 @@ const App: React.FC = () => {
     <NotificationProvider>
       <BrowserRouter basename="/erp">
         
-        {/* Global Toast popups — always visible */}
+        {/* Global PWA & Notification overlays */}
+        <OfflineBanner />
+        <PWAUpdateBanner />
+        <PWAInstallPrompt />
         <ToastContainer />
 
         <Routes>

@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Search, Clock } from 'lucide-react';
+import { Search, Clock, Download, Smartphone, WifiOff } from 'lucide-react';
 import { NotificationBell } from './NotificationSystem';
+import { usePWAInstall } from '../hooks/usePWAInstall';
+import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import axios from 'axios';
 
 // ─── Live Clock ───────────────────────────────────────────────────────────────
@@ -64,10 +66,17 @@ const LiveClock: React.FC = () => {
 };
 
 // ─── Topbar ───────────────────────────────────────────────────────────────────
-const Topbar: React.FC = () => {
+interface TopbarProps {
+    onOpenInstallModal?: () => void;
+}
+
+const Topbar: React.FC<TopbarProps> = ({ onOpenInstallModal }) => {
     const [user, setUser] = useState<{ name: string; role: string } | null>(null);
     const [sessionState, setSessionState] = useState(localStorage.getItem('activeSession') || '2024-2025');
     const [sessions, setSessions] = useState<{ id: string; name: string; isDefault: boolean }[]>([]);
+    
+    const { isInstalled, isIOS, promptInstall } = usePWAInstall();
+    const { isOnline } = useNetworkStatus();
 
     useEffect(() => {
         const userData = localStorage.getItem('user');
@@ -122,6 +131,14 @@ const Topbar: React.FC = () => {
     const initial = user?.name?.charAt(0)?.toUpperCase() || 'U';
     const roleColor = getRoleColor(user?.role);
 
+    const handleInstallClick = () => {
+        if (onOpenInstallModal) {
+            onOpenInstallModal();
+        } else {
+            promptInstall();
+        }
+    };
+
     return (
         <header className="topbar">
             {/* Search */}
@@ -150,6 +167,53 @@ const Topbar: React.FC = () => {
 
             {/* Right section */}
             <div className="topbar-right">
+
+                {/* Offline Badge if disconnected */}
+                {!isOnline && (
+                    <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.4rem',
+                        padding: '0.35rem 0.75rem',
+                        background: '#fee2e2',
+                        border: '1px solid #fca5a5',
+                        borderRadius: '10px',
+                        color: '#b91c1c',
+                        fontSize: '0.75rem',
+                        fontWeight: '700'
+                    }}>
+                        <WifiOff size={14} />
+                        <span>Offline Mode</span>
+                    </div>
+                )}
+
+                {/* ── PWA Install App Button ── */}
+                {!isInstalled && (
+                    <button
+                        onClick={handleInstallClick}
+                        title={isIOS ? 'Add BIPS ERP to iOS Home Screen' : 'Install BIPS School ERP App'}
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.45rem',
+                            padding: '0.45rem 0.9rem',
+                            background: 'linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%)',
+                            color: '#ffffff',
+                            border: 'none',
+                            borderRadius: '12px',
+                            cursor: 'pointer',
+                            fontSize: '0.825rem',
+                            fontWeight: '700',
+                            boxShadow: '0 2px 8px rgba(37, 99, 235, 0.3)',
+                            transition: 'all 0.2s'
+                        }}
+                        onMouseOver={e => (e.currentTarget.style.transform = 'translateY(-1px)')}
+                        onMouseOut={e => (e.currentTarget.style.transform = 'translateY(0)')}
+                    >
+                        {isIOS ? <Smartphone size={15} /> : <Download size={15} />}
+                        <span>{isIOS ? 'Add to Home' : 'Install App'}</span>
+                    </button>
+                )}
 
                 {/* ── Academic Session Selector ── */}
                 <div style={{

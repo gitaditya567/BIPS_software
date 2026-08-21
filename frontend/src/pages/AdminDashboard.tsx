@@ -22,9 +22,18 @@ const AdminDashboard: React.FC = () => {
         totalStudents: 0,
         totalTeachers: 0,
         monthlyCollection: 0,
+        totalCollected: 0,
+        totalExpectedRevenue: 0,
+        totalOutstanding: 0,
+        totalConcessions: 0,
         attendancePercentage: 0,
         pendingFees: 0,
-        newAdmissions: 0
+        newAdmissions: 0,
+        boysCount: 0,
+        girlsCount: 0,
+        transporterCount: 0,
+        dailyCollections: [] as any[],
+        upcomingEvents: [] as any[]
     });
 
     const [recentActivities, setRecentActivities] = useState<any[]>([]);
@@ -33,9 +42,18 @@ const AdminDashboard: React.FC = () => {
         const fetchDashboardData = async () => {
             try {
                 const session = localStorage.getItem('activeSession') || '2026-2027';
-                const res = await axios.get(`/erp-api/admin/dashboard/stats?session=${session}`);
+                const [res, revenueRes] = await Promise.all([
+                    axios.get(`/erp-api/admin/dashboard/stats?session=${session}`),
+                    axios.get(`/erp-api/admin/dashboard/revenue?session=${session}`)
+                ]);
                 if (res.data) {
-                    setStats(res.data.stats);
+                    setStats({
+                        ...res.data.stats,
+                        totalCollected: revenueRes.data?.summary?.totalCollected || 0,
+                        totalExpectedRevenue: revenueRes.data?.summary?.totalExpectedRevenue || 0,
+                        totalOutstanding: revenueRes.data?.summary?.totalOutstanding || 0,
+                        totalConcessions: revenueRes.data?.summary?.totalConcessions || 0
+                    });
                     setRecentActivities(res.data.recentActivities);
                 }
             } catch (err) {
@@ -64,11 +82,7 @@ const AdminDashboard: React.FC = () => {
         }
     };
 
-    const upcomingEvents = [
-        { date: '20 Mar', title: 'Annual Sports Meet', location: 'Main Ground' },
-        { date: '25 Mar', title: 'Parent-Teacher Meeting', location: 'Conference Hall' },
-        { date: '01 Apr', title: 'Final Examination Starts', location: 'All Classes' },
-    ];
+
 
     return (
         <div style={{ padding: '1rem 0', fontFamily: "'Inter', sans-serif" }}>
@@ -116,6 +130,7 @@ const AdminDashboard: React.FC = () => {
                     icon={<GraduationCap size={24} />} 
                     color="#4a90e2" 
                     trend="+4.5%" 
+                    tooltip="Total number of active students currently enrolled in the selected academic session."
                 />
                 <StatCard 
                     title="Total Teachers" 
@@ -123,13 +138,39 @@ const AdminDashboard: React.FC = () => {
                     icon={<Users size={24} />} 
                     color="#9f7aea" 
                     trend="+2 new" 
+                    tooltip="Total number of active teaching staff currently registered in the system."
                 />
                 <StatCard 
-                    title="Monthly Collection" 
-                    value={`₹${stats.monthlyCollection.toLocaleString()}`} 
+                    title="Expected Revenue" 
+                    value={`₹${(stats.totalExpectedRevenue || 0).toLocaleString()}`} 
+                    icon={<IndianRupee size={24} />} 
+                    color="#9f7aea" 
+                    trend="Yearly Target" 
+                    tooltip="Total expected fee collection for the entire academic session (12 months), including tuition, transport, and one-time fees."
+                />
+                <StatCard 
+                    title="Total Collected" 
+                    value={`₹${(stats.totalCollected || 0).toLocaleString()}`} 
                     icon={<Wallet size={24} />} 
                     color="#48bb78" 
-                    trend="+12%" 
+                    trend="Received" 
+                    tooltip="Total fee amount that has been successfully collected and approved in the current academic session so far."
+                />
+                <StatCard 
+                    title="Total Concessions" 
+                    value={`₹${(stats.totalConcessions || 0).toLocaleString()}`} 
+                    icon={<AlertCircle size={24} />} 
+                    color="#ed8936" 
+                    trend="Discounts" 
+                    tooltip="Total amount of discounts and fee concessions given to students in the current academic session."
+                />
+                <StatCard 
+                    title="Net Outstanding" 
+                    value={`₹${(stats.totalOutstanding || 0).toLocaleString()}`} 
+                    icon={<AlertCircle size={24} />} 
+                    color="#e53e3e" 
+                    trend="Pending" 
+                    tooltip="Total pending dues for the entire academic session. Calculated as: Expected Revenue - Total Collected - Total Concessions."
                 />
                 <StatCard 
                     title="Avg Attendance" 
@@ -138,6 +179,7 @@ const AdminDashboard: React.FC = () => {
                     color="#ed8936" 
                     trend="-1.2%" 
                     isNegative
+                    tooltip="Average daily attendance percentage of students."
                 />
             </div>
 
@@ -162,20 +204,24 @@ const AdminDashboard: React.FC = () => {
                         </div>
                         
                         <div style={{ display: 'flex', alignItems: 'flex-end', gap: '1.5rem', height: '200px', paddingBottom: '1rem' }}>
-                            {[40, 70, 45, 90, 65, 80, 55].map((height, i) => (
+                            {(stats.dailyCollections || []).slice(-7).map((d: any, i: number) => {
+                                const maxAmount = Math.max(...(stats.dailyCollections || []).slice(-7).map((x: any) => x.amount), 1);
+                                const height = Math.max((d.amount / maxAmount) * 100, 5); // at least 5% height for visibility if 0
+                                return (
                                 <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
                                     <div style={{ 
                                         width: '100%', 
                                         height: `${height}%`, 
-                                        backgroundColor: i === 3 ? '#4a90e2' : '#ebf4ff',
+                                        backgroundColor: i === (stats.dailyCollections?.slice(-7).length - 1) ? '#4a90e2' : '#ebf4ff',
                                         borderRadius: '8px 8px 0 0',
                                         transition: 'height 1s ease'
-                                    }} />
+                                    }} title={`₹${d.amount}`} />
                                     <span style={{ fontSize: '0.8rem', color: '#a0aec0', fontWeight: '500' }}>
-                                        {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][i]}
+                                        {new Date(d.date).getDate()} {new Date(d.date).toLocaleString('default', { month: 'short' })}
                                     </span>
                                 </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     </div>
 
@@ -226,9 +272,9 @@ const AdminDashboard: React.FC = () => {
                     }}>
                         <h3 style={{ fontSize: '1.1rem', fontWeight: '600', marginBottom: '1.5rem', opacity: 0.9 }}>School Statistics</h3>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                            <MetricRow label="Boys" value="650" percentage={52} color="#4a90e2" />
-                            <MetricRow label="Girls" value="600" percentage={48} color="#f687b3" />
-                            <MetricRow label="Transporters" value="320" percentage={26} color="#ed8936" />
+                            <MetricRow label="Boys" value={stats.boysCount} percentage={stats.totalStudents ? Math.round((stats.boysCount/stats.totalStudents)*100) : 0} color="#4a90e2" />
+                            <MetricRow label="Girls" value={stats.girlsCount} percentage={stats.totalStudents ? Math.round((stats.girlsCount/stats.totalStudents)*100) : 0} color="#f687b3" />
+                            <MetricRow label="Transporters" value={stats.transporterCount} percentage={stats.totalStudents ? Math.round((stats.transporterCount/stats.totalStudents)*100) : 0} color="#ed8936" />
                         </div>
                         <div style={{ marginTop: '2.5rem', paddingTop: '1.5rem', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
@@ -253,7 +299,11 @@ const AdminDashboard: React.FC = () => {
                     }}>
                         <h3 style={{ fontSize: '1.25rem', fontWeight: '700', color: '#2d3748', marginBottom: '1.5rem' }}>Upcoming Events</h3>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                            {upcomingEvents.map((event, i) => (
+                            {stats.upcomingEvents?.map((event: any, i: number) => {
+                                const eventDate = new Date(event.date);
+                                const monthName = eventDate.toLocaleString('default', { month: 'short' });
+                                const dateNum = eventDate.getDate();
+                                return (
                                 <div key={i} style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
                                     <div style={{ 
                                         backgroundColor: '#ebf4ff', 
@@ -263,15 +313,16 @@ const AdminDashboard: React.FC = () => {
                                         textAlign: 'center',
                                         minWidth: '60px'
                                     }}>
-                                        <p style={{ margin: 0, fontSize: '0.7rem', fontWeight: '700', textTransform: 'uppercase' }}>Mar</p>
-                                        <p style={{ margin: 0, fontSize: '1.2rem', fontWeight: '800' }}>{event.date.split(' ')[0]}</p>
+                                        <p style={{ margin: 0, fontSize: '0.7rem', fontWeight: '700', textTransform: 'uppercase' }}>{monthName}</p>
+                                        <p style={{ margin: 0, fontSize: '1.2rem', fontWeight: '800' }}>{dateNum}</p>
                                     </div>
                                     <div>
                                         <p style={{ margin: 0, fontWeight: '600', color: '#2d3748' }}>{event.title}</p>
                                         <p style={{ margin: 0, fontSize: '0.85rem', color: '#718096' }}>{event.location}</p>
                                     </div>
                                 </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     </div>
                 </div>
@@ -281,8 +332,8 @@ const AdminDashboard: React.FC = () => {
 };
 
 // Sub-components
-const StatCard = ({ title, value, icon, color, trend, isNegative }: any) => (
-    <div style={{ 
+const StatCard = ({ title, value, icon, color, trend, isNegative, tooltip }: any) => (
+    <div title={tooltip} style={{ 
         backgroundColor: 'white', 
         padding: '1.75rem', 
         borderRadius: '24px', 

@@ -829,7 +829,11 @@ router.get('/dashboard/stats', async (req, res) => {
             pendingPayments,
             newAdmissions,
             recentFees,
-            recentAdmissions
+            recentAdmissions,
+            boysCount,
+            girlsCount,
+            transporterCount,
+            upcomingEvents
         ] = await Promise.all([
             prisma.studentProfile.count({
                 where: {
@@ -900,6 +904,53 @@ router.get('/dashboard/stats', async (req, res) => {
                     admissionDate: true,
                     user: { select: { name: true } },
                     class: { select: { name: true } }
+                }
+            }),
+            prisma.studentProfile.count({
+                where: {
+                    status: 'Active',
+                    gender: 'Male',
+                    ...(sessionQuery && sessionQuery !== 'All' ? {
+                        OR: [
+                            { academicYear: sessionQuery },
+                            { academicYear: altSession }
+                        ]
+                    } : {})
+                }
+            }),
+            prisma.studentProfile.count({
+                where: {
+                    status: 'Active',
+                    gender: 'Female',
+                    ...(sessionQuery && sessionQuery !== 'All' ? {
+                        OR: [
+                            { academicYear: sessionQuery },
+                            { academicYear: altSession }
+                        ]
+                    } : {})
+                }
+            }),
+            prisma.studentProfile.count({
+                where: {
+                    status: 'Active',
+                    transportStopId: { not: null },
+                    ...(sessionQuery && sessionQuery !== 'All' ? {
+                        OR: [
+                            { academicYear: sessionQuery },
+                            { academicYear: altSession }
+                        ]
+                    } : {})
+                }
+            }),
+            prisma.notice.findMany({
+                take: 3,
+                orderBy: { date: 'desc' },
+                select: {
+                    id: true,
+                    title: true,
+                    date: true,
+                    class: true,
+                    message: true
                 }
             })
         ]);
@@ -975,7 +1026,15 @@ router.get('/dashboard/stats', async (req, res) => {
                 attendancePercentage,
                 pendingFees,
                 newAdmissions,
-                dailyCollections
+                dailyCollections,
+                boysCount,
+                girlsCount,
+                transporterCount,
+                upcomingEvents: upcomingEvents.map(e => ({
+                    date: e.date,
+                    title: e.title,
+                    location: e.class === 'All' || e.class === 'ALL' || !e.class ? 'All Classes' : `Class ${e.class}`
+                }))
             },
             recentActivities
         };
@@ -1111,9 +1170,9 @@ router.get('/dashboard/revenue', async (req, res) => {
 
         let schoolStudentsCount = students.length;
         let schoolExpectedRevenue = 0;
-        let schoolCollected = totalCollectedSession;
+        let schoolCollected = 0; // Fixed: Was double counting by initializing with totalCollectedSession
         let schoolOutstanding = 0;
-        let schoolConcessions = totalConcessionsSession;
+        let schoolConcessions = 0; // Fixed: Was double counting by initializing with totalConcessionsSession
 
         let schoolTuitionExpected = 0;
         let schoolTransportExpected = 0;
@@ -1192,11 +1251,7 @@ router.get('/dashboard/revenue', async (req, res) => {
                 const totalStudentProjected = prevDue + transportProj + studentMonthlyProj + studentOneTimeProj;
                 yearlyProjected += totalStudentProjected;
 
-                // Calculate outstanding up to elapsed month
-                const expectedMonthlyUpToNow = studentMonthlyFeeAmount * monthsToCalculate;
-                const expectedTransportUpToNow = busFare * monthsToCalculate;
-                const expectedUpToNow = prevDue + studentOneTimeProj + expectedMonthlyUpToNow + expectedTransportUpToNow;
-
+                // Calculate outstanding based on full 12 months (Total Expected)
                 let totalPaidAndDiscount = 0;
                 (student as any).fees.forEach((payment: any) => {
                     collected += payment.amountPaid || 0;
@@ -1204,7 +1259,7 @@ router.get('/dashboard/revenue', async (req, res) => {
                     totalPaidAndDiscount += (payment.amountPaid || 0) + (payment.discount || 0);
                 });
 
-                const studentOutstanding = Math.max(0, expectedUpToNow - totalPaidAndDiscount);
+                const studentOutstanding = Math.max(0, totalStudentProjected - totalPaidAndDiscount);
                 classOutstanding += studentOutstanding;
             });
 

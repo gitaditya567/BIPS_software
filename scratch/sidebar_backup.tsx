@@ -14,7 +14,7 @@ const ROLE_META: Record<string, { label: string; color: string; bg: string }> = 
     ACCOUNTS:   { label: 'Accounts',    color: '#38a169', bg: 'rgba(56,161,105,0.15)' },
     ACCOUNTS2:  { label: 'Accounts 2',  color: '#0d9488', bg: 'rgba(13,148,136,0.15)' },
     TEACHER:    { label: 'Teacher',     color: '#3182ce', bg: 'rgba(49,130,206,0.15)' },
-    TRANSPORT:  { label: 'Transport',   color: '#d69e2e', bg: 'rgba(214,158,46,0.15)' },
+    TRANSPORT:  { label: 'Transport',  color: '#d69e2e', bg: 'rgba(214,158,46,0.15)' },
     PARENT:     { label: 'Parent',      color: '#e53e3e', bg: 'rgba(229,62,62,0.15)' },
     STUDENT:    { label: 'Student',     color: '#e53e3e', bg: 'rgba(229,62,62,0.15)' },
 };
@@ -52,6 +52,7 @@ const ROLE_DEFAULT_IDS: Record<string, string[]> = {
     STUDENT:   ['dashboard','profile','fees','attendance','notice'],
 };
 
+// ─── Component ────────────────────────────────────────────────────────────────
 interface SidebarProps {
     onOpenInstallModal?: () => void;
 }
@@ -61,6 +62,11 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenInstallModal }) => {
     const [permissions, setPermissions] = useState<Record<string, string[]>>({});
     const [userObj, setUserObj] = useState<any>(null);
     const { isInstalled, isIOS, promptInstall } = usePWAInstall();
+    const navigate = useNavigate();�─────────────────────────────────────────────────────────────
+const Sidebar: React.FC = () => {
+    const [role, setRole] = useState('ADMIN');
+    const [permissions, setPermissions] = useState<Record<string, string[]>>({});
+    const [userObj, setUserObj] = useState<any>(null);
     const navigate = useNavigate();
 
     const loadPermissions = () => {
@@ -181,39 +187,6 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenInstallModal }) => {
                 background: 'rgba(0,0,0,0.15)',
                 padding: '1.25rem'
             }}>
-                {/* ── PWA Install App Button ── */}
-                {!isInstalled && (
-                    <button
-                        onClick={() => {
-                            if (onOpenInstallModal) onOpenInstallModal();
-                            else promptInstall();
-                        }}
-                        style={{
-                            width: '100%', 
-                            display: 'flex', 
-                            alignItems: 'center', 
-                            justifyContent: 'center',
-                            gap: '0.75rem',
-                            padding: '0.75rem', 
-                            borderRadius: '10px',
-                            background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
-                            color: '#ffffff',
-                            border: 'none',
-                            cursor: 'pointer', 
-                            fontWeight: '700', 
-                            fontSize: '0.85rem',
-                            transition: 'all 0.3s ease',
-                            marginBottom: '0.75rem',
-                            boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)',
-                        }}
-                        onMouseOver={e => { (e.currentTarget as HTMLElement).style.transform = 'translateY(-2px)' }}
-                        onMouseOut={e => { (e.currentTarget as HTMLElement).style.transform = 'translateY(0)' }}
-                    >
-                        {isIOS ? <Smartphone size={16} /> : <Download size={16} />}
-                        <span>{isIOS ? 'Add to Home Screen' : 'Install App'}</span>
-                    </button>
-                )}
-
                 <button
                     onClick={handleLogout}
                     style={{

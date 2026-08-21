@@ -329,6 +329,23 @@ router.get('/:teacherId/dashboard-stats', async (req, res) => {
             take: 4
         });
 
+        // 4. Today's Schedule
+        const todayJs = new Date().getDay();
+        const dbDayOfWeek = todayJs === 0 ? 7 : todayJs;
+        
+        const schedule = await prisma.timetable.findMany({
+            where: {
+                teacherId: teacherProfile.id,
+                dayOfWeek: dbDayOfWeek
+            },
+            include: {
+                class: { select: { name: true } },
+                section: { select: { name: true } },
+                subject: { select: { name: true } }
+            },
+            orderBy: { startTime: 'asc' }
+        });
+
         res.json({
             stats: {
                 myStudents: myStudentsCount,
@@ -344,6 +361,12 @@ router.get('/:teacherId/dashboard-stats', async (req, res) => {
                 time: n.date.toISOString(),
                 iconName: 'Bell',
                 color: '#ed8936'
+            })),
+            todaySchedule: schedule.map(s => ({
+                time: `${s.startTime} - ${s.endTime}`,
+                class: `${s.class.name} - ${s.section.name}`,
+                subject: s.subject.name,
+                status: 'Upcoming' // Simplified status logic
             }))
         });
 

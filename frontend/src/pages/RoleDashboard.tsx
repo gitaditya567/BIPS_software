@@ -809,27 +809,46 @@ const RoleDashboard: React.FC = () => {
             const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
             const activeSessionStr = localStorage.getItem('activeSession') || '2026-2027';
             const generatedOn = `${new Date().toLocaleDateString('en-GB')} at ${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`;
+            const pageWidth = doc.internal.pageSize.getWidth(); // 841.89 pt
+            const pageHeight = doc.internal.pageSize.getHeight(); // 595.28 pt
 
-            // Header Banner
+            // 1. Top Header Banner
             doc.setFillColor(30, 41, 59); // Slate-800
-            doc.rect(0, 0, 842, 50, 'F');
+            doc.rect(0, 0, pageWidth, 52, 'F');
 
             doc.setFont('helvetica', 'bold');
             doc.setFontSize(16);
             doc.setTextColor(255, 255, 255);
-            doc.text('BIPS SENIOR SECONDARY SCHOOL', 421, 32, { align: 'center' });
+            doc.text('BIPS SENIOR SECONDARY SCHOOL', pageWidth / 2, 26, { align: 'center' });
 
-            doc.setFontSize(12);
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(226, 232, 240);
+            doc.text('Affiliated to CBSE, New Delhi  |  Financial & Revenue Snapshot Report', pageWidth / 2, 42, { align: 'center' });
+
+            // 2. Report Sub-bar
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(13);
             doc.setTextColor(30, 41, 59);
-            doc.text('Class-Wise Financial Matrix (School Snapshot Report)', 421, 75, { align: 'center' });
+            doc.text('CLASS-WISE FINANCIAL MATRIX (SNAPSHOT)', 24, 75);
 
             doc.setFont('helvetica', 'normal');
             doc.setFontSize(9);
             doc.setTextColor(100, 116, 139);
-            doc.text(`Academic Session: ${activeSessionStr}   |   Generated On: ${generatedOn}`, 421, 92, { align: 'center' });
+            doc.text(`Academic Session: ${activeSessionStr}   |   All Amounts in INR (Rs.)   |   Generated: ${generatedOn}`, 24, 90);
 
+            // 3. Prepare Table Data
             const tableHeaders = [
-                ['Class Name', 'Students', 'Yearly Projected', 'Collected (Net)', 'Discounts Given', 'Till Month Due', 'Yearly Outstanding', 'Collection %']
+                [
+                    'Class Name',
+                    'Total\nStudents',
+                    'Yearly Projected\n(Gross)',
+                    'Collected\n(Net)',
+                    'Discounts\nGiven',
+                    'Till Month Due\n(Current Dues)',
+                    'Yearly Outstanding\n(Pending)',
+                    'Collection\n%'
+                ]
             ];
 
             let grandStudents = 0;
@@ -845,7 +864,7 @@ const RoleDashboard: React.FC = () => {
                 const collected = Math.round(cls.collected || 0);
                 const discountGiven = Math.round(cls.discountGiven || 0);
                 const dueTillNow = Math.round(cls.dueTillNow || 0);
-                const currentOutstanding = Math.round(cls.outstanding || cls.currentOutstanding || 0);
+                const currentOutstanding = Math.round(cls.outstanding ?? cls.currentOutstanding ?? 0);
                 const collectionPercent = yearlyProjected > 0 
                     ? Math.round(((collected + discountGiven) / yearlyProjected) * 100) 
                     : 0;
@@ -858,13 +877,13 @@ const RoleDashboard: React.FC = () => {
                 grandOutstanding += currentOutstanding;
 
                 return [
-                    cls.className,
+                    cls.className || 'N/A',
                     totalStudents.toString(),
-                    `₹${yearlyProjected.toLocaleString('en-IN')}`,
-                    `₹${collected.toLocaleString('en-IN')}`,
-                    `₹${discountGiven.toLocaleString('en-IN')}`,
-                    `₹${dueTillNow.toLocaleString('en-IN')}`,
-                    `₹${currentOutstanding.toLocaleString('en-IN')}`,
+                    `Rs. ${yearlyProjected.toLocaleString('en-IN')}`,
+                    `Rs. ${collected.toLocaleString('en-IN')}`,
+                    `Rs. ${discountGiven.toLocaleString('en-IN')}`,
+                    `Rs. ${dueTillNow.toLocaleString('en-IN')}`,
+                    `Rs. ${currentOutstanding.toLocaleString('en-IN')}`,
                     `${collectionPercent}%`
                 ];
             });
@@ -876,54 +895,67 @@ const RoleDashboard: React.FC = () => {
             const footerRow = [
                 'GRAND TOTAL',
                 grandStudents.toString(),
-                `₹${grandProjected.toLocaleString('en-IN')}`,
-                `₹${grandCollected.toLocaleString('en-IN')}`,
-                `₹${grandDiscount.toLocaleString('en-IN')}`,
-                `₹${grandDueTillNow.toLocaleString('en-IN')}`,
-                `₹${grandOutstanding.toLocaleString('en-IN')}`,
+                `Rs. ${grandProjected.toLocaleString('en-IN')}`,
+                `Rs. ${grandCollected.toLocaleString('en-IN')}`,
+                `Rs. ${grandDiscount.toLocaleString('en-IN')}`,
+                `Rs. ${grandDueTillNow.toLocaleString('en-IN')}`,
+                `Rs. ${grandOutstanding.toLocaleString('en-IN')}`,
                 `${overallEfficiency}%`
             ];
 
+            // 4. Render Table
             autoTable(doc, {
-                startY: 110,
+                startY: 104,
                 head: tableHeaders,
                 body: tableRows,
                 foot: [footerRow],
-                theme: 'grid',
+                theme: 'striped',
                 headStyles: {
-                    fillColor: [37, 99, 235], // Blue-600
+                    fillColor: [30, 41, 59], // Slate-800
                     textColor: [255, 255, 255],
                     fontStyle: 'bold',
-                    fontSize: 9,
+                    fontSize: 8.5,
                     halign: 'center',
-                    valign: 'middle'
+                    valign: 'middle',
+                    cellPadding: { top: 6, bottom: 6, left: 4, right: 4 }
                 },
                 footStyles: {
-                    fillColor: [226, 232, 240], // Slate-200
+                    fillColor: [241, 245, 249], // Slate-100
                     textColor: [15, 23, 42],
                     fontStyle: 'bold',
                     fontSize: 9,
-                    valign: 'middle'
+                    valign: 'middle',
+                    cellPadding: { top: 6, bottom: 6, left: 4, right: 4 }
                 },
                 bodyStyles: {
                     fontSize: 8.5,
-                    textColor: [51, 65, 85],
-                    valign: 'middle'
+                    textColor: [30, 41, 59],
+                    valign: 'middle',
+                    cellPadding: { top: 4, bottom: 4, left: 4, right: 4 }
                 },
                 columnStyles: {
-                    0: { halign: 'left', fontStyle: 'bold' },
-                    1: { halign: 'center' },
-                    2: { halign: 'right', textColor: [43, 108, 176] },
-                    3: { halign: 'right', textColor: [47, 133, 90] },
-                    4: { halign: 'right', textColor: [221, 107, 32] },
-                    5: { halign: 'right', textColor: [197, 48, 48], fontStyle: 'bold' },
-                    6: { halign: 'right', textColor: [229, 62, 62], fontStyle: 'bold' },
-                    7: { halign: 'center', fontStyle: 'bold' }
+                    0: { cellWidth: 124, halign: 'left', fontStyle: 'bold' },
+                    1: { cellWidth: 55, halign: 'center' },
+                    2: { cellWidth: 105, halign: 'right', textColor: [37, 99, 235] },
+                    3: { cellWidth: 95, halign: 'right', textColor: [22, 101, 52] },
+                    4: { cellWidth: 90, halign: 'right', textColor: [180, 83, 9] },
+                    5: { cellWidth: 105, halign: 'right', textColor: [185, 28, 28], fontStyle: 'bold' },
+                    6: { cellWidth: 115, halign: 'right', textColor: [220, 38, 38], fontStyle: 'bold' },
+                    7: { cellWidth: 65, halign: 'center', fontStyle: 'bold' }
                 },
                 alternateRowStyles: {
                     fillColor: [248, 250, 252]
                 },
-                margin: { left: 30, right: 30 }
+                margin: { left: 24, right: 24, top: 60, bottom: 35 },
+                didDrawPage: (data) => {
+                    // Page Number & Footer Stamp on Every Page
+                    const str = `Page ${data.pageNumber} of ${doc.getNumberOfPages()}`;
+                    doc.setFontSize(8);
+                    doc.setFont('helvetica', 'normal');
+                    doc.setTextColor(148, 163, 184);
+                    doc.text('This is a computer-generated financial snapshot from School ERP.', 24, pageHeight - 15);
+                    doc.text(str, pageWidth - 24, pageHeight - 15, { align: 'right' });
+                }
             });
 
             doc.save(`Class_Wise_Financial_Matrix_${activeSessionStr}_${new Date().toISOString().split('T')[0]}.pdf`);

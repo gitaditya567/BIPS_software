@@ -1,0 +1,12 @@
+Role: ADMIN (Superadmin (Administrator))
+Email: admin@schoolerp.com
+Password: admin123\
+
+
+
+
+Role	Role Dropdown Selection	Email	Password
+Principal	Principal	principal@schoolerp.com	principal123
+Accounts	Accounts	accounts@schoolerp.com	accounts123
+Accounts 2	Accounts 2	accounts2@schoolerp.com	bips321
+Transport	Transport	transport@schoolerp.com	transport123

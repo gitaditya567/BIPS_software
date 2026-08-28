@@ -1,0 +1,1270 @@
+import React, { useState, useEffect } from 'react';
+import { FileText, Printer, Save } from 'lucide-react';
+import axios from 'axios';
+import './ReportCard.css';
+
+const SUBJECTS = [
+    { id: 'hindi', name: 'HINDI', type: 'marks' },
+    { id: 'english', name: 'ENGLISH', type: 'marks' },
+    { id: 'maths', name: 'MATHS', type: 'marks' },
+    { id: 'science', name: 'SCIENCE', type: 'marks' },
+    { id: 'social', name: 'SOCIAL SCIENCE / EVS', type: 'marks' },
+    { id: 'computer', name: 'COMPUTER', type: 'marks' },
+    { id: 'gk', name: 'GENERAL KNOWLEDGE', type: 'marks' },
+    { id: 'art', name: 'ART', type: 'grade' },
+    { id: 'moral', name: 'MORAL VALUE (GRADE)', type: 'grade' },
+    { id: 'phy_edu', name: 'PHYSICAL EDUCATION (GRADE)', type: 'grade' }
+];
+
+const SENIOR_SUBJECTS = [
+    { id: 'hindi', name: 'Hindi', type: 'marks', maxMarks: 100 },
+    { id: 'english', name: 'English', type: 'marks', maxMarks: 100 },
+    { id: 'maths', name: 'Mathematics', type: 'marks', maxMarks: 100 },
+    { id: 'science', name: 'Science', type: 'marks', maxMarks: 100 },
+    { id: 'social', name: 'Social Science', type: 'marks', maxMarks: 100 },
+    { id: 'drawing_computer', name: 'Drawing/Computer', type: 'marks', maxMarks: 100 }
+];
+
+const CLASS_9_SUBJECTS = [
+    { id: 'hindi', name: 'General Hindi', type: 'marks', maxMarks: 100 },
+    { id: 'english', name: 'English', type: 'marks', maxMarks: 100 },
+    { id: 'physics', name: 'Physics', type: 'marks', maxMarks: 100 },
+    { id: 'chemistry', name: 'Chemistry', type: 'marks', maxMarks: 100 },
+    { id: 'biology_maths', name: 'Biology/Maths', type: 'marks', maxMarks: 100 },
+    { id: 'sp_edu', name: 'S & P Education', type: 'grade', maxMarks: 'GR.' }
+];
+
+const PERSONALITY_TRAITS = [
+    'Conduct', 'Punctuality', 'Order & Neatness', 'Courtesy & Obedience',
+    'Discipline', 'Honesty', 'Responsibility', 'Leadership', 'P.T.M.'
+];
+
+const LKG_UKG_SUBJECTS = [
+    {
+        category: 'English Oral',
+        items: ['Conversation', 'Speaking skill', 'Pronounce correctly']
+    },
+    {
+        category: 'English Written',
+        items: ['Likes to write', 'Writes correctly', 'Has neat hand writing', 'Forms letter well']
+    },
+    {
+        category: 'Maths Oral',
+        items: ['Can count orally', 'Recognizes number']
+    },
+    {
+        category: 'Maths Written',
+        items: ['Can write Numbers', 'Question Identification']
+    },
+    {
+        category: 'Hindi Oral',
+        items: ['Speak clearly in complete sentence', 'Takes part in conversation', 'Pronounce correctly']
+    },
+    {
+        category: 'Hindi Written',
+        items: ['Likes to write', 'Writes Correctly', 'Has neat hand handwriting', 'Form letter well']
+    },
+    {
+        category: 'Environmental Studies',
+        items: ['Recognition of colour, Plants etc.', 'Art', 'Interest Colouring']
+    },
+    {
+        category: 'Recites and Sing',
+        items: ['Expression and enactment', 'Voice modulation', 'Rhythm']
+    },
+    {
+        category: 'Physical Development',
+        items: ['Eating', 'Walking', 'Running', 'Jogging', 'Cutting and tearing', 'Handling', 'Ability to use brush', 'Ability to use crayons']
+    },
+    {
+        category: 'Co-Curriculum Development',
+        items: ['Singing', 'Dancing', 'Writing', 'Rhymes & Rhythm', 'Sport Activity']
+    },
+    {
+        category: 'School Activity Development',
+        items: ['Green Day Celebration', 'Yellow Day Celebration', 'Red Day Celebration', 'PTM/Attendance']
+    }
+];
+
+const OVERALL_DEVELOPMENT_TRAITS = [
+    'Regularity & Punctuality', 'Honesty', 'Neatness', 'Attitude Value', 'Discipline', 'Attendance', 'P.T.M.'
+];
+
+const ReportCards: React.FC = () => {
+    const [students, setStudents] = useState<any[]>([]);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [showDropdown, setShowDropdown] = useState(false);
+    // Selection state
+    const [selectedStudent, setSelectedStudent] = useState<any>(null);
+    const getSessionYears = () => {
+        const session = localStorage.getItem('activeSession') || '2024-2025';
+        const parts = session.split('-');
+        if (parts.length === 2) {
+            return {
+                start: parts[0].substring(2),
+                end: parts[1].substring(2)
+            };
+        }
+        return { start: '24', end: '25' };
+    };
+
+    const initialSession = getSessionYears();
+    const [sessionStart, setSessionStart] = useState(initialSession.start);
+    const [sessionEnd, setSessionEnd] = useState(initialSession.end);
+
+    // Marks State
+    const [marks, setMarks] = useState<any>({});
+    
+    // Manual "M" Fields State
+    const [personality, setPersonality] = useState<any>({});
+    const [remarks, setRemarks] = useState({ term1: '', term2: '' });
+    const [result, setResult] = useState({
+        promotedTo: '',
+        detainedIn: '',
+        distinctionIn: '',
+        reExamIn: '',
+        reOpenDate: '',
+        reOpenTime: ''
+    });
+
+    const [attendance, setAttendance] = useState({ term1: '', term2: '' });
+    const [position, setPosition] = useState({ term1: '', term2: '' });
+
+    // LKG/UKG Special State
+    const [reportType, setReportType] = useState<'standard' | 'lkg-ukg' | 'senior' | 'class-9'>('standard');
+    const [studentProfile, setStudentProfile] = useState({
+        name: '', classSec: '', rollNo: '', srNo: '', dob: '', 
+        height: '', weight: '', fatherName: '', motherName: '', 
+        address: '', mobile: ''
+    });
+    const [lkgMarks, setLkgMarks] = useState<any>({});
+    const [overallDev, setOverallDev] = useState<any>({});
+
+    const activeSubjects: any[] = reportType === 'class-9' ? CLASS_9_SUBJECTS : (reportType === 'senior' ? SENIOR_SUBJECTS : SUBJECTS);
+
+    // Initialize and fetch data
+    useEffect(() => {
+        const handleSessionChange = () => {
+            const activeSession = localStorage.getItem('activeSession') || '2024-2025';
+            const parts = activeSession.split('-');
+            if (parts.length === 2) {
+                setSessionStart(parts[0].substring(2));
+                setSessionEnd(parts[1].substring(2));
+            }
+        };
+        window.addEventListener('activeSessionChanged', handleSessionChange);
+        handleSessionChange();
+
+        const fetchStudents = async () => {
+            try {
+                const res = await axios.get('/erp-api/admin/students');
+                setStudents(res.data);
+            } catch (err) {
+                console.error('Failed to fetch students:', err);
+            }
+        };
+        fetchStudents();
+
+        const initialMarks: any = {};
+        SUBJECTS.forEach(sub => {
+            initialMarks[sub.id] = { ppt1: '', yearly: '', ppt2: '', annual: '' };
+        });
+        SENIOR_SUBJECTS.forEach(sub => {
+            initialMarks[sub.id] = { theory1: '', prac1: '', result1: '', theory2: '', prac2: '', result2: '' };
+        });
+        CLASS_9_SUBJECTS.forEach(sub => {
+            initialMarks[sub.id] = { theory1: '', prac1: '', result1: '', theory2: '', prac2: '', result2: '' };
+        });
+        setMarks(initialMarks);
+
+        const initialPersonality: any = {};
+        PERSONALITY_TRAITS.forEach(trait => {
+            initialPersonality[trait] = { term1: '', term2: '' };
+        });
+        setPersonality(initialPersonality);
+
+        const initialLkgMarks: any = {};
+        LKG_UKG_SUBJECTS.forEach(cat => {
+            cat.items.forEach(item => {
+                initialLkgMarks[item] = { ev1: '', ev2: '', overall: '' };
+            });
+        });
+        setLkgMarks(initialLkgMarks);
+
+        const initialOverallDev: any = {};
+        OVERALL_DEVELOPMENT_TRAITS.forEach(trait => {
+            initialOverallDev[trait] = { term1: '', term2: '', overall: '' };
+        });
+        setOverallDev(initialOverallDev);
+
+        return () => {
+            window.removeEventListener('activeSessionChanged', handleSessionChange);
+        };
+    }, []);
+
+    const handleMarkChange = (subId: string, field: string, val: string) => {
+        setMarks({
+            ...marks,
+            [subId]: { ...marks[subId], [field]: val }
+        });
+    };
+
+    const handlePersonalityChange = (trait: string, term: string, val: string) => {
+        setPersonality({
+            ...personality,
+            [trait]: { ...personality[trait], [term]: val }
+        });
+    };
+
+    const calculateTotal = (subId: string, term: number) => {
+        const m = marks[subId];
+        if (!m) return 0;
+        if (reportType === 'class-9' || reportType === 'senior') {
+            if (term === 1) {
+                return (parseInt(m.theory1) || 0) + (parseInt(m.prac1) || 0);
+            } else {
+                return (parseInt(m.theory2) || 0) + (parseInt(m.prac2) || 0);
+            }
+        }
+        if (term === 1) {
+            return (parseInt(m.ppt1) || 0) + (parseInt(m.yearly) || 0);
+        } else {
+            return (parseInt(m.ppt2) || 0) + (parseInt(m.annual) || 0);
+        }
+    };
+
+    const calculateGrandTotal = (subId: string) => {
+        return calculateTotal(subId, 1) + calculateTotal(subId, 2);
+    };
+
+    const calculatePercentage = (term: number) => {
+        let totalObtained = 0;
+        let totalPossible = 0;
+        const currentSubjects = reportType === 'class-9' ? CLASS_9_SUBJECTS : (reportType === 'senior' ? SENIOR_SUBJECTS : SUBJECTS);
+        currentSubjects.forEach(sub => {
+            if (sub.type === 'marks') {
+                totalObtained += calculateTotal(sub.id, term);
+                totalPossible += 100;
+            }
+        });
+        if (totalPossible === 0) return '0.00';
+        return ((totalObtained / totalPossible) * 100).toFixed(2);
+    };
+
+    const printReport = () => {
+        window.print();
+    };
+
+    return (
+        <div className="report-card-container">
+            <div className="no-print">
+                <h1 style={{ marginBottom: '2rem', fontSize: '1.875rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <FileText className="text-primary" size={32} />
+                    Report Card Management
+                </h1>
+
+                {/* Selection & Manual Entry Form */}
+                <div className="edit-form">
+                    <div className="section-title">Step 1: Student Selection & Report Type</div>
+                    <div className="form-grid" style={{ marginBottom: '2rem' }}>
+                        <div className="form-group">
+                            <label>Report Card Type</label>
+                            <select 
+                                className="form-control" 
+                                value={reportType} 
+                                onChange={(e) => setReportType(e.target.value as any)}
+                            >
+                                <option value="standard">Standard (Grade I-VIII)</option>
+                                <option value="class-9">Class 11th &amp; 12th Marksheet</option>
+                                <option value="senior">Class 9th &amp; 10th Marksheet</option>
+                                <option value="lkg-ukg">Junior (LKG & UKG)</option>
+                            </select>
+                        </div>
+                        <div className="form-group">
+                            <label>Session (e.g. 2024 - 2025)</label>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                20<input type="text" className="form-control" style={{width: '60px'}} value={sessionStart} onChange={e => setSessionStart(e.target.value)} />
+                                - 20<input type="text" className="form-control" style={{width: '60px'}} value={sessionEnd} onChange={e => setSessionEnd(e.target.value)} />
+                            </div>
+                        </div>
+                        <div className="form-group">
+                            <label>Search Student</label>
+                            <div style={{ position: 'relative' }}>
+                                <input 
+                                    type="text" 
+                                    className="form-control" 
+                                    placeholder="Type student name or SR No..."
+                                    value={searchQuery}
+                                    onChange={(e) => {
+                                        setSearchQuery(e.target.value);
+                                        setShowDropdown(true);
+                                    }}
+                                    onFocus={() => setShowDropdown(true)}
+                                    onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
+                                    autoComplete="off"
+                                />
+                                {showDropdown && searchQuery && (
+                                    <div style={{
+                                        position: 'absolute',
+                                        top: '100%',
+                                        left: 0,
+                                        right: 0,
+                                        maxHeight: '300px',
+                                        overflowY: 'auto',
+                                        backgroundColor: 'white',
+                                        border: '1px solid #e5e7eb',
+                                        borderRadius: '0.5rem',
+                                        boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
+                                        zIndex: 50,
+                                        marginTop: '0.25rem'
+                                    }}>
+                                        {students.filter(s => 
+                                            (s.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+                                            (s.admissionNo || '').toLowerCase().includes(searchQuery.toLowerCase())
+                                        ).map(student => (
+                                            <div 
+                                                key={student.id} 
+                                                style={{ padding: '0.75rem 1rem', cursor: 'pointer', borderBottom: '1px solid #f3f4f6' }}
+                                                onMouseDown={(e) => {
+                                                    e.preventDefault();
+                                                    setSearchQuery(student.name);
+                                                    setShowDropdown(false);
+                                                    setSelectedStudent(student);
+                                                    setStudentProfile({
+                                                        name: student.name || '',
+                                                        classSec: student.className || '',
+                                                        rollNo: student.rollNo || '',
+                                                        srNo: student.admissionNo || '',
+                                                        dob: student.dateOfBirth || '',
+                                                        height: '',
+                                                        weight: '',
+                                                        fatherName: student.fatherName || '',
+                                                        motherName: student.motherName || '',
+                                                        address: student.address || '',
+                                                        mobile: student.mobile || ''
+                                                    });
+                                                    const cName = (student.className || '').toUpperCase();
+                                                    if (cName.includes('LKG') || cName.includes('UKG') || cName.includes('NURSERY')) {
+                                                        setReportType('lkg-ukg');
+                                                    } else if (cName.includes('9') || cName.includes('IX') || cName.includes('10') || cName.includes('X')) {
+                                                        setReportType('senior');
+                                                    } else if (cName.includes('11') || cName.includes('XI') || cName.includes('12') || cName.includes('XII')) {
+                                                        setReportType('class-9');
+                                                    } else {
+                                                        setReportType('standard');
+                                                    }
+                                                }}
+                                                onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#f9fafb'}
+                                                onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                                            >
+                                                <div style={{ fontWeight: '600', color: '#111827' }}>{student.name}</div>
+                                                <div style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: '0.1rem' }}>
+                                                    SR No: {student.admissionNo} | Class: {student.className} | Father: {student.fatherName}
+                                                </div>
+                                            </div>
+                                        ))}
+                                        {students.filter(s => 
+                                            (s.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+                                            (s.admissionNo || '').toLowerCase().includes(searchQuery.toLowerCase())
+                                        ).length === 0 && (
+                                            <div style={{ padding: '0.75rem 1rem', color: '#6b7280', fontSize: '0.85rem', textAlign: 'center' }}>
+                                                No students found
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
+                    {reportType === 'lkg-ukg' && (
+                        <>
+                            <div className="section-title">Step 2: Student Profile (LKG/UKG)</div>
+                            <div className="form-grid" style={{ marginBottom: '2rem' }}>
+                                <div className="form-group">
+                                    <label>Full Name</label>
+                                    <input className="form-control" value={studentProfile.name} onChange={e => setStudentProfile({...studentProfile, name: e.target.value})} />
+                                </div>
+                                <div className="form-group">
+                                    <label>Class & Section</label>
+                                    <input className="form-control" value={studentProfile.classSec} onChange={e => setStudentProfile({...studentProfile, classSec: e.target.value})} />
+                                </div>
+                                <div className="form-group">
+                                    <label>Roll No</label>
+                                    <input className="form-control" value={studentProfile.rollNo} onChange={e => setStudentProfile({...studentProfile, rollNo: e.target.value})} />
+                                </div>
+                                <div className="form-group">
+                                    <label>SR No</label>
+                                    <input className="form-control" value={studentProfile.srNo} onChange={e => setStudentProfile({...studentProfile, srNo: e.target.value})} />
+                                </div>
+                                <div className="form-group">
+                                    <label>DOB</label>
+                                    <input type="text" className="form-control" placeholder="DD/MM/YYYY" value={studentProfile.dob} onChange={e => setStudentProfile({...studentProfile, dob: e.target.value})} />
+                                </div>
+                                <div className="form-group">
+                                    <label>Height (cm)</label>
+                                    <input className="form-control" value={studentProfile.height} onChange={e => setStudentProfile({...studentProfile, height: e.target.value})} />
+                                </div>
+                                <div className="form-group">
+                                    <label>Weight (kg)</label>
+                                    <input className="form-control" value={studentProfile.weight} onChange={e => setStudentProfile({...studentProfile, weight: e.target.value})} />
+                                </div>
+                                <div className="form-group">
+                                    <label>Father's Name</label>
+                                    <input className="form-control" value={studentProfile.fatherName} onChange={e => setStudentProfile({...studentProfile, fatherName: e.target.value})} />
+                                </div>
+                                <div className="form-group">
+                                    <label>Mother's Name</label>
+                                    <input className="form-control" value={studentProfile.motherName} onChange={e => setStudentProfile({...studentProfile, motherName: e.target.value})} />
+                                </div>
+                                <div className="form-group">
+                                    <label>Address</label>
+                                    <input className="form-control" value={studentProfile.address} onChange={e => setStudentProfile({...studentProfile, address: e.target.value})} />
+                                </div>
+                                <div className="form-group">
+                                    <label>Mobile No</label>
+                                    <input className="form-control" value={studentProfile.mobile} onChange={e => setStudentProfile({...studentProfile, mobile: e.target.value})} />
+                                </div>
+                            </div>
+
+                            <div className="section-title">Step 3: Evaluation (EV-1, EV-2, OVERALL)</div>
+                            <div className="marks-input-grid">
+                                {LKG_UKG_SUBJECTS.map(cat => (
+                                    <div key={cat.category} className="stat-card" style={{ display: 'block', border: '1px solid #e5e7eb' }}>
+                                        <h4 style={{ marginBottom: '0.75rem', color: '#4f46e5', borderBottom: '1px solid #f3f4f6', paddingBottom: '0.25rem' }}>{cat.category}</h4>
+                                        <div style={{ display: 'grid', gap: '1rem' }}>
+                                            {cat.items.map(item => (
+                                                <div key={item} style={{ borderBottom: '1px solid #f9fafb', paddingBottom: '0.5rem' }}>
+                                                    <label style={{fontSize: '0.75rem', display: 'block', marginBottom: '0.25rem'}}>{item}</label>
+                                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem' }}>
+                                                        <input placeholder="EV-1" className="form-control" style={{fontSize: '0.7rem'}} value={lkgMarks[item]?.ev1 || ''} onChange={e => setLkgMarks({...lkgMarks, [item]: {...lkgMarks[item], ev1: e.target.value}})} />
+                                                        <input placeholder="EV-2" className="form-control" style={{fontSize: '0.7rem'}} value={lkgMarks[item]?.ev2 || ''} onChange={e => setLkgMarks({...lkgMarks, [item]: {...lkgMarks[item], ev2: e.target.value}})} />
+                                                        <input placeholder="OVERALL" className="form-control" style={{fontSize: '0.7rem'}} value={lkgMarks[item]?.overall || ''} onChange={e => setLkgMarks({...lkgMarks, [item]: {...lkgMarks[item], overall: e.target.value}})} />
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div className="section-title" style={{ marginTop: '2rem' }}>Step 4: Overall Development</div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
+                                {OVERALL_DEVELOPMENT_TRAITS.map(trait => (
+                                    <div key={trait} className="form-group" style={{ padding: '0.75rem', background: '#f8fafc', borderRadius: '8px' }}>
+                                        <label style={{ marginBottom: '0.5rem', fontSize: '0.85rem' }}>{trait}</label>
+                                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                            <input placeholder="Term 1" className="form-control" value={overallDev[trait]?.term1 || ''} onChange={e => setOverallDev({...overallDev, [trait]: {...overallDev[trait], term1: e.target.value}})} />
+                                            <input placeholder="Term 2" className="form-control" value={overallDev[trait]?.term2 || ''} onChange={e => setOverallDev({...overallDev, [trait]: {...overallDev[trait], term2: e.target.value}})} />
+                                            <input placeholder="Overall" className="form-control" value={overallDev[trait]?.overall || ''} onChange={e => setOverallDev({...overallDev, [trait]: {...overallDev[trait], overall: e.target.value}})} />
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </>
+                    )}
+
+                     {(reportType === 'standard' || reportType === 'senior' || reportType === 'class-9') && (
+                        <>
+                             <div className="section-title">Step 2: Scholastic Marks ({reportType === 'class-9' ? 'Class XI & XII' : reportType === 'senior' ? 'Class IX & X' : 'Grade I-VIII'}) (Automatic Calculation)</div>
+                    <div className="marks-input-grid">
+                        {activeSubjects.map(sub => (
+                            <div key={sub.id} className="stat-card" style={{ display: 'block', border: '1px solid #e5e7eb' }}>
+                                <h4 style={{ marginBottom: '0.75rem', color: '#4f46e5', borderBottom: '1px solid #f3f4f6', paddingBottom: '0.25rem' }}>{sub.name}</h4>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                                    {sub.type === 'marks' ? (
+                                        (reportType === 'class-9' || reportType === 'senior') ? (
+                                            <>
+                                                <div>
+                                                    <label style={{fontSize: '0.7rem'}}>Term 1 Theory</label>
+                                                    <input className="form-control" value={marks[sub.id]?.theory1 || ''} onChange={e => handleMarkChange(sub.id, 'theory1', e.target.value)} />
+                                                </div>
+                                                <div>
+                                                    <label style={{fontSize: '0.7rem'}}>Term 1 Prac.</label>
+                                                    <input className="form-control" value={marks[sub.id]?.prac1 || ''} onChange={e => handleMarkChange(sub.id, 'prac1', e.target.value)} />
+                                                </div>
+                                                <div style={{gridColumn: 'span 2'}}>
+                                                    <label style={{fontSize: '0.7rem'}}>Term 1 Result (e.g. Pass/Fail)</label>
+                                                    <input className="form-control" value={marks[sub.id]?.result1 || ''} onChange={e => handleMarkChange(sub.id, 'result1', e.target.value)} />
+                                                </div>
+                                                <div>
+                                                    <label style={{fontSize: '0.7rem'}}>Term 2 Theory</label>
+                                                    <input className="form-control" value={marks[sub.id]?.theory2 || ''} onChange={e => handleMarkChange(sub.id, 'theory2', e.target.value)} />
+                                                </div>
+                                                <div>
+                                                    <label style={{fontSize: '0.7rem'}}>Term 2 Prac.</label>
+                                                    <input className="form-control" value={marks[sub.id]?.prac2 || ''} onChange={e => handleMarkChange(sub.id, 'prac2', e.target.value)} />
+                                                </div>
+                                                <div style={{gridColumn: 'span 2'}}>
+                                                    <label style={{fontSize: '0.7rem'}}>Term 2 Result (e.g. Pass/Fail)</label>
+                                                    <input className="form-control" value={marks[sub.id]?.result2 || ''} onChange={e => handleMarkChange(sub.id, 'result2', e.target.value)} />
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <div>
+                                                    <label style={{fontSize: '0.7rem'}}>PPT-1 (30)</label>
+                                                    <input className="form-control" value={marks[sub.id]?.ppt1 || ''} onChange={e => handleMarkChange(sub.id, 'ppt1', e.target.value)} />
+                                                </div>
+                                                <div>
+                                                    <label style={{fontSize: '0.7rem'}}>Half Yearly (70)</label>
+                                                    <input className="form-control" value={marks[sub.id]?.yearly || ''} onChange={e => handleMarkChange(sub.id, 'yearly', e.target.value)} />
+                                                </div>
+                                                <div>
+                                                    <label style={{fontSize: '0.7rem'}}>PPT-2 (30)</label>
+                                                    <input className="form-control" value={marks[sub.id]?.ppt2 || ''} onChange={e => handleMarkChange(sub.id, 'ppt2', e.target.value)} />
+                                                </div>
+                                                <div>
+                                                    <label style={{fontSize: '0.7rem'}}>Annual Exam (70)</label>
+                                                    <input className="form-control" value={marks[sub.id]?.annual || ''} onChange={e => handleMarkChange(sub.id, 'annual', e.target.value)} />
+                                                </div>
+                                            </>
+                                        )
+                                    ) : (
+                                        (reportType === 'class-9' || reportType === 'senior') ? (
+                                            <>
+                                                <div style={{gridColumn: 'span 2'}}>
+                                                    <label style={{fontSize: '0.7rem'}}>Term 1 Grade</label>
+                                                    <input className="form-control" value={marks[sub.id]?.theory1 || ''} onChange={e => handleMarkChange(sub.id, 'theory1', e.target.value)} />
+                                                </div>
+                                                <div style={{gridColumn: 'span 2'}}>
+                                                    <label style={{fontSize: '0.7rem'}}>Term 2 Grade</label>
+                                                    <input className="form-control" value={marks[sub.id]?.theory2 || ''} onChange={e => handleMarkChange(sub.id, 'theory2', e.target.value)} />
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <div style={{gridColumn: 'span 2'}}>
+                                                    <label style={{fontSize: '0.7rem'}}>Term 1 Grade</label>
+                                                    <input className="form-control" value={marks[sub.id]?.ppt1 || ''} onChange={e => handleMarkChange(sub.id, 'ppt1', e.target.value)} />
+                                                </div>
+                                                <div style={{gridColumn: 'span 2'}}>
+                                                    <label style={{fontSize: '0.7rem'}}>Term 2 Grade</label>
+                                                    <input className="form-control" value={marks[sub.id]?.ppt2 || ''} onChange={e => handleMarkChange(sub.id, 'ppt2', e.target.value)} />
+                                                </div>
+                                            </>
+                                        )
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    <div className="section-title" style={{ marginTop: '2rem' }}>Step 3: Personality Chart (Manual Entries "M")</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem' }}>
+                        {PERSONALITY_TRAITS.map(trait => (
+                            <div key={trait} className="form-group" style={{ padding: '0.75rem', background: '#f8fafc', borderRadius: '8px' }}>
+                                <label style={{ marginBottom: '0.5rem' }}>{trait}</label>
+                                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                    <input placeholder="Term 1" className="form-control" value={personality[trait]?.term1 || ''} onChange={e => handlePersonalityChange(trait, 'term1', e.target.value)} />
+                                    <input placeholder="Term 2" className="form-control" value={personality[trait]?.term2 || ''} onChange={e => handlePersonalityChange(trait, 'term2', e.target.value)} />
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    </>
+                )}
+
+                    <div className="section-title" style={{ marginTop: '2rem' }}>Step 4: Summary & Result (Manual Entries "M")</div>
+                    <div className="form-grid">
+                        <div className="form-group">
+                            <label>Term 1 Attendance</label>
+                            <input className="form-control" value={attendance.term1} onChange={e => setAttendance({ ...attendance, term1: e.target.value })} />
+                        </div>
+                        <div className="form-group">
+                            <label>Term 2 Attendance</label>
+                            <input className="form-control" value={attendance.term2} onChange={e => setAttendance({ ...attendance, term2: e.target.value })} />
+                        </div>
+                        <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                            <label>1st Term Remarks</label>
+                            <textarea className="form-control" rows={2} value={remarks.term1} onChange={e => setRemarks({ ...remarks, term1: e.target.value })} />
+                        </div>
+                        <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                            <label>2nd Term Remarks</label>
+                            <textarea className="form-control" rows={2} value={remarks.term2} onChange={e => setRemarks({ ...remarks, term2: e.target.value })} />
+                        </div>
+                    </div>
+
+                    <div className="form-grid">
+                        <div className="form-group">
+                            <label>Promoted to Class / Status</label>
+                            <input className="form-control" value={result.promotedTo} onChange={e => setResult({ ...result, promotedTo: e.target.value })} />
+                        </div>
+                        <div className="form-group">
+                            <label>Distinction Granted In</label>
+                            <input className="form-control" value={result.distinctionIn} onChange={e => setResult({ ...result, distinctionIn: e.target.value })} />
+                        </div>
+                        <div className="form-group">
+                            <label>Re-open Date</label>
+                            <input type="text" placeholder="e.g. 5th April" className="form-control" value={result.reOpenDate} onChange={e => setResult({ ...result, reOpenDate: e.target.value })} />
+                        </div>
+                        <div className="form-group">
+                            <label>Re-open Time</label>
+                            <input type="text" placeholder="e.g. 8:00" className="form-control" value={result.reOpenTime} onChange={e => setResult({ ...result, reOpenTime: e.target.value })} />
+                        </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '1rem', marginTop: '3rem', borderTop: '2px solid #f3f4f6', paddingTop: '2rem' }}>
+                        <button className="btn-primary" style={{ width: 'auto', padding: '0.75rem 2rem', display: 'flex', alignItems: 'center', gap: '0.5rem', background: '#4b5563' }}>
+                            <Save size={18} /> Save Progress
+                        </button>
+                        <button onClick={printReport} className="btn-primary" style={{ width: 'auto', padding: '0.75rem 2rem', backgroundColor: '#4f46e5', display: 'flex', alignItems: 'center', gap: '0.5rem', boxShadow: '0 4px 14px 0 rgba(79, 70, 229, 0.39)' }}>
+                            <Printer size={18} /> Download / Print Report Card
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+
+             {/* PREVIEW AREA */}
+            {(reportType === 'class-9' || reportType === 'senior') ? (
+                <div id="report-card-printable" className="class9-report-card">
+                    {/* Header: Bimla International Public School (BIPS) Header matching the uploaded image exactly */}
+                    <div className="class9-header-grid" style={{ display: 'grid', gridTemplateColumns: '180px 1fr 180px', alignItems: 'center', borderBottom: '2px solid #000', paddingBottom: '1rem', marginBottom: '1rem', gap: '1rem' }}>
+                        {/* Left Box: Class & Session */}
+                        <div style={{
+                            backgroundColor: '#0284c7',
+                            color: 'white',
+                            padding: '0.75rem',
+                            borderRadius: '4px',
+                            textAlign: 'center',
+                            fontWeight: 'bold',
+                            fontSize: '0.85rem',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            justifyContent: 'center',
+                            gap: '0.25rem',
+                            border: '1px solid #0369a1',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                        }}>
+                            <div>Class - {reportType === 'class-9' ? 'XI & XII' : 'IX & X'}</div>
+                            <div style={{ fontSize: '0.8rem', borderTop: '1px solid rgba(255,255,255,0.3)', paddingTop: '0.25rem', marginTop: '0.25rem' }}>Session - 20{sessionStart}-20{sessionEnd}</div>
+                        </div>
+
+                        {/* Center Box: School Details */}
+                        <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.4rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', justifyContent: 'center' }}>
+                                {/* Small School Logo Emblem */}
+                                <div style={{
+                                    width: '45px',
+                                    height: '45px',
+                                    borderRadius: '50%',
+                                    backgroundColor: '#d32f2f',
+                                    color: 'white',
+                                    display: 'flex',
+                                    justifyContent: 'center',
+                                    alignItems: 'center',
+                                    fontSize: '0.8rem',
+                                    fontWeight: '900',
+                                    border: '2px solid #b71c1c',
+                                    boxShadow: '0 2px 4px rgba(0,0,0,0.15)'
+                                }}>
+                                    BIPS
+                                </div>
+                                <h1 style={{
+                                    color: '#d32f2f',
+                                    fontSize: '1.75rem',
+                                    fontWeight: 900,
+                                    margin: 0,
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '1px',
+                                    fontFamily: "'Arial Black', Impact, sans-serif"
+                                }}>
+                                    BIMLA INTERNATIONAL PUBLIC SCHOOL
+                                </h1>
+                            </div>
+
+                            {/* Green Affiliation Badge */}
+                            <div style={{
+                                backgroundColor: '#15803d',
+                                color: 'white',
+                                padding: '0.15rem 1rem',
+                                borderRadius: '12px',
+                                fontWeight: 'bold',
+                                fontSize: '0.75rem',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.5px',
+                                display: 'inline-block',
+                                border: '1px solid #166534'
+                            }}>
+                                Affiliated to U.P. Board
+                            </div>
+
+                            {/* Address and Phone details */}
+                            <p style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#333', margin: 0 }}>
+                                MAKHDOOMPUR KAITHI, NEAR CHANDRAWAL, BIJNAUR, LUCKNOW
+                            </p>
+                            <p style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#d32f2f', margin: 0 }}>
+                                Mob. : 9335851877
+                            </p>
+
+                            {/* Progress Report Elegant Cursive Title */}
+                            <div style={{
+                                fontSize: '1.4rem',
+                                fontWeight: 'bold',
+                                color: '#ea580c',
+                                fontFamily: "'Georgia', serif",
+                                fontStyle: 'italic',
+                                textShadow: '1px 1px 1px rgba(0,0,0,0.1)',
+                                marginTop: '0.25rem'
+                            }}>
+                                Progress Report
+                            </div>
+                        </div>
+
+                        {/* Right Box: Passport Size Photo */}
+                        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                            <div style={{
+                                width: '100px',
+                                height: '120px',
+                                border: '1.5px dashed #666',
+                                borderRadius: '4px',
+                                display: 'flex',
+                                justifyContent: 'center',
+                                alignItems: 'center',
+                                fontSize: '0.7rem',
+                                fontWeight: 'bold',
+                                color: '#555',
+                                backgroundColor: '#fafafa',
+                                textAlign: 'center',
+                                padding: '0.5rem',
+                                boxSizing: 'border-box'
+                            }}>
+                                Passport Size Photo
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Student Info Box matching BILL TO / SHIP TO / Metadata style */}
+                    <div className="class9-info-grid">
+                        <div className="class9-info-box">
+                            <div className="class9-info-title">Student Profile</div>
+                            <div className="class9-info-row">Name: <span>{selectedStudent?.name || 'N/A'}</span></div>
+                            <div className="class9-info-row">Class: <span>{selectedStudent?.className || 'N/A'}</span></div>
+                            <div className="class9-info-row">Roll No: <span>{selectedStudent?.rollNo || 'N/A'}</span></div>
+                        </div>
+                        <div className="class9-info-box">
+                            <div className="class9-info-title">Parental Details</div>
+                            <div className="class9-info-row">Father's Name: <span>{selectedStudent?.fatherName || 'N/A'}</span></div>
+                            <div className="class9-info-row">Mother's Name: <span>{selectedStudent?.motherName || 'N/A'}</span></div>
+                            <div className="class9-info-row">Contact: <span>{selectedStudent?.mobile || 'N/A'}</span></div>
+                        </div>
+                        <div className="class9-info-box" style={{ borderRight: 'none' }}>
+                            <div className="class9-info-title">Academic Record</div>
+                            <div className="class9-info-row">SR No: <span>{selectedStudent?.admissionNo || 'N/A'}</span></div>
+                            <div className="class9-info-row">DOB: <span>{selectedStudent?.dateOfBirth || 'N/A'}</span></div>
+                            <div className="class9-info-row">Date: <span>{new Date().toLocaleDateString('en-GB')}</span></div>
+                        </div>
+                    </div>
+
+                    <div className="class9-title-bar">
+                        ACADEMIC PROGRESS REPORT (CLASS {reportType === 'class-9' ? 'XI & XII' : 'IX & X'})
+                    </div>
+
+                    {/* Scholastic Marks Table matching the uploaded image exactly */}
+                    <table className="class9-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem', marginBottom: '1rem', border: '1px solid #000' }}>
+                        <thead>
+                            <tr style={{ backgroundColor: '#d32f2f', color: 'white', fontWeight: 'bold' }}>
+                                <th colSpan={2} style={{ backgroundColor: '#d32f2f', height: '35px', border: '1px solid #000' }}></th>
+                                <th colSpan={4} style={{ backgroundColor: '#d32f2f', color: 'white', fontWeight: 'bold', fontSize: '0.85rem', verticalAlign: 'middle', border: '1px solid #000', textAlign: 'center' }}>Term I<sup>st</sup></th>
+                                <th colSpan={6} style={{ backgroundColor: '#d32f2f', color: 'white', fontWeight: 'bold', fontSize: '0.85rem', verticalAlign: 'middle', border: '1px solid #000', textAlign: 'center' }}>Term II<sup>nd</sup></th>
+                            </tr>
+                            <tr>
+                                <th rowSpan={2} style={{ width: '20%', backgroundColor: '#f5efe6', border: '1px solid #000', color: '#000', fontWeight: 'bold', verticalAlign: 'middle', textAlign: 'center' }}>Subject</th>
+                                <th rowSpan={2} style={{ width: '8%', backgroundColor: '#f5efe6', border: '1px solid #000', color: '#000', fontWeight: 'bold', verticalAlign: 'middle', textAlign: 'center' }}>Max.<br/>Marks</th>
+                                <th colSpan={2} style={{ backgroundColor: '#f5efe6', border: '1px solid #000', color: '#000', fontWeight: 'bold', textAlign: 'center' }}>Obtained Marks</th>
+                                <th rowSpan={2} style={{ width: '7%', backgroundColor: '#f5efe6', border: '1px solid #000', color: '#000', fontWeight: 'bold', verticalAlign: 'middle', textAlign: 'center' }}>Total</th>
+                                <th rowSpan={2} style={{ width: '7%', backgroundColor: '#f5efe6', border: '1px solid #000', color: '#000', fontWeight: 'bold', verticalAlign: 'middle', textAlign: 'center' }}>Result</th>
+                                <th rowSpan={2} style={{ width: '8%', backgroundColor: '#f5efe6', border: '1px solid #000', color: '#000', fontWeight: 'bold', verticalAlign: 'middle', textAlign: 'center' }}>Max.<br/>Marks</th>
+                                <th colSpan={2} style={{ backgroundColor: '#f5efe6', border: '1px solid #000', color: '#000', fontWeight: 'bold', textAlign: 'center' }}>Obtained Marks</th>
+                                <th rowSpan={2} style={{ width: '7%', backgroundColor: '#f5efe6', border: '1px solid #000', color: '#000', fontWeight: 'bold', verticalAlign: 'middle', textAlign: 'center' }}>Total</th>
+                                <th rowSpan={2} style={{ width: '7%', backgroundColor: '#f5efe6', border: '1px solid #000', color: '#000', fontWeight: 'bold', verticalAlign: 'middle', textAlign: 'center' }}>Result</th>
+                                <th rowSpan={2} style={{ width: '8%', backgroundColor: '#f5efe6', border: '1px solid #000', color: '#000', fontWeight: 'bold', verticalAlign: 'middle', textAlign: 'center' }}>Grand<br/>Total</th>
+                            </tr>
+                            <tr>
+                                <th style={{ width: '7%', backgroundColor: '#f5efe6', border: '1px solid #000', color: '#000', textAlign: 'center' }}>Theory</th>
+                                <th style={{ width: '7%', backgroundColor: '#f5efe6', border: '1px solid #000', color: '#000', textAlign: 'center' }}>Prac.</th>
+                                <th style={{ width: '7%', backgroundColor: '#f5efe6', border: '1px solid #000', color: '#000', textAlign: 'center' }}>Theory</th>
+                                <th style={{ width: '7%', backgroundColor: '#f5efe6', border: '1px solid #000', color: '#000', textAlign: 'center' }}>Prac.</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {activeSubjects.map((sub) => (
+                                <tr key={sub.id} style={{ height: '30px' }}>
+                                    <td className="subject-name" style={{ textAlign: 'left', fontWeight: 'bold', border: '1px solid #000', paddingLeft: '0.5rem', backgroundColor: '#fcfaf7', color: '#333' }}>{sub.name}</td>
+                                    <td style={{ border: '1px solid #000', fontWeight: '500', backgroundColor: '#fcfaf7', textAlign: 'center' }}>{sub.maxMarks}</td>
+                                    {sub.type === 'marks' ? (
+                                        <>
+                                            <td style={{ border: '1px solid #000', textAlign: 'center' }}>{marks[sub.id]?.theory1 || ''}</td>
+                                            <td style={{ border: '1px solid #000', textAlign: 'center' }}>{marks[sub.id]?.prac1 || ''}</td>
+                                            <td style={{ border: '1px solid #000', fontWeight: 'bold', backgroundColor: '#fcfaf7', textAlign: 'center' }}>{calculateTotal(sub.id, 1) || ''}</td>
+                                            <td style={{ border: '1px solid #000', textAlign: 'center' }}>{marks[sub.id]?.result1 || ''}</td>
+                                            <td style={{ border: '1px solid #000', fontWeight: '500', backgroundColor: '#fcfaf7', textAlign: 'center' }}>{sub.maxMarks}</td>
+                                            <td style={{ border: '1px solid #000', textAlign: 'center' }}>{marks[sub.id]?.theory2 || ''}</td>
+                                            <td style={{ border: '1px solid #000', textAlign: 'center' }}>{marks[sub.id]?.prac2 || ''}</td>
+                                            <td style={{ border: '1px solid #000', fontWeight: 'bold', backgroundColor: '#fcfaf7', textAlign: 'center' }}>{calculateTotal(sub.id, 2) || ''}</td>
+                                            <td style={{ border: '1px solid #000', textAlign: 'center' }}>{marks[sub.id]?.result2 || ''}</td>
+                                            <td style={{ border: '1px solid #000', fontWeight: 'bold', backgroundColor: '#f5efe6', textAlign: 'center' }}>{calculateGrandTotal(sub.id) || ''}</td>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <td colSpan={2} style={{ border: '1px solid #000', fontWeight: 'bold', textAlign: 'center' }}>Grade: {marks[sub.id]?.theory1 || ''}</td>
+                                            <td style={{ border: '1px solid #000', fontWeight: 'bold', textAlign: 'center' }}>-</td>
+                                            <td style={{ border: '1px solid #000', textAlign: 'center' }}>-</td>
+                                            <td style={{ border: '1px solid #000', fontWeight: '500', backgroundColor: '#fcfaf7', textAlign: 'center' }}>{sub.maxMarks}</td>
+                                            <td colSpan={2} style={{ border: '1px solid #000', fontWeight: 'bold', textAlign: 'center' }}>Grade: {marks[sub.id]?.theory2 || ''}</td>
+                                            <td style={{ border: '1px solid #000', fontWeight: 'bold', textAlign: 'center' }}>-</td>
+                                            <td style={{ border: '1px solid #000', textAlign: 'center' }}>-</td>
+                                            <td style={{ border: '1px solid #000', fontWeight: 'bold', backgroundColor: '#f5efe6', textAlign: 'center' }}>-</td>
+                                        </>
+                                    )}
+                                </tr>
+                            ))}
+                            {/* Scholastic Marks Total Row */}
+                            <tr style={{ fontWeight: 'bold', height: '32px', backgroundColor: '#f5efe6' }}>
+                                <td className="subject-name" style={{ textAlign: 'left', border: '1px solid #000', paddingLeft: '0.5rem' }}>Total</td>
+                                <td style={{ border: '1px solid #000', textAlign: 'center' }}>{activeSubjects.filter(s=>s.type==='marks').reduce((acc, s) => acc + (s.maxMarks || 100), 0)}</td>
+                                <td style={{ border: '1px solid #000', textAlign: 'center' }}>{activeSubjects.filter(s=>s.type==='marks').reduce((acc, s)=> acc + (parseInt(marks[s.id]?.theory1) || 0), 0) || ''}</td>
+                                <td style={{ border: '1px solid #000', textAlign: 'center' }}>{activeSubjects.filter(s=>s.type==='marks').reduce((acc, s)=> acc + (parseInt(marks[s.id]?.prac1) || 0), 0) || ''}</td>
+                                <td style={{ border: '1px solid #000', fontWeight: 'bold', textAlign: 'center' }}>{activeSubjects.filter(s=>s.type==='marks').reduce((acc, s)=> acc + calculateTotal(s.id, 1), 0) || ''}</td>
+                                <td style={{ border: '1px solid #000', textAlign: 'center' }}></td>
+                                <td style={{ border: '1px solid #000', textAlign: 'center' }}>{activeSubjects.filter(s=>s.type==='marks').reduce((acc, s) => acc + (s.maxMarks || 100), 0)}</td>
+                                <td style={{ border: '1px solid #000', textAlign: 'center' }}>{activeSubjects.filter(s=>s.type==='marks').reduce((acc, s)=> acc + (parseInt(marks[s.id]?.theory2) || 0), 0) || ''}</td>
+                                <td style={{ border: '1px solid #000', textAlign: 'center' }}>{activeSubjects.filter(s=>s.type==='marks').reduce((acc, s)=> acc + (parseInt(marks[s.id]?.prac2) || 0), 0) || ''}</td>
+                                <td style={{ border: '1px solid #000', fontWeight: 'bold', textAlign: 'center' }}>{activeSubjects.filter(s=>s.type==='marks').reduce((acc, s)=> acc + calculateTotal(s.id, 2), 0) || ''}</td>
+                                <td style={{ border: '1px solid #000', textAlign: 'center' }}></td>
+                                <td style={{ border: '1px solid #000', fontWeight: 'bold', textAlign: 'center' }}>{activeSubjects.filter(s=>s.type==='marks').reduce((acc, s)=> acc + calculateGrandTotal(s.id), 0) || ''}</td>
+                            </tr>
+                            {/* Scholastic Marks Percentage Row */}
+                            <tr style={{ fontWeight: 'bold', height: '32px', backgroundColor: '#fcfaf7' }}>
+                                <td className="subject-name" style={{ textAlign: 'left', border: '1px solid #000', paddingLeft: '0.5rem' }}>Percentage</td>
+                                <td style={{ border: '1px solid #000', textAlign: 'center' }}></td>
+                                <td style={{ border: '1px solid #000', textAlign: 'center' }}></td>
+                                <td style={{ border: '1px solid #000', textAlign: 'center' }}></td>
+                                <td style={{ border: '1px solid #000', fontWeight: 'bold', textAlign: 'center' }}>{calculatePercentage(1)}%</td>
+                                <td style={{ border: '1px solid #000', textAlign: 'center' }}></td>
+                                <td style={{ border: '1px solid #000', textAlign: 'center' }}></td>
+                                <td style={{ border: '1px solid #000', textAlign: 'center' }}></td>
+                                <td style={{ border: '1px solid #000', textAlign: 'center' }}></td>
+                                <td style={{ border: '1px solid #000', fontWeight: 'bold', textAlign: 'center' }}>{calculatePercentage(2)}%</td>
+                                <td style={{ border: '1px solid #000', textAlign: 'center' }}></td>
+                                <td style={{ border: '1px solid #000', fontWeight: 'bold', backgroundColor: '#f5efe6', textAlign: 'center' }}>{((parseFloat(calculatePercentage(1)) + parseFloat(calculatePercentage(2))) / 2).toFixed(2)}%</td>
+                            </tr>
+                            {/* Scholastic Marks Attendance Row */}
+                            <tr style={{ fontWeight: 'bold', height: '32px', backgroundColor: '#fcfaf7' }}>
+                                <td className="subject-name" style={{ textAlign: 'left', border: '1px solid #000', paddingLeft: '0.5rem' }}>Attendance</td>
+                                <td style={{ border: '1px solid #000', textAlign: 'center' }}></td>
+                                <td style={{ border: '1px solid #000', textAlign: 'center' }}></td>
+                                <td style={{ border: '1px solid #000', textAlign: 'center' }}></td>
+                                <td style={{ border: '1px solid #000', fontWeight: 'bold', textAlign: 'center' }}>{attendance.term1 || ''}</td>
+                                <td style={{ border: '1px solid #000', textAlign: 'center' }}></td>
+                                <td style={{ border: '1px solid #000', textAlign: 'center' }}></td>
+                                <td style={{ border: '1px solid #000', textAlign: 'center' }}></td>
+                                <td style={{ border: '1px solid #000', textAlign: 'center' }}></td>
+                                <td style={{ border: '1px solid #000', fontWeight: 'bold', textAlign: 'center' }}>{attendance.term2 || ''}</td>
+                                <td style={{ border: '1px solid #000', textAlign: 'center' }}></td>
+                                <td style={{ border: '1px solid #000', fontWeight: 'bold', backgroundColor: '#f5efe6', textAlign: 'center' }}></td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    {/* Bottom Layout: Terms table + Summary Metrics table */}
+                    <div className="class9-bottom-layout">
+                        <div className="class9-terms-container">
+                            <table className="class9-terms-table">
+                                <thead>
+                                    <tr>
+                                        <th colSpan={2} style={{ backgroundColor: '#f1f5f9', fontWeight: 'bold', textTransform: 'uppercase' }}>Grading Scales & Remarks</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td className="term-desc" style={{ fontWeight: 'bold', textTransform: 'uppercase', width: '30%', backgroundColor: '#f1f5f9' }}>Scholastic Grades</td>
+                                        <td>A1 (91-100), A2 (81-90), B1 (71-80), B2 (61-70), C1 (51-60), C2 (41-50), D (33-40), E (32 & below)</td>
+                                    </tr>
+                                    <tr>
+                                        <td className="term-desc" style={{ fontWeight: 'bold', textTransform: 'uppercase', width: '30%', backgroundColor: '#f1f5f9' }}>Co-Scholastic</td>
+                                        <td>A (Outstanding), B (Very Good), C (Fair)</td>
+                                    </tr>
+                                    <tr>
+                                        <td className="term-desc" style={{ fontWeight: 'bold', textTransform: 'uppercase', width: '30%', backgroundColor: '#f1f5f9' }}>1st Term Remarks</td>
+                                        <td>{remarks.term1 || 'Satisfactory progress.'}</td>
+                                    </tr>
+                                    <tr>
+                                        <td className="term-desc" style={{ fontWeight: 'bold', textTransform: 'uppercase', width: '30%', backgroundColor: '#f1f5f9' }}>2nd Term Remarks</td>
+                                        <td>{remarks.term2 || 'Good effort shown throughout the academic year.'}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div className="class9-summary-container">
+                            <table className="class9-summary-table">
+                                <tbody>
+                                    <tr>
+                                        <td className="label" style={{ textAlign: 'left', backgroundColor: '#f1f5f9' }}>Term 1 %</td>
+                                        <td style={{ fontWeight: 'bold' }}>{calculatePercentage(1)}%</td>
+                                    </tr>
+                                    <tr>
+                                        <td className="label" style={{ textAlign: 'left', backgroundColor: '#f1f5f9' }}>Term 2 %</td>
+                                        <td style={{ fontWeight: 'bold' }}>{calculatePercentage(2)}%</td>
+                                    </tr>
+                                    <tr>
+                                        <td className="label" style={{ textAlign: 'left', backgroundColor: '#f1f5f9' }}>Attendance T1</td>
+                                        <td style={{ fontWeight: 'bold' }}>{attendance.term1 || '-'}</td>
+                                    </tr>
+                                    <tr>
+                                        <td className="label" style={{ textAlign: 'left', backgroundColor: '#f1f5f9' }}>Attendance T2</td>
+                                        <td style={{ fontWeight: 'bold' }}>{attendance.term2 || '-'}</td>
+                                    </tr>
+                                    <tr style={{ backgroundColor: '#f1f5f9' }}>
+                                        <td className="label" style={{ textAlign: 'left', backgroundColor: '#f1f5f9' }}>Promotional Status</td>
+                                        <td style={{ color: '#1e3a8a', fontWeight: 'bold' }}>{result.promotedTo || 'Promoted'}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    {/* Signatures Row */}
+                    <div className="class9-signs-row" style={{ display: 'flex', justifyContent: 'space-between', marginTop: '3rem', fontWeight: 'bold', fontSize: '0.85rem', borderTop: '1px dashed #000', paddingTop: '0.5rem' }}>
+                        <div style={{ width: '30%', textAlign: 'center' }}>
+                            <p style={{ height: '30px' }}></p>
+                            <p>CLASS TEACHER SIGNATURE</p>
+                        </div>
+                        <div style={{ width: '30%', textAlign: 'center' }}>
+                            <p style={{ height: '30px' }}></p>
+                            <p>PRINCIPAL SIGNATURE</p>
+                        </div>
+                        <div style={{ width: '30%', textAlign: 'center' }}>
+                            <p style={{ height: '30px' }}></p>
+                            <p>PARENT SIGNATURE</p>
+                        </div>
+                    </div>
+                </div>
+            ) : reportType === 'standard' ? (
+                <div id="report-card-printable" className="report-card-preview">
+                    <div className="card-header">
+                        PROGRESS REPORT (SESSION 20{sessionStart} - 20{sessionEnd})
+                    </div>
+
+                    <div className="student-info-row">
+                        <div>NAME: <span className="dotted-line" style={{ minWidth: '300px' }}>{selectedStudent?.name || '__________________________'}</span></div>
+                        <div>CLASS: <span className="dotted-line" style={{ minWidth: '80px' }}>{selectedStudent?.className || '_________'}</span></div>
+                        <div>SR NO.: <span className="dotted-line" style={{ minWidth: '80px' }}>{selectedStudent?.admissionNo || '_________'}</span></div>
+                    </div>
+
+                    <div className="main-tables-grid">
+                        <div className="marks-table-section">
+                            <table className="report-table">
+                                <thead>
+                                    <tr>
+                                        <th rowSpan={2}>SCHOLASTIC :</th>
+                                        <th colSpan={3}>TERM-1</th>
+                                        <th colSpan={3}>TERM-2</th>
+                                        <th rowSpan={2}>GRAND TOTAL (200)</th>
+                                    </tr>
+                                    <tr>
+                                        <th>PPT-1 (30)</th>
+                                        <th>Half Yearly (70)</th>
+                                        <th>TOTAL (100)</th>
+                                        <th>PPT-2 (30)</th>
+                                        <th>ANNUAL EXAM (70)</th>
+                                        <th>TOTAL (100)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {activeSubjects.map(sub => (
+                                        <tr key={sub.id}>
+                                            <td className="subject-name">{sub.name}</td>
+                                            {sub.type === 'marks' ? (
+                                                <>
+                                                    <td>{marks[sub.id]?.ppt1}</td>
+                                                    <td>{marks[sub.id]?.yearly}</td>
+                                                    <td>{calculateTotal(sub.id, 1) || ''}</td>
+                                                    <td>{marks[sub.id]?.ppt2}</td>
+                                                    <td>{marks[sub.id]?.annual}</td>
+                                                    <td>{calculateTotal(sub.id, 2) || ''}</td>
+                                                    <td>{calculateGrandTotal(sub.id) || ''}</td>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <td colSpan={3}>Grade: {marks[sub.id]?.ppt1}</td>
+                                                    <td colSpan={3}>Grade: {marks[sub.id]?.ppt2}</td>
+                                                    <td></td>
+                                                </>
+                                            )}
+                                        </tr>
+                                    ))}
+                                    <tr style={{ fontWeight: 'bold' }}>
+                                        <td className="subject-name">TOTAL</td>
+                                        <td></td>
+                                        <td></td>
+                                        <td>{activeSubjects.filter(s=>s.type==='marks').reduce((acc, s)=> acc + calculateTotal(s.id,1), 0) || ''}</td>
+                                        <td></td>
+                                        <td></td>
+                                        <td>{activeSubjects.filter(s=>s.type==='marks').reduce((acc, s)=> acc + calculateTotal(s.id,2), 0) || ''}</td>
+                                        <td>{activeSubjects.filter(s=>s.type==='marks').reduce((acc, s)=> acc + calculateGrandTotal(s.id), 0) || ''}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div className="personality-section">
+                            <div className="personality-title">Personality Character Chart</div>
+                            <table className="report-table personality-table">
+                                <thead>
+                                    <tr>
+                                        <th></th>
+                                        <th>TERM 1</th>
+                                        <th>TERM 2</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {PERSONALITY_TRAITS.map(trait => (
+                                        <tr key={trait}>
+                                            <td style={{ textAlign: 'left', fontWeight: 600 }}>{trait}</td>
+                                            <td>
+                                                <input 
+                                                    className="no-border-input" 
+                                                    value={personality[trait]?.term1 || ''} 
+                                                    onChange={e => handlePersonalityChange(trait, 'term1', e.target.value)}
+                                                    placeholder="M"
+                                                />
+                                            </td>
+                                            <td>
+                                                <input 
+                                                    className="no-border-input" 
+                                                    value={personality[trait]?.term2 || ''} 
+                                                    onChange={e => handlePersonalityChange(trait, 'term2', e.target.value)}
+                                                    placeholder="M"
+                                                />
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div className="bottom-sections">
+                        <div className="bottom-table-container">
+                            <table className="report-table" style={{ height: '100%' }}>
+                                <thead>
+                                    <tr>
+                                        <th></th>
+                                        <th>Ist Term</th>
+                                        <th>IInd Term</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr><td>Percentage</td><td>{calculatePercentage(1)}%</td><td>{calculatePercentage(2)}%</td></tr>
+                                    <tr><td>Position</td><td><input className="no-border-input" value={position.term1} onChange={e=>setPosition({...position, term1: e.target.value})} /></td><td><input className="no-border-input" value={position.term2} onChange={e=>setPosition({...position, term2: e.target.value})} /></td></tr>
+                                    <tr><td>Attendance</td><td><input className="no-border-input" value={attendance.term1} onChange={e=>setAttendance({...attendance, term1: e.target.value})} /></td><td><input className="no-border-input" value={attendance.term2} onChange={e=>setAttendance({...attendance, term2: e.target.value})} /></td></tr>
+                                    <tr style={{height: '40px'}}><td>Class Teacher</td><td></td><td></td></tr>
+                                    <tr style={{height: '40px'}}><td>Principal</td><td></td><td></td></tr>
+                                    <tr style={{height: '40px'}}><td>Parents</td><td></td><td></td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div className="remarks-container">
+                            <div className="remarks-title">REMARKS</div>
+                            <div className="remarks-row">
+                                <b>1st Term</b> <span className="dotted-line" style={{ width: '80%' }}>{remarks.term1}</span>
+                            </div>
+                            <div className="remarks-row">
+                                <b>2nd Term</b> <span className="dotted-line" style={{ width: '80%' }}>{remarks.term2}</span>
+                            </div>
+                        </div>
+
+                        <div className="result-container">
+                            <div className="result-title">RESULT</div>
+                            <div style={{ fontSize: '0.8rem', lineHeight: '2' }}>
+                                <div>Passed & Promoted to Class <span className="dotted-line" style={{ width: '40%' }}>{result.promotedTo}</span></div>
+                                <div>Detained in Class <span className="dotted-line" style={{ width: '60%' }}>{result.detainedIn}</span></div>
+                                <div>Distinction granted in <span className="dotted-line" style={{ width: '50%' }}>{result.distinctionIn}</span></div>
+                                <div style={{ borderBottom: '1px solid #000', margin: '0.5rem 0' }}></div>
+                                <div>Re-exam in <span className="dotted-line" style={{ width: '70%' }}>{result.reExamIn}</span></div>
+                                <div>School will re-open on <span className="dotted-line" style={{ width: '40%' }}>{result.reOpenDate}</span></div>
+                                <div style={{ textAlign: 'right' }}>at <span className="dotted-line" style={{ width: '40px' }}>{result.reOpenTime}</span> A.M.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            ) : (
+                <div id="report-card-printable" className="lkg-report-card">
+                    {/* Front Cover & Back Cover Row */}
+                    <div className="lkg-page">
+                        <div className="lkg-column back-cover">
+                            <div className="lkg-section-title">Over all Development</div>
+                            <table className="lkg-table">
+                                <thead>
+                                    <tr>
+                                        <th>Regularity & Punctuality</th>
+                                        <th>Term I</th>
+                                        <th>Term 2</th>
+                                        <th>Overall</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {OVERALL_DEVELOPMENT_TRAITS.map(trait => (
+                                        <tr key={trait}>
+                                            <td style={{textAlign: 'left'}}>{trait}</td>
+                                            <td>{overallDev[trait]?.term1}</td>
+                                            <td>{overallDev[trait]?.term2}</td>
+                                            <td>{overallDev[trait]?.overall}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+
+                            <div className="lkg-remarks-section">
+                                <p><b>Remark :</b></p>
+                                <p>Term 1 __________________________________________________</p>
+                                <p>Term 2 __________________________________________________</p>
+                            </div>
+
+                            <div className="lkg-signs-row">
+                                <div>CT. Sign</div>
+                                <div>Principal Sign</div>
+                                <div>Parent's Sign</div>
+                            </div>
+
+                            <div className="lkg-promotion-info">
+                                <p>Passed and promoted to ___________________________________</p>
+                                <p>School re-opens on _______________________ School Timing are ___________</p>
+                            </div>
+
+                            <div className="lkg-grading-info">
+                                <div className="grading-box">
+                                    <b>Scholastic:</b><br/>
+                                    A+ 90%-100% outstanding<br/>
+                                    A 75%-89% Excellent<br/>
+                                    B 56%-74% Very Good<br/>
+                                    C 35%-55% Good<br/>
+                                    D Below 35% scope for improvement
+                                </div>
+                                <div className="grading-box">
+                                    <b>Co Scholastic</b><br/>
+                                    A+ Outstanding<br/>
+                                    A Very Good<br/>
+                                    B Good
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="lkg-column front-cover">
+                            <div className="school-header text-center">
+                                <div className="school-logo-placeholder">BIPS LOGO</div>
+                                <h1 className="school-name">BIMLA INTERNATIONAL PUBLIC SCHOOL</h1>
+                                <p className="school-affi">AFFILIATED TO U.P. BOARD</p>
+                                <p className="school-addr">MAKHDOOMPUR KAITHI, NEAR CHANDRAWAL BIJNAUR, LUCKNOW</p>
+                                <p className="school-mob">Mob. : 9335851877</p>
+                                <h2 className="progress-report-title">Progress Report</h2>
+                                <p className="academic-session">Academic session 20{sessionStart} to 20{sessionEnd}</p>
+                                <p className="class-label">(Class- Nur. - U.K.G.)</p>
+                            </div>
+
+                            <div className="student-profile-box">
+                                <h3 className="profile-title">STUDENT PROFILE</h3>
+                                <div className="profile-grid">
+                                    <div className="profile-item full">Name: <span className="dotted">{studentProfile.name}</span></div>
+                                    <div className="profile-item">Class & Sec: <span className="dotted">{studentProfile.classSec}</span></div>
+                                    <div className="profile-item">D.O.B: <span className="dotted">{studentProfile.dob}</span></div>
+                                    <div className="profile-item">Roll.No: <span className="dotted">{studentProfile.rollNo}</span></div>
+                                    <div className="profile-item">SR No. : <span className="dotted">{studentProfile.srNo}</span></div>
+                                    <div className="profile-item">Height: <span className="dotted">{studentProfile.height}</span></div>
+                                    <div className="profile-item">Weight: <span className="dotted">{studentProfile.weight}</span></div>
+                                    <div className="profile-item full">Father's Name: <span className="dotted">{studentProfile.fatherName}</span></div>
+                                    <div className="profile-item full">Mother's Name: <span className="dotted">{studentProfile.motherName}</span></div>
+                                    <div className="profile-item full">Residential Address: <span className="dotted">{studentProfile.address}</span></div>
+                                    <div className="profile-item full">Mobile No : <span className="dotted">{studentProfile.mobile}</span></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Inside Sheets Row 1 */}
+                    <div className="lkg-page">
+                        <div className="lkg-column">
+                            <table className="lkg-eval-table">
+                                <thead>
+                                    <tr className="bg-green">
+                                        <th style={{textAlign: 'left'}}>SUBJECT</th>
+                                        <th>EV-1</th>
+                                        <th>EV-2</th>
+                                        <th>OVER ALL</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {LKG_UKG_SUBJECTS.slice(0, 6).map(cat => (
+                                        <React.Fragment key={cat.category}>
+                                            <tr className="subject-head">
+                                                <td colSpan={4} style={{color: '#d32f2f', fontWeight: 'bold'}}>{cat.category}</td>
+                                            </tr>
+                                            {cat.items.map(item => (
+                                                <tr key={item}>
+                                                    <td style={{textAlign: 'left', paddingLeft: '1rem'}}>{item}</td>
+                                                    <td>{lkgMarks[item]?.ev1}</td>
+                                                    <td>{lkgMarks[item]?.ev2}</td>
+                                                    <td>{lkgMarks[item]?.overall}</td>
+                                                </tr>
+                                            ))}
+                                        </React.Fragment>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div className="lkg-column">
+                            <table className="lkg-eval-table">
+                                <thead>
+                                    <tr className="bg-green">
+                                        <th style={{textAlign: 'left'}}>SUBJECT</th>
+                                        <th>EV-1</th>
+                                        <th>EV-2</th>
+                                        <th>OVER ALL</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {LKG_UKG_SUBJECTS.slice(6).map(cat => (
+                                        <React.Fragment key={cat.category}>
+                                            <tr className="subject-head">
+                                                <td colSpan={4} style={{color: '#d32f2f', fontWeight: 'bold'}}>{cat.category}</td>
+                                            </tr>
+                                            {cat.items.map(item => (
+                                                <tr key={item}>
+                                                    <td style={{textAlign: 'left', paddingLeft: '1rem'}}>{item}</td>
+                                                    <td>{lkgMarks[item]?.ev1}</td>
+                                                    <td>{lkgMarks[item]?.ev2}</td>
+                                                    <td>{lkgMarks[item]?.overall}</td>
+                                                </tr>
+                                            ))}
+                                        </React.Fragment>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            <style>{`
+                .no-border-input {
+                    border: none;
+                    width: 100%;
+                    text-align: center;
+                    font-size: 0.8rem;
+                    outline: none;
+                    background: transparent;
+                }
+                .no-border-input:focus {
+                    background-color: #f0f9ff;
+                }
+            `}</style>
+        </div>
+    );
+};
+
+export default ReportCards;

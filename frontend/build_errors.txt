@@ -1,0 +1,14 @@
+﻿src/pages/admin/Fees.tsx(90,12): error TS6133: 'searchQuery' is declared but its value is never read.
+src/pages/admin/Fees.tsx(90,25): error TS6133: 'setSearchQuery' is declared but its value is never read.
+src/pages/admin/TransferCertificate.tsx(43,20): error TS6133: 'setReason' is declared but its value is never read.
+src/pages/admin/TransferCertificate.tsx(44,21): error TS6133: 'setConduct' is declared but its value is never read.
+src/pages/admin/Transport.tsx(2,30): error TS6133: 'Plus' is declared but its value is never read.
+src/pages/admin/Transport.tsx(2,36): error TS6133: 'Phone' is declared but its value is never read.
+src/pages/admin/Transport.tsx(2,43): error TS6133: 'User' is declared but its value is never read.
+src/pages/admin/Transport.tsx(2,49): error TS6133: 'Users' is declared but its value is never read.
+src/pages/admin/Transport.tsx(2,56): error TS6133: 'CheckCircle' is declared but its value is never read.
+src/pages/admin/Transport.tsx(2,69): error TS6133: 'XCircle' is declared but its value is never read.
+src/pages/admin/Transport.tsx(2,78): error TS6133: 'Trash2' is declared but its value is never read.
+src/pages/admin/Transport.tsx(46,12): error TS6133: 'tempPickupPoint' is declared but its value is never read.
+src/pages/admin/Transport.tsx(46,29): error TS6133: 'setTempPickupPoint' is declared but its value is never read.
+src/pages/AdminDashboard.tsx(14,5): error TS6133: 'DollarSign' is declared but its value is never read.

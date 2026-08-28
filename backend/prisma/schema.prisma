@@ -1,0 +1,357 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  ACCOUNTS
+  ACCOUNTS2
+  PRINCIPAL
+  TEACHER
+  TRANSPORT
+  PARENT
+  STUDENT
+}
+
+model User {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  email     String   @unique
+  password  String
+  role      Role     @default(PARENT)
+  name      String
+  phone     String?
+  address   String?
+  permissions String[] @default([])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  studentProfile StudentProfile?
+  teacherProfile TeacherProfile?
+  parentProfile  ParentProfile?
+}
+
+model StudentProfile {
+  id                 String         @id @default(auto()) @map("_id") @db.ObjectId
+  userId             String         @unique @db.ObjectId
+  user               User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  admissionDate      DateTime       @default(now())
+  admissionNo        String         @unique
+  studentId          String?        @unique
+  rollNumber         String?
+  academicYear       String?
+  previousSessionDue Float          @default(0)
+  medium             String?
+  house              String?
+  status             String         @default("Active")
+  classId            String?        @db.ObjectId
+  sectionId          String?        @db.ObjectId
+  class              Class?         @relation(fields: [classId], references: [id])
+  section            Section?       @relation(fields: [sectionId], references: [id])
+  parentId           String?        @db.ObjectId
+  parent             ParentProfile? @relation(fields: [parentId], references: [id])
+
+  gender        String?
+  dateOfBirth   String?
+  bloodGroup    String?
+  isRT          Boolean @default(false)
+  isThirdChild  Boolean @default(false)
+  isOldStudent  Boolean @default(false)
+  category      String?
+  religion      String?
+  nationality   String?
+  aadhaarNumber String?
+  photo         String?
+
+  // Parent Details
+  fatherName          String?
+  fatherMobile        String?
+  fatherOccupation    String?
+  fatherQualification String?
+  fatherEmail         String?
+  motherName          String?
+  motherMobile        String?
+  motherOccupation    String?
+  motherQualification String?
+
+  // Academic Information (Previous School Details)
+  prevSchoolName    String?
+  prevClass         String?
+  prevSchoolAddress String?
+  prevMarks         String?
+  leavingReason     String?
+  siblingInfo       String?
+
+  transportStopId String?        @db.ObjectId
+  transportStop   TransportStop? @relation(fields: [transportStopId], references: [id])
+
+  attendances Attendance[]
+  concessions Concession[]
+  marks       Mark[]
+  fees        FeePayment[]
+  tcRecords   TransferCertificate[]
+  sessionId   String?        @db.ObjectId
+  session     Session?       @relation(fields: [sessionId], references: [id])
+
+  @@index([status, academicYear])
+  @@index([classId])
+}
+
+model TeacherProfile {
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
+  userId        String    @unique @db.ObjectId
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  employeeId    String    @unique
+  joiningDate   DateTime? @default(now())
+  qualification String?
+  gender        String?
+  dateOfBirth   String?
+  photo         String?
+  aadhaarNumber String?
+  experience    String?
+  salary        String?
+  employeeType  String?
+  mainSubject   String?
+
+  subjects       Subject[]
+  timetables     Timetable[]
+  attendances    Attendance[] // Teacher attendance
+  classTeacherOf Class[]      @relation("ClassTeacher")
+}
+
+model ParentProfile {
+  id         String  @id @default(auto()) @map("_id") @db.ObjectId
+  userId     String  @unique @db.ObjectId
+  user       User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  occupation String?
+
+  children StudentProfile[]
+}
+
+model Class {
+  id             String           @id @default(auto()) @map("_id") @db.ObjectId
+  name           String // e.g., "10", "11", "12"
+  feeStructure   Json? // Stores class-wise fee head amounts
+  sections       Section[]
+  students       StudentProfile[]
+  subjects       Subject[]
+  timetables     Timetable[]
+  exams          Exam[]
+  feeStructures  FeeStructure[]
+  classTeacherId String?          @db.ObjectId
+  classTeacher   TeacherProfile?  @relation("ClassTeacher", fields: [classTeacherId], references: [id])
+}
+
+model Section {
+  id         String           @id @default(auto()) @map("_id") @db.ObjectId
+  name       String // e.g., "A", "B", "C"
+  classId    String           @db.ObjectId
+  class      Class            @relation(fields: [classId], references: [id], onDelete: Cascade)
+  students   StudentProfile[]
+  subjects   Subject[]
+  timetables Timetable[]
+}
+
+model Subject {
+  id         String          @id @default(auto()) @map("_id") @db.ObjectId
+  name       String
+  code       String          @unique
+  teacherId  String?         @db.ObjectId
+  teacher    TeacherProfile? @relation(fields: [teacherId], references: [id])
+  classId    String          @db.ObjectId
+  class      Class           @relation(fields: [classId], references: [id], onDelete: Cascade)
+  sectionId  String?         @db.ObjectId
+  section    Section?        @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  marks      Mark[]
+  timetables Timetable[]
+}
+
+model Attendance {
+  id        String          @id @default(auto()) @map("_id") @db.ObjectId
+  date      DateTime        @default(now())
+  status    String
+  studentId String?         @db.ObjectId
+  student   StudentProfile? @relation(fields: [studentId], references: [id])
+  teacherId String?         @db.ObjectId
+  teacher   TeacherProfile? @relation(fields: [teacherId], references: [id]) // For teacher attendance
+
+  @@index([date])
+}
+
+model Timetable {
+  id        String         @id @default(auto()) @map("_id") @db.ObjectId
+  dayOfWeek Int // 1 (Monday) to 7 (Sunday)
+  startTime String
+  endTime   String
+  classId   String         @db.ObjectId
+  class     Class          @relation(fields: [classId], references: [id], onDelete: Cascade)
+  sectionId String         @db.ObjectId
+  section   Section        @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  subjectId String         @db.ObjectId
+  subject   Subject        @relation(fields: [subjectId], references: [id])
+  teacherId String         @db.ObjectId
+  teacher   TeacherProfile @relation(fields: [teacherId], references: [id])
+}
+
+model Exam {
+  id      String   @id @default(auto()) @map("_id") @db.ObjectId
+  name    String
+  date    DateTime
+  classId String   @db.ObjectId
+  class   Class    @relation(fields: [classId], references: [id])
+  marks   Mark[]
+}
+
+model Mark {
+  id            String         @id @default(auto()) @map("_id") @db.ObjectId
+  studentId     String         @db.ObjectId
+  student       StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  examId        String         @db.ObjectId
+  exam          Exam           @relation(fields: [examId], references: [id], onDelete: Cascade)
+  subjectId     String         @db.ObjectId
+  subject       Subject        @relation(fields: [subjectId], references: [id])
+  marksObtained Float
+  maxMarks      Float
+}
+
+model FeeStructure {
+  id      String    @id @default(auto()) @map("_id") @db.ObjectId
+  classId String    @db.ObjectId
+  class   Class     @relation(fields: [classId], references: [id], onDelete: Cascade)
+  type    String // e.g., "Monthly", "Yearly", "Exam Fee"
+  amount  Float
+  dueDate DateTime?
+}
+
+model FeePayment {
+  id             String         @id @default(auto()) @map("_id") @db.ObjectId
+  studentId      String         @db.ObjectId
+  student        StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentName    String?
+  admissionNo    String?
+  className      String?
+  amountPaid     Float
+  totalFee       Float? // Total amount before discount
+  discount       Float?         @default(0)
+  discountReason String?
+  feeHead        String? // e.g., "Tuition", "Transport", "Exam"
+  paymentMode    String? // e.g., "Cash", "UPI", "Bank"
+  paymentDate    DateTime       @default(now())
+  status         String // APPROVED, PENDING, REJECTED
+  receiptNo      String?        @unique
+  month          String? // e.g., "January", "February"
+  year           String? // e.g., "2024"
+  remark         String?
+  submittedBy    String? // Name or ID of the person who submitted
+  approvedBy     String? // Name or ID of the person who approved
+  approvalDate   DateTime? // Date and time when approved or rejected
+  sessionId      String?        @db.ObjectId
+  session        Session?       @relation(fields: [sessionId], references: [id])
+
+  // PayU Online Payment Fields
+  txnid              String?
+  payuMoneyId        String?
+  gatewayStatus      String?
+  rawGatewayResponse String?
+
+  @@index([status, paymentDate])
+  @@index([txnid])
+}
+
+model FeeHead {
+  id   String @id @default(auto()) @map("_id") @db.ObjectId
+  name String @unique
+  type String // Monthly, Annual, One-time
+}
+
+model Concession {
+  id           String          @id @default(auto()) @map("_id") @db.ObjectId
+  studentId    String?         @db.ObjectId
+  student      StudentProfile? @relation(fields: [studentId], references: [id])
+  feeHead      String
+  discountType String // Fixed, %
+  amount       Float
+  reason       String?
+  approvedBy   String?
+}
+
+model Notice {
+  id       String   @id @default(auto()) @map("_id") @db.ObjectId
+  title    String
+  message  String
+  class    String? // Targeting specific class
+  section  String?
+  date     DateTime @default(now())
+  postedBy String? // Name for display
+  authorId String? // ID for filtering history
+}
+
+model TransportStop {
+  id             String           @id @default(auto()) @map("_id") @db.ObjectId
+  name           String           @unique
+  km             String
+  ratePerKm      String?
+  busFare        Float
+  StudentProfile StudentProfile[]
+}
+
+model Expense {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  title         String
+  category      String // e.g., Salary, Maintenance, Stationery, Utilities
+  amount        Float
+  date          DateTime @default(now())
+  payee         String?
+  paymentMethod String? // e.g., Cash, UPI, Bank
+  description   String?
+  status        String   @default("APPROVED") // APPROVED, PENDING
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Session {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  name        String   @unique // e.g. "2024-2025"
+  startDate   DateTime
+  endDate     DateTime
+  isDefault   Boolean  @default(false)
+
+  studentProfiles StudentProfile[]
+  feePayments     FeePayment[]
+}
+
+model TransferCertificate {
+  id              String          @id @default(auto()) @map("_id") @db.ObjectId
+  studentId       String?         @db.ObjectId
+  student         StudentProfile? @relation(fields: [studentId], references: [id], onDelete: SetNull)
+  studentName     String
+  admissionNo     String
+  withdrawalNo    String?
+  tcNo            String          @unique
+  sRegisterNo     String?
+  className       String?
+  leavingDate     String?
+  reason          String?
+  conduct         String?         @default("Satisfactory")
+  issueDate       DateTime        @default(now())
+  fatherName      String?
+  motherName      String?
+  occupation      String?
+  address         String?
+  caste           String?
+  lastInstitution String?
+  dob             String?
+  dobWords        String?
+  aadharNo        String?
+  isPaid          Boolean         @default(false)
+  receiptNo       String?
+  feeAmount       Float?          @default(0)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([admissionNo])
+}

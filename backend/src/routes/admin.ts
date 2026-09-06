@@ -692,10 +692,12 @@ router.put('/students/:id', async (req, res) => {
                 motherOccupation: req.body.motherOccupation,
                 motherQualification: req.body.motherQualification,
                 transportStopId: transportStopId || null,
+                previousSessionDue: req.body.previousSessionDue !== undefined ? parseFloat(req.body.previousSessionDue) : undefined,
             }
         });
 
         invalidateCache('students');
+        invalidateCache('fees');
         invalidateCache('dashboard');
         res.json(updatedStudent);
     } catch (error: any) {

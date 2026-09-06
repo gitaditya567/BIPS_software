@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNotification } from '../../context/NotificationContext';
-import { IndianRupee, TrendingUp, CalendarDays, Trash2, Check, AlertCircle, Calendar, Users, Download, CreditCard, FileText } from 'lucide-react';
+import { IndianRupee, TrendingUp, CalendarDays, Trash2, Check, AlertCircle, Calendar, Users, Download, CreditCard, FileText, Plus, Pencil, X, Search } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -53,6 +53,7 @@ interface DueFee {
     advanceBalance?: number;
     previousSessionDue?: number;
     prevDuePending?: number;
+    actualPrevDuesPaid?: number;
     isRT?: boolean;
     pendingMonths?: string[];
     admissionNo?: string;
@@ -362,6 +363,18 @@ const Fees: React.FC = () => {
     const [dueMonthFilter, setDueMonthFilter] = useState(getCurrentAcademicMonth());
     const [dueSearchQuery, setDueSearchQuery] = useState('');
     const [prevDueSearchQuery, setPrevDueSearchQuery] = useState('');
+
+    // Previous Year Dues Management State
+    const [showAddPrevDueModal, setShowAddPrevDueModal] = useState(false);
+    const [showEditPrevDueModal, setShowEditPrevDueModal] = useState(false);
+    const [showDeletePrevDueModal, setShowDeletePrevDueModal] = useState(false);
+    const [selectedPrevDueStudent, setSelectedPrevDueStudent] = useState<any>(null);
+    const [addPrevDueStudentId, setAddPrevDueStudentId] = useState('');
+    const [addPrevDueAmount, setAddPrevDueAmount] = useState('');
+    const [editPrevDueAmount, setEditPrevDueAmount] = useState('');
+    const [studentSearchForAdd, setStudentSearchForAdd] = useState('');
+    const [showAddStudentDropdown, setShowAddStudentDropdown] = useState(false);
+    const [prevDueSubmitting, setPrevDueSubmitting] = useState(false);
     const [receiptSearchQuery, setReceiptSearchQuery] = useState('');
     const [selectedStudentForHistory] = useState<any>(null);
     const [showHistoryModal, setShowHistoryModal] = useState(false);
@@ -2664,23 +2677,33 @@ const Fees: React.FC = () => {
 
     const exportPreviousDueExcel = () => {
         const filtered = dueFees
-            .filter(f => (f.previousSessionDue || 0) > 0)
+            .filter(f => (f.prevDuePending !== undefined ? f.prevDuePending : f.previousSessionDue || 0) > 0)
             .filter(f => prevDueClassFilter === 'All' || f.className === prevDueClassFilter)
-            .filter(f => prevDueSearchQuery === '' || (f.studentName || '').toLowerCase().includes(prevDueSearchQuery.toLowerCase()));
+            .filter(f => prevDueSearchQuery === '' || 
+                (f.studentName || '').toLowerCase().includes(prevDueSearchQuery.toLowerCase()) ||
+                (f.admissionNo || '').toLowerCase().includes(prevDueSearchQuery.toLowerCase())
+            );
 
-        const headers = ['S.No.', 'Student Name', 'Father Name', 'Class', 'Previous Due (₹)'];
+        const headers = ['S.No.', 'Admission No.', 'Student Name', 'Father Name', 'Class', 'Original Due (₹)', 'Paid Due (₹)', 'Remaining Due (₹)'];
         const activeSessionStr = localStorage.getItem('activeSession') || '2024-2025';
         const csvContent = [
             `"Academic Session: ${activeSessionStr}"`,
             "",
             headers.join(','),
-            ...filtered.map((f, idx) => [
-                idx + 1,
-                `"${f.studentName}"`,
-                `"${f.fatherName || 'N/A'}"`,
-                `"${f.className}"`,
-                f.previousSessionDue
-            ].join(','))
+            ...filtered.map((f, idx) => {
+                const remaining = (f.prevDuePending !== undefined ? f.prevDuePending : f.previousSessionDue) || 0;
+                const paid = f.actualPrevDuesPaid !== undefined ? f.actualPrevDuesPaid : Math.max(0, (f.previousSessionDue || 0) - remaining);
+                return [
+                    idx + 1,
+                    `"${f.admissionNo || 'N/A'}"`,
+                    `"${f.studentName}"`,
+                    `"${f.fatherName || 'N/A'}"`,
+                    `"${f.className}"`,
+                    f.previousSessionDue || 0,
+                    paid,
+                    remaining
+                ].join(',');
+            })
         ].join('\n');
 
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -3158,6 +3181,103 @@ const Fees: React.FC = () => {
         
         // Close search dropdown
         setShowSearchDropdown(false);
+    };
+
+    const handleOpenAddPrevDue = () => {
+        setAddPrevDueStudentId('');
+        setAddPrevDueAmount('');
+        setStudentSearchForAdd('');
+        setShowAddStudentDropdown(false);
+        setShowAddPrevDueModal(true);
+    };
+
+    const handleSaveAddPrevDue = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!addPrevDueStudentId) {
+            showAppAlert('Validation Error', 'Please select a student first.', 'error');
+            return;
+        }
+        const amt = parseFloat(addPrevDueAmount);
+        if (isNaN(amt) || amt < 0) {
+            showAppAlert('Validation Error', 'Please enter a valid non-negative amount.', 'error');
+            return;
+        }
+
+        setPrevDueSubmitting(true);
+        try {
+            const res = await axios.post('/erp-api/fees/previous-due', {
+                studentId: addPrevDueStudentId,
+                amount: amt
+            });
+            showAppAlert('Success', res.data.message || 'Previous year due assigned successfully.', 'success');
+            setShowAddPrevDueModal(false);
+            setAddPrevDueStudentId('');
+            setAddPrevDueAmount('');
+            setStudentSearchForAdd('');
+            fetchDueFees();
+            fetchStudents();
+        } catch (error: any) {
+            console.error('Error adding previous year due:', error);
+            showAppAlert('Error', error.response?.data?.error || 'Failed to add previous year due.', 'error');
+        } finally {
+            setPrevDueSubmitting(false);
+        }
+    };
+
+    const handleOpenEditPrevDue = (fee: any) => {
+        setSelectedPrevDueStudent(fee);
+        setEditPrevDueAmount(String(fee.previousSessionDue || 0));
+        setShowEditPrevDueModal(true);
+    };
+
+    const handleSaveEditPrevDue = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!selectedPrevDueStudent) return;
+        const amt = parseFloat(editPrevDueAmount);
+        if (isNaN(amt) || amt < 0) {
+            showAppAlert('Validation Error', 'Please enter a valid non-negative amount.', 'error');
+            return;
+        }
+
+        setPrevDueSubmitting(true);
+        try {
+            const res = await axios.put(`/erp-api/fees/previous-due/${selectedPrevDueStudent.id}`, {
+                amount: amt
+            });
+            showAppAlert('Success', res.data.message || 'Previous year due updated successfully.', 'success');
+            setShowEditPrevDueModal(false);
+            setSelectedPrevDueStudent(null);
+            fetchDueFees();
+            fetchStudents();
+        } catch (error: any) {
+            console.error('Error updating previous year due:', error);
+            showAppAlert('Error', error.response?.data?.error || 'Failed to update previous year due.', 'error');
+        } finally {
+            setPrevDueSubmitting(false);
+        }
+    };
+
+    const handleOpenDeletePrevDue = (fee: any) => {
+        setSelectedPrevDueStudent(fee);
+        setShowDeletePrevDueModal(true);
+    };
+
+    const handleConfirmDeletePrevDue = async () => {
+        if (!selectedPrevDueStudent) return;
+        setPrevDueSubmitting(true);
+        try {
+            const res = await axios.delete(`/erp-api/fees/previous-due/${selectedPrevDueStudent.id}`);
+            showAppAlert('Deleted', res.data.message || 'Previous year due removed successfully.', 'success');
+            setShowDeletePrevDueModal(false);
+            setSelectedPrevDueStudent(null);
+            fetchDueFees();
+            fetchStudents();
+        } catch (error: any) {
+            console.error('Error deleting previous year due:', error);
+            showAppAlert('Error', error.response?.data?.error || 'Failed to delete previous year due.', 'error');
+        } finally {
+            setPrevDueSubmitting(false);
+        }
     };
 
     const handlePayDuesRedirect = (fee: any, monthFilter: string) => {
@@ -5757,32 +5877,69 @@ const Fees: React.FC = () => {
             {activeTab === 'previous_due' && (
                 <div className="data-table-container shadow-lg">
                     <div className="table-header" style={{ background: 'linear-gradient(to right, #f8fafc, #ffffff)', padding: '1.5rem' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
                             <div>
-                                <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#111827' }}>Students with Previous Year Dues</h2>
-                                <p style={{ fontSize: '0.875rem', color: '#6b7280', marginTop: '0.25rem' }}>List of students carrying dues from previous year</p>
+                                <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#111827', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <IndianRupee size={22} color="#4f46e5" /> Students with Previous Year Dues
+                                </h2>
+                                <p style={{ fontSize: '0.875rem', color: '#6b7280', marginTop: '0.25rem' }}>
+                                    Add, edit, pay, or delete dues carried forward from previous academic sessions
+                                </p>
                             </div>
                             <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                                <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#1e293b' }}>
+                                <span style={{ 
+                                    fontSize: '0.85rem', 
+                                    fontWeight: 700, 
+                                    color: '#4338ca', 
+                                    backgroundColor: '#e0e7ff', 
+                                    padding: '0.4rem 0.9rem', 
+                                    borderRadius: '20px',
+                                    border: '1px solid #c7d2fe'
+                                }}>
                                     Total Students: {dueFees.filter(f => (f.prevDuePending !== undefined ? f.prevDuePending : f.previousSessionDue || 0) > 0).filter(f => prevDueClassFilter === 'All' || f.className === prevDueClassFilter).length}
                                 </span>
+                                <button
+                                    onClick={handleOpenAddPrevDue}
+                                    style={{
+                                        padding: '0.55rem 1.1rem',
+                                        borderRadius: '8px',
+                                        border: 'none',
+                                        backgroundColor: '#4f46e5',
+                                        color: 'white',
+                                        fontSize: '0.85rem',
+                                        fontWeight: 700,
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '0.4rem',
+                                        boxShadow: '0 4px 6px -1px rgba(79, 70, 229, 0.3)',
+                                        transition: 'all 0.15s ease'
+                                    }}
+                                    onMouseEnter={e => e.currentTarget.style.backgroundColor = '#4338ca'}
+                                    onMouseLeave={e => e.currentTarget.style.backgroundColor = '#4f46e5'}
+                                >
+                                    <Plus size={16} /> Add Previous Due
+                                </button>
                             </div>
                         </div>
 
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', background: '#f1f5f9', padding: '1rem', borderRadius: '12px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', background: '#f1f5f9', padding: '1rem', borderRadius: '12px' }}>
                             <div className="form-group" style={{ marginBottom: 0 }}>
-                                <label style={{ fontSize: '0.75rem', fontWeight: '700' }}>Search Name</label>
-                                <input 
-                                    type="text" 
-                                    className="form-control" 
-                                    placeholder="Search by student name..." 
-                                    value={prevDueSearchQuery} 
-                                    onChange={(e) => setPrevDueSearchQuery(e.target.value)} 
-                                    style={{ height: '38px', padding: '0.2rem 0.8rem' }}
-                                />
+                                <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#475569' }}>Search Name / Adm No</label>
+                                <div style={{ position: 'relative' }}>
+                                    <input 
+                                        type="text" 
+                                        className="form-control" 
+                                        placeholder="Search by name or admission no..." 
+                                        value={prevDueSearchQuery} 
+                                        onChange={(e) => setPrevDueSearchQuery(e.target.value)} 
+                                        style={{ height: '38px', padding: '0.2rem 0.8rem 0.2rem 2.2rem' }}
+                                    />
+                                    <Search size={15} color="#94a3b8" style={{ position: 'absolute', left: '10px', top: '11px' }} />
+                                </div>
                             </div>
                             <div className="form-group" style={{ marginBottom: 0 }}>
-                                <label style={{ fontSize: '0.75rem', fontWeight: '700' }}>Filter by Class</label>
+                                <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#475569' }}>Filter by Class</label>
                                 <select className="form-control" style={{ height: '38px', padding: '0.2rem 0.8rem' }} onChange={(e) => setPrevDueClassFilter(e.target.value)}>
                                     <option value="All">All Classes</option>
                                     {Array.from(new Map(classes.map(c => [c.name, c])).values()).sort((a, b) => sortClassNames(a.name, b.name)).map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
@@ -5791,58 +5948,236 @@ const Fees: React.FC = () => {
                             <div className="form-group" style={{ marginBottom: 0, display: 'flex', alignItems: 'flex-end' }}>
                                 <button
                                     onClick={exportPreviousDueExcel}
-                                    style={{ padding: '0.5rem 1rem', borderRadius: '8px', border: 'none', backgroundColor: '#10b981', color: 'white', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', height: '38px' }}
+                                    style={{ width: '100%', padding: '0.5rem 1rem', borderRadius: '8px', border: 'none', backgroundColor: '#10b981', color: 'white', fontSize: '0.85rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', height: '38px', boxShadow: '0 2px 4px rgba(16, 185, 129, 0.2)' }}
+                                    onMouseEnter={e => e.currentTarget.style.backgroundColor = '#059669'}
+                                    onMouseLeave={e => e.currentTarget.style.backgroundColor = '#10b981'}
                                 >
-                                    <Download size={16} /> Export Excel
+                                    <Download size={16} /> Export Excel / CSV
                                 </button>
                             </div>
                         </div>
                     </div>
-                    <div style={{ maxHeight: '520px', overflowY: 'auto', borderTop: '1px solid #e2e8f0' }}>
-                    <table style={{ width: '100%' }}>
-                        <thead>
-                            <tr style={{ backgroundColor: '#f8fafc' }}>
-                                <th style={{ padding: '1rem 1.5rem' }}>S.No.</th>
-                                <th style={{ padding: '1rem 1.5rem' }}>Student Name</th>
-                                <th style={{ padding: '1rem 1.5rem' }}>Class</th>
-                                <th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Original Due (₹)</th>
-                                <th style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>Remaining Due (₹)</th>
-                                <th style={{ padding: '1rem 1.5rem', textAlign: 'center' }}>Action</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {dueFees
-                                .filter(f => (f.prevDuePending !== undefined ? f.prevDuePending : f.previousSessionDue || 0) > 0)
-                                .filter(f => prevDueClassFilter === 'All' || f.className === prevDueClassFilter)
-                                .filter(f => prevDueSearchQuery === '' || (f.studentName || '').toLowerCase().includes(prevDueSearchQuery.toLowerCase()))
-                                .map((fee, index) => {
-                                    const remainingDue = (fee.prevDuePending !== undefined ? fee.prevDuePending : fee.previousSessionDue) || 0;
-                                    return (
-                                        <tr key={fee.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                                            <td style={{ padding: '1rem 1.5rem', fontWeight: '600', color: '#64748b' }}>{index + 1}</td>
-                                            <td style={{ padding: '1rem 1.5rem', fontWeight: '600', color: '#1e293b' }}>{fee.studentName}</td>
-                                            <td style={{ padding: '1rem 1.5rem' }}>
-                                                <span style={{ background: '#e0e7ff', color: '#4338ca', padding: '0.25rem 0.6rem', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '700' }}>
-                                                    {fee.className}
-                                                </span>
-                                            </td>
-                                            <td style={{ padding: '1rem 1.5rem', textAlign: 'right', color: '#64748b', fontWeight: '600' }}>₹{(fee.previousSessionDue || 0).toLocaleString()}</td>
-                                            <td style={{ padding: '1rem 1.5rem', textAlign: 'right', color: '#ef4444', fontWeight: '800' }}>₹{remainingDue.toLocaleString()}</td>
-                                            <td style={{ padding: '1rem 1.5rem', textAlign: 'center' }}>
-                                                <button
-                                                    className="btn-primary"
-                                                    style={{ width: 'auto', padding: '0.4rem 1.2rem', fontSize: '0.75rem', backgroundColor: '#10b981', color: 'white', border: 'none', borderRadius: '6px', fontWeight: '700', cursor: 'pointer' }}
-                                                    onClick={() => handlePayPreviousYearDuesRedirect(fee)}
-                                                >
-                                                    Pay Dues
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                        </tbody>
-                    </table>
-                    </div>
+                    {(() => {
+                        const list = dueFees
+                            .filter(f => (f.prevDuePending !== undefined ? f.prevDuePending : f.previousSessionDue || 0) > 0)
+                            .filter(f => prevDueClassFilter === 'All' || f.className === prevDueClassFilter)
+                            .filter(f => prevDueSearchQuery === '' || 
+                                (f.studentName || '').toLowerCase().includes(prevDueSearchQuery.toLowerCase()) ||
+                                (f.admissionNo || '').toLowerCase().includes(prevDueSearchQuery.toLowerCase())
+                            );
+
+                        const totalOriginalDue = list.reduce((sum, f) => sum + (f.previousSessionDue || 0), 0);
+                        const totalRemainingDue = list.reduce((sum, f) => sum + ((f.prevDuePending !== undefined ? f.prevDuePending : f.previousSessionDue) || 0), 0);
+                        const totalPaidDue = list.reduce((sum, f) => {
+                            const rem = (f.prevDuePending !== undefined ? f.prevDuePending : f.previousSessionDue) || 0;
+                            const paid = f.actualPrevDuesPaid !== undefined ? f.actualPrevDuesPaid : Math.max(0, (f.previousSessionDue || 0) - rem);
+                            return sum + paid;
+                        }, 0);
+
+                        return (
+                            <>
+                                <div style={{ maxHeight: '540px', overflowY: 'auto', borderTop: '1px solid #e2e8f0', position: 'relative' }}>
+                                    <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
+                                        <thead style={{ position: 'sticky', top: 0, zIndex: 20 }}>
+                                            <tr style={{ backgroundColor: '#f8fafc' }}>
+                                                <th style={{ position: 'sticky', top: 0, zIndex: 20, backgroundColor: '#f8fafc', padding: '0.9rem 1.2rem', fontSize: '0.8rem', fontWeight: 700, color: '#475569', borderBottom: '2px solid #e2e8f0', boxShadow: '0 2px 4px rgba(0,0,0,0.03)' }}>S.No.</th>
+                                                <th style={{ position: 'sticky', top: 0, zIndex: 20, backgroundColor: '#f8fafc', padding: '0.9rem 1.2rem', fontSize: '0.8rem', fontWeight: 700, color: '#475569', borderBottom: '2px solid #e2e8f0', boxShadow: '0 2px 4px rgba(0,0,0,0.03)' }}>Adm. No.</th>
+                                                <th style={{ position: 'sticky', top: 0, zIndex: 20, backgroundColor: '#f8fafc', padding: '0.9rem 1.2rem', fontSize: '0.8rem', fontWeight: 700, color: '#475569', borderBottom: '2px solid #e2e8f0', boxShadow: '0 2px 4px rgba(0,0,0,0.03)' }}>Student Name</th>
+                                                <th style={{ position: 'sticky', top: 0, zIndex: 20, backgroundColor: '#f8fafc', padding: '0.9rem 1.2rem', fontSize: '0.8rem', fontWeight: 700, color: '#475569', borderBottom: '2px solid #e2e8f0', boxShadow: '0 2px 4px rgba(0,0,0,0.03)' }}>Class</th>
+                                                <th style={{ position: 'sticky', top: 0, zIndex: 20, backgroundColor: '#f8fafc', padding: '0.9rem 1.2rem', textAlign: 'right', fontSize: '0.8rem', fontWeight: 700, color: '#475569', borderBottom: '2px solid #e2e8f0', boxShadow: '0 2px 4px rgba(0,0,0,0.03)' }}>Original Due (₹)</th>
+                                                <th style={{ position: 'sticky', top: 0, zIndex: 20, backgroundColor: '#f8fafc', padding: '0.9rem 1.2rem', textAlign: 'right', fontSize: '0.8rem', fontWeight: 700, color: '#475569', borderBottom: '2px solid #e2e8f0', boxShadow: '0 2px 4px rgba(0,0,0,0.03)' }}>Paid (₹)</th>
+                                                <th style={{ position: 'sticky', top: 0, zIndex: 20, backgroundColor: '#f8fafc', padding: '0.9rem 1.2rem', textAlign: 'right', fontSize: '0.8rem', fontWeight: 700, color: '#475569', borderBottom: '2px solid #e2e8f0', boxShadow: '0 2px 4px rgba(0,0,0,0.03)' }}>Remaining Due (₹)</th>
+                                                <th style={{ position: 'sticky', top: 0, zIndex: 20, backgroundColor: '#f8fafc', padding: '0.9rem 1.2rem', textAlign: 'center', fontSize: '0.8rem', fontWeight: 700, color: '#475569', borderBottom: '2px solid #e2e8f0', boxShadow: '0 2px 4px rgba(0,0,0,0.03)' }}>Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {list.length === 0 ? (
+                                                <tr>
+                                                    <td colSpan={8} style={{ textAlign: 'center', padding: '3.5rem 1rem', color: '#64748b' }}>
+                                                        <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
+                                                            <div style={{ width: '56px', height: '56px', borderRadius: '50%', backgroundColor: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                                <Check size={28} color="#10b981" />
+                                                            </div>
+                                                            <div style={{ fontWeight: 700, fontSize: '1.05rem', color: '#1e293b' }}>No Students with Previous Year Dues Found</div>
+                                                            <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>All students are clear, or no matching records match your filter criteria.</div>
+                                                            <button
+                                                                onClick={handleOpenAddPrevDue}
+                                                                style={{
+                                                                    marginTop: '0.5rem',
+                                                                    padding: '0.5rem 1rem',
+                                                                    borderRadius: '8px',
+                                                                    border: 'none',
+                                                                    backgroundColor: '#4f46e5',
+                                                                    color: 'white',
+                                                                    fontSize: '0.85rem',
+                                                                    fontWeight: 600,
+                                                                    cursor: 'pointer',
+                                                                    display: 'flex',
+                                                                    alignItems: 'center',
+                                                                    gap: '0.4rem'
+                                                                }}
+                                                            >
+                                                                <Plus size={15} /> Add Previous Year Due
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            ) : (
+                                                list.map((fee, index) => {
+                                                    const remainingDue = (fee.prevDuePending !== undefined ? fee.prevDuePending : fee.previousSessionDue) || 0;
+                                                    const paidDue = fee.actualPrevDuesPaid !== undefined ? fee.actualPrevDuesPaid : Math.max(0, (fee.previousSessionDue || 0) - remainingDue);
+                                                    return (
+                                                        <tr key={fee.id} style={{ borderBottom: '1px solid #f1f5f9', transition: 'background-color 0.15s ease' }} onMouseEnter={e => e.currentTarget.style.backgroundColor = '#fafafa'} onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}>
+                                                            <td style={{ padding: '0.85rem 1.2rem', fontWeight: '600', color: '#64748b', fontSize: '0.85rem', borderBottom: '1px solid #f1f5f9' }}>{index + 1}</td>
+                                                            <td style={{ padding: '0.85rem 1.2rem', fontWeight: '700', color: '#334155', fontSize: '0.85rem', borderBottom: '1px solid #f1f5f9' }}>
+                                                                <span style={{ fontFamily: 'monospace', backgroundColor: '#f1f5f9', padding: '0.2rem 0.5rem', borderRadius: '4px', border: '1px solid #e2e8f0' }}>
+                                                                    {fee.admissionNo || 'N/A'}
+                                                                </span>
+                                                            </td>
+                                                            <td style={{ padding: '0.85rem 1.2rem', borderBottom: '1px solid #f1f5f9' }}>
+                                                                <div style={{ fontWeight: '700', color: '#1e293b', fontSize: '0.9rem' }}>{fee.studentName}</div>
+                                                                {fee.fatherName && fee.fatherName !== 'N/A' && (
+                                                                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.15rem' }}>
+                                                                        Father: {fee.fatherName}
+                                                                    </div>
+                                                                )}
+                                                            </td>
+                                                            <td style={{ padding: '0.85rem 1.2rem', borderBottom: '1px solid #f1f5f9' }}>
+                                                                <span style={{ background: '#e0e7ff', color: '#4338ca', padding: '0.25rem 0.6rem', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '700' }}>
+                                                                    {fee.className}
+                                                                </span>
+                                                            </td>
+                                                            <td style={{ padding: '0.85rem 1.2rem', textAlign: 'right', color: '#64748b', fontWeight: '600', fontSize: '0.9rem', borderBottom: '1px solid #f1f5f9' }}>
+                                                                ₹{(fee.previousSessionDue || 0).toLocaleString()}
+                                                            </td>
+                                                            <td style={{ padding: '0.85rem 1.2rem', textAlign: 'right', color: paidDue > 0 ? '#16a34a' : '#94a3b8', fontWeight: '700', fontSize: '0.9rem', borderBottom: '1px solid #f1f5f9' }}>
+                                                                ₹{paidDue.toLocaleString()}
+                                                            </td>
+                                                            <td style={{ padding: '0.85rem 1.2rem', textAlign: 'right', color: '#ef4444', fontWeight: '800', fontSize: '0.95rem', borderBottom: '1px solid #f1f5f9' }}>
+                                                                ₹{remainingDue.toLocaleString()}
+                                                            </td>
+                                                            <td style={{ padding: '0.85rem 1.2rem', textAlign: 'center', borderBottom: '1px solid #f1f5f9' }}>
+                                                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', justifyContent: 'center' }}>
+                                                                    <button
+                                                                        className="btn-primary"
+                                                                        style={{ 
+                                                                            padding: '0.35rem 0.85rem', 
+                                                                            fontSize: '0.75rem', 
+                                                                            backgroundColor: '#10b981', 
+                                                                            color: 'white', 
+                                                                            border: 'none', 
+                                                                            borderRadius: '6px', 
+                                                                            fontWeight: '700', 
+                                                                            cursor: 'pointer',
+                                                                            boxShadow: '0 2px 4px rgba(16, 185, 129, 0.2)'
+                                                                        }}
+                                                                        onClick={() => handlePayPreviousYearDuesRedirect(fee)}
+                                                                        title="Go to Fee Collection to pay this student's dues"
+                                                                    >
+                                                                        Pay Dues
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        style={{
+                                                                            padding: '0.35rem 0.65rem',
+                                                                            fontSize: '0.75rem',
+                                                                            backgroundColor: '#f8fafc',
+                                                                            color: '#2563eb',
+                                                                            border: '1px solid #bfdbfe',
+                                                                            borderRadius: '6px',
+                                                                            fontWeight: '700',
+                                                                            cursor: 'pointer',
+                                                                            display: 'flex',
+                                                                            alignItems: 'center',
+                                                                            gap: '0.25rem',
+                                                                            transition: 'all 0.15s ease'
+                                                                        }}
+                                                                        onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#eff6ff'; e.currentTarget.style.borderColor = '#93c5fd'; }}
+                                                                        onMouseLeave={e => { e.currentTarget.style.backgroundColor = '#f8fafc'; e.currentTarget.style.borderColor = '#bfdbfe'; }}
+                                                                        onClick={() => handleOpenEditPrevDue(fee)}
+                                                                        title="Edit Previous Year Due"
+                                                                    >
+                                                                        <Pencil size={13} /> Edit
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        style={{
+                                                                            padding: '0.35rem 0.65rem',
+                                                                            fontSize: '0.75rem',
+                                                                            backgroundColor: '#fef2f2',
+                                                                            color: '#dc2626',
+                                                                            border: '1px solid #fecaca',
+                                                                            borderRadius: '6px',
+                                                                            fontWeight: '700',
+                                                                            cursor: 'pointer',
+                                                                            display: 'flex',
+                                                                            alignItems: 'center',
+                                                                            gap: '0.25rem',
+                                                                            transition: 'all 0.15s ease'
+                                                                        }}
+                                                                        onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#fee2e2'; e.currentTarget.style.borderColor = '#f87171'; }}
+                                                                        onMouseLeave={e => { e.currentTarget.style.backgroundColor = '#fef2f2'; e.currentTarget.style.borderColor = '#fecaca'; }}
+                                                                        onClick={() => handleOpenDeletePrevDue(fee)}
+                                                                        title="Delete / Reset Previous Year Due to ₹0"
+                                                                    >
+                                                                        <Trash2 size={13} /> Delete
+                                                                    </button>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })
+                                            )}
+                                        </tbody>
+                                        {list.length > 0 && (
+                                            <tfoot style={{ position: 'sticky', bottom: 0, zIndex: 20 }}>
+                                                <tr style={{ backgroundColor: '#f1f5f9' }}>
+                                                    <td colSpan={4} style={{ position: 'sticky', bottom: 0, backgroundColor: '#f1f5f9', padding: '0.9rem 1.2rem', fontWeight: 800, color: '#1e293b', fontSize: '0.9rem', borderTop: '2px solid #cbd5e1', boxShadow: '0 -2px 5px rgba(0,0,0,0.05)' }}>
+                                                        TOTAL ({list.length} Students)
+                                                    </td>
+                                                    <td style={{ position: 'sticky', bottom: 0, backgroundColor: '#f1f5f9', padding: '0.9rem 1.2rem', textAlign: 'right', fontWeight: 800, color: '#475569', fontSize: '0.95rem', borderTop: '2px solid #cbd5e1', boxShadow: '0 -2px 5px rgba(0,0,0,0.05)' }}>
+                                                        ₹{totalOriginalDue.toLocaleString()}
+                                                    </td>
+                                                    <td style={{ position: 'sticky', bottom: 0, backgroundColor: '#f1f5f9', padding: '0.9rem 1.2rem', textAlign: 'right', fontWeight: 800, color: '#16a34a', fontSize: '0.95rem', borderTop: '2px solid #cbd5e1', boxShadow: '0 -2px 5px rgba(0,0,0,0.05)' }}>
+                                                        ₹{totalPaidDue.toLocaleString()}
+                                                    </td>
+                                                    <td style={{ position: 'sticky', bottom: 0, backgroundColor: '#f1f5f9', padding: '0.9rem 1.2rem', textAlign: 'right', fontWeight: 900, color: '#dc2626', fontSize: '1.05rem', borderTop: '2px solid #cbd5e1', boxShadow: '0 -2px 5px rgba(0,0,0,0.05)' }}>
+                                                        ₹{totalRemainingDue.toLocaleString()}
+                                                    </td>
+                                                    <td style={{ position: 'sticky', bottom: 0, backgroundColor: '#f1f5f9', padding: '0.9rem 1.2rem', textAlign: 'center', borderTop: '2px solid #cbd5e1', boxShadow: '0 -2px 5px rgba(0,0,0,0.05)' }}>
+                                                        <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b' }}>Summary</span>
+                                                    </td>
+                                                </tr>
+                                            </tfoot>
+                                        )}
+                                    </table>
+                                </div>
+                                {list.length > 0 && (
+                                    <div style={{
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        alignItems: 'center',
+                                        padding: '0.85rem 1.5rem',
+                                        backgroundColor: '#ffffff',
+                                        borderTop: '1px solid #e2e8f0',
+                                        fontSize: '0.82rem',
+                                        color: '#64748b',
+                                        flexWrap: 'wrap',
+                                        gap: '0.75rem'
+                                    }}>
+                                        <div>
+                                            Showing <strong>{list.length}</strong> student{list.length === 1 ? '' : 's'} with previous year dues
+                                        </div>
+                                        <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
+                                            <span>Original Dues: <strong style={{ color: '#1e293b' }}>₹{totalOriginalDue.toLocaleString()}</strong></span>
+                                            <span>Cleared: <strong style={{ color: '#16a34a' }}>₹{totalPaidDue.toLocaleString()}</strong></span>
+                                            <span>Outstanding: <strong style={{ color: '#dc2626', fontSize: '0.9rem' }}>₹{totalRemainingDue.toLocaleString()}</strong></span>
+                                        </div>
+                                    </div>
+                                )}
+                            </>
+                        );
+                    })()}
                 </div>
             )}
 
@@ -8517,6 +8852,547 @@ const Fees: React.FC = () => {
                                 }}
                             >
                                 Understood / OK
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Add Previous Year Due Modal */}
+            {showAddPrevDueModal && (
+                <div 
+                    style={{
+                        position: 'fixed',
+                        top: 0, left: 0, right: 0, bottom: 0,
+                        backgroundColor: 'rgba(15, 23, 42, 0.65)',
+                        backdropFilter: 'blur(5px)',
+                        display: 'flex',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        zIndex: 100000,
+                        padding: '1rem',
+                        animation: 'fadeIn 0.2s ease-out'
+                    }}
+                    onClick={() => { setShowAddPrevDueModal(false); setShowAddStudentDropdown(false); }}
+                >
+                    <div 
+                        style={{
+                            backgroundColor: '#ffffff',
+                            borderRadius: '16px',
+                            maxWidth: '540px',
+                            width: '100%',
+                            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)',
+                            overflow: 'hidden',
+                            animation: 'modalSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1)'
+                        }}
+                        onClick={e => e.stopPropagation()}
+                    >
+                        {/* Header */}
+                        <div style={{
+                            padding: '1.25rem 1.5rem',
+                            backgroundColor: '#f8fafc',
+                            borderBottom: '1px solid #e2e8f0',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center'
+                        }}>
+                            <div>
+                                <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <Plus size={20} color="#4f46e5" /> Assign Previous Year Due
+                                </h3>
+                                <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.8rem', color: '#64748b' }}>
+                                    Select any student to set an outstanding balance from the previous session
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowAddPrevDueModal(false)}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: '0.2rem' }}
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        {/* Form */}
+                        <form onSubmit={handleSaveAddPrevDue}>
+                            <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                                {/* Student Search & Select */}
+                                <div style={{ position: 'relative' }}>
+                                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '0.4rem' }}>
+                                        Search Student <span style={{ color: '#ef4444' }}>*</span>
+                                    </label>
+                                    <div style={{ position: 'relative' }}>
+                                        <input
+                                            type="text"
+                                            className="form-control"
+                                            placeholder="Type student name or admission no..."
+                                            value={studentSearchForAdd}
+                                            onFocus={() => setShowAddStudentDropdown(true)}
+                                            onChange={e => {
+                                                setStudentSearchForAdd(e.target.value);
+                                                setShowAddStudentDropdown(true);
+                                                if (!e.target.value) {
+                                                    setAddPrevDueStudentId('');
+                                                }
+                                            }}
+                                            style={{ height: '42px', paddingLeft: '2.4rem', fontSize: '0.9rem' }}
+                                        />
+                                        <Search size={16} color="#94a3b8" style={{ position: 'absolute', left: '12px', top: '13px' }} />
+                                    </div>
+
+                                    {/* Dropdown list */}
+                                    {showAddStudentDropdown && (
+                                        <div style={{
+                                            position: 'absolute',
+                                            top: '100%',
+                                            left: 0,
+                                            right: 0,
+                                            maxHeight: '220px',
+                                            overflowY: 'auto',
+                                            backgroundColor: '#ffffff',
+                                            border: '1px solid #cbd5e1',
+                                            borderRadius: '8px',
+                                            boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
+                                            zIndex: 50,
+                                            marginTop: '4px'
+                                        }}>
+                                            {students
+                                                .filter(s => 
+                                                    !studentSearchForAdd ||
+                                                    (s.name || '').toLowerCase().includes(studentSearchForAdd.toLowerCase()) ||
+                                                    (s.admissionNo || '').toLowerCase().includes(studentSearchForAdd.toLowerCase())
+                                                )
+                                                .slice(0, 25)
+                                                .map(s => (
+                                                    <div
+                                                        key={s.id}
+                                                        onClick={() => {
+                                                            setAddPrevDueStudentId(s.id);
+                                                            setStudentSearchForAdd(`${s.name} (${s.admissionNo || 'No Adm'}) - ${s.className || 'Class N/A'}`);
+                                                            if (s.previousSessionDue) {
+                                                                setAddPrevDueAmount(String(s.previousSessionDue));
+                                                            }
+                                                            setShowAddStudentDropdown(false);
+                                                        }}
+                                                        style={{
+                                                            padding: '0.6rem 0.9rem',
+                                                            cursor: 'pointer',
+                                                            borderBottom: '1px solid #f1f5f9',
+                                                            display: 'flex',
+                                                            justifyContent: 'space-between',
+                                                            alignItems: 'center',
+                                                            fontSize: '0.85rem'
+                                                        }}
+                                                        onMouseEnter={e => e.currentTarget.style.backgroundColor = '#f8fafc'}
+                                                        onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                                                    >
+                                                        <div>
+                                                            <strong style={{ color: '#1e293b' }}>{s.name}</strong>
+                                                            <span style={{ color: '#64748b', marginLeft: '0.5rem', fontSize: '0.78rem' }}>({s.admissionNo})</span>
+                                                            <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Father: {s.fatherName || 'N/A'}</div>
+                                                        </div>
+                                                        <span style={{ backgroundColor: '#e0e7ff', color: '#4338ca', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 700 }}>
+                                                            {s.className}
+                                                        </span>
+                                                    </div>
+                                                ))}
+                                            {students.filter(s => 
+                                                !studentSearchForAdd ||
+                                                (s.name || '').toLowerCase().includes(studentSearchForAdd.toLowerCase()) ||
+                                                (s.admissionNo || '').toLowerCase().includes(studentSearchForAdd.toLowerCase())
+                                            ).length === 0 && (
+                                                <div style={{ padding: '0.8rem', textAlign: 'center', color: '#94a3b8', fontSize: '0.85rem' }}>
+                                                    No matching students found
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Selected Student Preview Card */}
+                                {(() => {
+                                    const selected = students.find(s => s.id === addPrevDueStudentId);
+                                    if (!selected) return null;
+                                    return (
+                                        <div style={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '0.85rem 1rem' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                <div>
+                                                    <div style={{ fontWeight: 800, color: '#1e293b', fontSize: '0.95rem' }}>{selected.name}</div>
+                                                    <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '2px' }}>
+                                                        Adm No: <strong>{selected.admissionNo}</strong> | Class: <strong>{selected.className}</strong>
+                                                    </div>
+                                                </div>
+                                                {selected.previousSessionDue > 0 && (
+                                                    <span style={{ backgroundColor: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', padding: '0.25rem 0.6rem', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 700 }}>
+                                                        Current Due: ₹{selected.previousSessionDue.toLocaleString()}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
+
+                                {/* Due Amount Input */}
+                                <div>
+                                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '0.4rem' }}>
+                                        Previous Session Due Amount (₹) <span style={{ color: '#ef4444' }}>*</span>
+                                    </label>
+                                    <div style={{ position: 'relative' }}>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            step="any"
+                                            required
+                                            className="form-control"
+                                            placeholder="e.g. 5000"
+                                            value={addPrevDueAmount}
+                                            onChange={e => setAddPrevDueAmount(e.target.value)}
+                                            style={{ height: '42px', paddingLeft: '2.4rem', fontSize: '1rem', fontWeight: 700 }}
+                                        />
+                                        <IndianRupee size={16} color="#64748b" style={{ position: 'absolute', left: '12px', top: '13px' }} />
+                                    </div>
+                                    <small style={{ color: '#64748b', fontSize: '0.75rem', marginTop: '0.3rem', display: 'block' }}>
+                                        This amount will appear under student's previous year dues and ledger.
+                                    </small>
+                                </div>
+                            </div>
+
+                            {/* Modal Footer */}
+                            <div style={{ padding: '1rem 1.5rem', backgroundColor: '#f8fafc', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowAddPrevDueModal(false)}
+                                    style={{
+                                        padding: '0.6rem 1.2rem',
+                                        borderRadius: '8px',
+                                        border: '1px solid #cbd5e1',
+                                        backgroundColor: '#ffffff',
+                                        color: '#475569',
+                                        fontWeight: 600,
+                                        fontSize: '0.85rem',
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={prevDueSubmitting || !addPrevDueStudentId || !addPrevDueAmount}
+                                    style={{
+                                        padding: '0.6rem 1.4rem',
+                                        borderRadius: '8px',
+                                        border: 'none',
+                                        backgroundColor: prevDueSubmitting ? '#94a3b8' : '#4f46e5',
+                                        color: 'white',
+                                        fontWeight: 700,
+                                        fontSize: '0.85rem',
+                                        cursor: prevDueSubmitting ? 'not-allowed' : 'pointer',
+                                        boxShadow: '0 2px 4px rgba(79, 70, 229, 0.25)'
+                                    }}
+                                >
+                                    {prevDueSubmitting ? 'Saving...' : 'Save Previous Due'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Edit Previous Year Due Modal */}
+            {showEditPrevDueModal && selectedPrevDueStudent && (
+                <div 
+                    style={{
+                        position: 'fixed',
+                        top: 0, left: 0, right: 0, bottom: 0,
+                        backgroundColor: 'rgba(15, 23, 42, 0.65)',
+                        backdropFilter: 'blur(5px)',
+                        display: 'flex',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        zIndex: 100000,
+                        padding: '1rem',
+                        animation: 'fadeIn 0.2s ease-out'
+                    }}
+                    onClick={() => { setShowEditPrevDueModal(false); setSelectedPrevDueStudent(null); }}
+                >
+                    <div 
+                        style={{
+                            backgroundColor: '#ffffff',
+                            borderRadius: '16px',
+                            maxWidth: '500px',
+                            width: '100%',
+                            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)',
+                            overflow: 'hidden',
+                            animation: 'modalSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1)'
+                        }}
+                        onClick={e => e.stopPropagation()}
+                    >
+                        {/* Header */}
+                        <div style={{
+                            padding: '1.25rem 1.5rem',
+                            backgroundColor: '#f8fafc',
+                            borderBottom: '1px solid #e2e8f0',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center'
+                        }}>
+                            <div>
+                                <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <Pencil size={18} color="#2563eb" /> Edit Previous Year Due
+                                </h3>
+                                <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.8rem', color: '#64748b' }}>
+                                    Update original previous session due for this student
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => { setShowEditPrevDueModal(false); setSelectedPrevDueStudent(null); }}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: '0.2rem' }}
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        {/* Form */}
+                        <form onSubmit={handleSaveEditPrevDue}>
+                            <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                                {/* Student Info Card */}
+                                <div style={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '1rem' }}>
+                                    <div style={{ fontWeight: 800, color: '#0f172a', fontSize: '1rem' }}>{selectedPrevDueStudent.studentName}</div>
+                                    <div style={{ display: 'flex', gap: '1.25rem', marginTop: '0.35rem', fontSize: '0.82rem', color: '#475569' }}>
+                                        <span>Adm: <strong>{selectedPrevDueStudent.admissionNo || 'N/A'}</strong></span>
+                                        <span>Class: <strong>{selectedPrevDueStudent.className}</strong></span>
+                                        <span>Father: <strong>{selectedPrevDueStudent.fatherName || 'N/A'}</strong></span>
+                                    </div>
+                                </div>
+
+                                {/* Paid & Remaining Breakdown */}
+                                {(() => {
+                                    const orig = selectedPrevDueStudent.previousSessionDue || 0;
+                                    const rem = (selectedPrevDueStudent.prevDuePending !== undefined ? selectedPrevDueStudent.prevDuePending : orig) || 0;
+                                    const paid = selectedPrevDueStudent.actualPrevDuesPaid !== undefined ? selectedPrevDueStudent.actualPrevDuesPaid : Math.max(0, orig - rem);
+                                    const newAmountNum = parseFloat(editPrevDueAmount) || 0;
+                                    const newRemaining = Math.max(0, newAmountNum - paid);
+
+                                    return (
+                                        <>
+                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem' }}>
+                                                <div style={{ backgroundColor: '#f1f5f9', padding: '0.75rem', borderRadius: '8px', textAlign: 'center' }}>
+                                                    <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#64748b' }}>CURRENT ORIGINAL</div>
+                                                    <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#1e293b', marginTop: '2px' }}>₹{orig.toLocaleString()}</div>
+                                                </div>
+                                                <div style={{ backgroundColor: '#f0fdf4', padding: '0.75rem', borderRadius: '8px', textAlign: 'center', border: '1px solid #bbf7d0' }}>
+                                                    <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#15803d' }}>ALREADY PAID</div>
+                                                    <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#166534', marginTop: '2px' }}>₹{paid.toLocaleString()}</div>
+                                                </div>
+                                                <div style={{ backgroundColor: '#fef2f2', padding: '0.75rem', borderRadius: '8px', textAlign: 'center', border: '1px solid #fecaca' }}>
+                                                    <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#b91c1c' }}>CURRENT DUE</div>
+                                                    <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#dc2626', marginTop: '2px' }}>₹{rem.toLocaleString()}</div>
+                                                </div>
+                                            </div>
+
+                                            {/* New Amount Field */}
+                                            <div>
+                                                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: '#334155', marginBottom: '0.4rem' }}>
+                                                    New Original Due Amount (₹) <span style={{ color: '#ef4444' }}>*</span>
+                                                </label>
+                                                <div style={{ position: 'relative' }}>
+                                                    <input
+                                                        type="number"
+                                                        min="0"
+                                                        step="any"
+                                                        required
+                                                        className="form-control"
+                                                        value={editPrevDueAmount}
+                                                        onChange={e => setEditPrevDueAmount(e.target.value)}
+                                                        style={{ height: '42px', paddingLeft: '2.4rem', fontSize: '1rem', fontWeight: 700 }}
+                                                    />
+                                                    <IndianRupee size={16} color="#64748b" style={{ position: 'absolute', left: '12px', top: '13px' }} />
+                                                </div>
+                                            </div>
+
+                                            {/* Recalculated Remaining Due Preview */}
+                                            <div style={{ 
+                                                backgroundColor: '#eff6ff', 
+                                                border: '1px solid #bfdbfe', 
+                                                borderRadius: '8px', 
+                                                padding: '0.75rem 1rem', 
+                                                display: 'flex', 
+                                                justifyContent: 'space-between', 
+                                                alignItems: 'center' 
+                                            }}>
+                                                <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#1e40af' }}>
+                                                    Projected Remaining Due:
+                                                </span>
+                                                <span style={{ fontSize: '1rem', fontWeight: 900, color: '#1d4ed8' }}>
+                                                    ₹{newRemaining.toLocaleString()}
+                                                </span>
+                                            </div>
+                                        </>
+                                    );
+                                })()}
+                            </div>
+
+                            {/* Modal Footer */}
+                            <div style={{ padding: '1rem 1.5rem', backgroundColor: '#f8fafc', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+                                <button
+                                    type="button"
+                                    onClick={() => { setShowEditPrevDueModal(false); setSelectedPrevDueStudent(null); }}
+                                    style={{
+                                        padding: '0.6rem 1.2rem',
+                                        borderRadius: '8px',
+                                        border: '1px solid #cbd5e1',
+                                        backgroundColor: '#ffffff',
+                                        color: '#475569',
+                                        fontWeight: 600,
+                                        fontSize: '0.85rem',
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={prevDueSubmitting || !editPrevDueAmount}
+                                    style={{
+                                        padding: '0.6rem 1.4rem',
+                                        borderRadius: '8px',
+                                        border: 'none',
+                                        backgroundColor: prevDueSubmitting ? '#94a3b8' : '#2563eb',
+                                        color: 'white',
+                                        fontWeight: 700,
+                                        fontSize: '0.85rem',
+                                        cursor: prevDueSubmitting ? 'not-allowed' : 'pointer',
+                                        boxShadow: '0 2px 4px rgba(37, 99, 235, 0.25)'
+                                    }}
+                                >
+                                    {prevDueSubmitting ? 'Updating...' : 'Update Due'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Delete Previous Year Due Confirmation Modal */}
+            {showDeletePrevDueModal && selectedPrevDueStudent && (
+                <div 
+                    style={{
+                        position: 'fixed',
+                        top: 0, left: 0, right: 0, bottom: 0,
+                        backgroundColor: 'rgba(15, 23, 42, 0.65)',
+                        backdropFilter: 'blur(5px)',
+                        display: 'flex',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        zIndex: 100000,
+                        padding: '1rem',
+                        animation: 'fadeIn 0.2s ease-out'
+                    }}
+                    onClick={() => { setShowDeletePrevDueModal(false); setSelectedPrevDueStudent(null); }}
+                >
+                    <div 
+                        style={{
+                            backgroundColor: '#ffffff',
+                            borderRadius: '16px',
+                            maxWidth: '480px',
+                            width: '100%',
+                            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)',
+                            overflow: 'hidden',
+                            animation: 'modalSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1)'
+                        }}
+                        onClick={e => e.stopPropagation()}
+                    >
+                        {/* Header */}
+                        <div style={{
+                            padding: '1.25rem 1.5rem',
+                            backgroundColor: '#fef2f2',
+                            borderBottom: '1px solid #fecaca',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.75rem'
+                        }}>
+                            <div style={{
+                                width: '40px',
+                                height: '40px',
+                                borderRadius: '10px',
+                                backgroundColor: '#fee2e2',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                color: '#dc2626'
+                            }}>
+                                <Trash2 size={20} />
+                            </div>
+                            <div>
+                                <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: '#991b1b' }}>
+                                    Delete Previous Year Due
+                                </h3>
+                                <p style={{ margin: '0.15rem 0 0 0', fontSize: '0.8rem', color: '#b91c1c' }}>
+                                    Confirm reset of previous year dues
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* Body */}
+                        <div style={{ padding: '1.5rem' }}>
+                            <p style={{ margin: 0, color: '#334155', fontSize: '0.92rem', lineHeight: '1.5' }}>
+                                Are you sure you want to delete the previous year due for <strong>{selectedPrevDueStudent.studentName}</strong> (Adm No: <strong>{selectedPrevDueStudent.admissionNo || 'N/A'}</strong>)?
+                            </p>
+                            <p style={{ marginTop: '0.6rem', color: '#64748b', fontSize: '0.85rem' }}>
+                                This will reset the student's previous session due to <strong>₹0</strong>.
+                            </p>
+
+                            {(() => {
+                                const orig = selectedPrevDueStudent.previousSessionDue || 0;
+                                const rem = (selectedPrevDueStudent.prevDuePending !== undefined ? selectedPrevDueStudent.prevDuePending : orig) || 0;
+                                const paid = selectedPrevDueStudent.actualPrevDuesPaid !== undefined ? selectedPrevDueStudent.actualPrevDuesPaid : Math.max(0, orig - rem);
+                                if (paid > 0) {
+                                    return (
+                                        <div style={{ marginTop: '1rem', backgroundColor: '#fffbeb', border: '1px solid #fde68a', borderRadius: '8px', padding: '0.75rem 0.9rem', fontSize: '0.82rem', color: '#92400e' }}>
+                                            ⚠️ <strong>Note:</strong> This student has already paid <strong>₹{paid.toLocaleString()}</strong> towards previous year dues. Resetting original due to ₹0 will mark the balance as settled.
+                                        </div>
+                                    );
+                                }
+                                return null;
+                            })()}
+                        </div>
+
+                        {/* Footer */}
+                        <div style={{ padding: '1rem 1.5rem', backgroundColor: '#f8fafc', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+                            <button
+                                type="button"
+                                onClick={() => { setShowDeletePrevDueModal(false); setSelectedPrevDueStudent(null); }}
+                                style={{
+                                    padding: '0.6rem 1.2rem',
+                                    borderRadius: '8px',
+                                    border: '1px solid #cbd5e1',
+                                    backgroundColor: '#ffffff',
+                                    color: '#475569',
+                                    fontWeight: 600,
+                                    fontSize: '0.85rem',
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                disabled={prevDueSubmitting}
+                                onClick={handleConfirmDeletePrevDue}
+                                style={{
+                                    padding: '0.6rem 1.4rem',
+                                    borderRadius: '8px',
+                                    border: 'none',
+                                    backgroundColor: prevDueSubmitting ? '#94a3b8' : '#dc2626',
+                                    color: 'white',
+                                    fontWeight: 700,
+                                    fontSize: '0.85rem',
+                                    cursor: prevDueSubmitting ? 'not-allowed' : 'pointer',
+                                    boxShadow: '0 2px 4px rgba(220, 38, 38, 0.25)'
+                                }}
+                            >
+                                {prevDueSubmitting ? 'Deleting...' : 'Yes, Delete Due'}
                             </button>
                         </div>
                     </div>

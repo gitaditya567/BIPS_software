@@ -1848,6 +1848,118 @@ router.post('/import-previous-due', async (req, res) => {
     }
 });
 
+// Add or Set Student Previous Year Due
+router.post('/previous-due', async (req, res) => {
+    try {
+        const { studentId, amount } = req.body;
+        if (!studentId) {
+            return res.status(400).json({ error: 'Student ID is required' });
+        }
+        const parsedAmount = parseFloat(amount);
+        if (isNaN(parsedAmount) || parsedAmount < 0) {
+            return res.status(400).json({ error: 'Amount must be a valid non-negative number' });
+        }
+
+        const student = await prisma.studentProfile.findUnique({
+            where: { id: studentId },
+            include: { user: true, class: true }
+        });
+
+        if (!student) {
+            return res.status(404).json({ error: 'Student not found' });
+        }
+
+        const updatedStudent = await prisma.studentProfile.update({
+            where: { id: studentId },
+            data: { previousSessionDue: parsedAmount }
+        });
+
+        invalidateCache('fees');
+        invalidateCache('students');
+        invalidateCache('dashboard');
+
+        res.json({
+            success: true,
+            message: `Previous year due of ₹${parsedAmount.toLocaleString('en-IN')} assigned to ${student.user.name}`,
+            student: updatedStudent
+        });
+    } catch (error: any) {
+        console.error('Error adding previous year due:', error);
+        res.status(500).json({ error: 'Failed to add previous year due' });
+    }
+});
+
+// Update Student Previous Year Due
+router.put('/previous-due/:studentId', async (req, res) => {
+    try {
+        const { studentId } = req.params;
+        const { amount } = req.body;
+        const parsedAmount = parseFloat(amount);
+        if (isNaN(parsedAmount) || parsedAmount < 0) {
+            return res.status(400).json({ error: 'Amount must be a valid non-negative number' });
+        }
+
+        const student = await prisma.studentProfile.findUnique({
+            where: { id: studentId },
+            include: { user: true, class: true }
+        });
+
+        if (!student) {
+            return res.status(404).json({ error: 'Student not found' });
+        }
+
+        const updatedStudent = await prisma.studentProfile.update({
+            where: { id: studentId },
+            data: { previousSessionDue: parsedAmount }
+        });
+
+        invalidateCache('fees');
+        invalidateCache('students');
+        invalidateCache('dashboard');
+
+        res.json({
+            success: true,
+            message: `Previous year due for ${student.user.name} updated to ₹${parsedAmount.toLocaleString('en-IN')}`,
+            student: updatedStudent
+        });
+    } catch (error: any) {
+        console.error('Error updating previous year due:', error);
+        res.status(500).json({ error: 'Failed to update previous year due' });
+    }
+});
+
+// Delete / Reset Student Previous Year Due
+router.delete('/previous-due/:studentId', async (req, res) => {
+    try {
+        const { studentId } = req.params;
+        const student = await prisma.studentProfile.findUnique({
+            where: { id: studentId },
+            include: { user: true }
+        });
+
+        if (!student) {
+            return res.status(404).json({ error: 'Student not found' });
+        }
+
+        await prisma.studentProfile.update({
+            where: { id: studentId },
+            data: { previousSessionDue: 0 }
+        });
+
+        invalidateCache('fees');
+        invalidateCache('students');
+        invalidateCache('dashboard');
+
+        res.json({
+            success: true,
+            message: `Previous year due for ${student.user.name} removed successfully.`
+        });
+    } catch (error: any) {
+        console.error('Error deleting previous year due:', error);
+        res.status(500).json({ error: 'Failed to delete previous year due' });
+    }
+});
+
 // Delete All Fee Payments (Reset History)
 router.delete('/all', async (req, res) => {
     try {

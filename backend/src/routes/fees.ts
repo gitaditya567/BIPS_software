@@ -306,7 +306,27 @@ export async function getStudentFeeLedger(studentId: string) {
     const pendingMonthsList: string[] = [];
 
     // Track unused/rollover monthly payment pool
-    const excessPrevDuesPaid = Math.max(0, actualPrevDuesPaid - previousSessionDue);
+    let excessPrevDuesPaid = Math.max(0, actualPrevDuesPaid - previousSessionDue);
+
+    // If there are excess dues paid and pending one-time fees (e.g. from partial previous receipts like RCP242),
+    // allocate to pending one-time fees first before rolling over to monthly pool
+    if (excessPrevDuesPaid > 0 && oneTimePending > 0) {
+        let remainingExcess = excessPrevDuesPaid;
+        oneTimeStatus.forEach(ot => {
+            if (remainingExcess <= 0) return;
+            const needed = ot.expected - ot.paid;
+            if (needed > 0) {
+                const cover = Math.min(needed, remainingExcess);
+                ot.paid += cover;
+                ot.pending = Math.max(0, ot.expected - ot.paid);
+                actualOneTimePaid += cover;
+                oneTimePending -= cover;
+                remainingExcess -= cover;
+            }
+        });
+        excessPrevDuesPaid = remainingExcess;
+    }
+
     let rolloverMonthlyPool = excessPrevDuesPaid;
     let rolloverTransportPool = actualTransportPaid;
 
@@ -1592,7 +1612,25 @@ router.get('/due-list', async (req, res) => {
             const monthlyStatus: any[] = [];
 
             // Track unused/rollover monthly payment pool
-            const excessPrevDuesPaid = Math.max(0, actualPrevDuesPaid - previousSessionDue);
+            let excessPrevDuesPaid = Math.max(0, actualPrevDuesPaid - previousSessionDue);
+
+            if (excessPrevDuesPaid > 0 && oneTimePending > 0) {
+                let remainingExcess = excessPrevDuesPaid;
+                oneTimeBreakdown.forEach(ot => {
+                    if (remainingExcess <= 0) return;
+                    const paid = oneTimePaidForHead[ot.name] || 0;
+                    const needed = ot.amount - paid;
+                    if (needed > 0) {
+                        const cover = Math.min(needed, remainingExcess);
+                        oneTimePaidForHead[ot.name] = paid + cover;
+                        actualOneTimePaid += cover;
+                        oneTimePending -= cover;
+                        remainingExcess -= cover;
+                    }
+                });
+                excessPrevDuesPaid = remainingExcess;
+            }
+
             let rolloverMonthlyPool = excessPrevDuesPaid;
             let rolloverTransportPool = actualTransportPaid;
 

@@ -328,7 +328,8 @@ export async function getStudentFeeLedger(studentId: string) {
     }
 
     let rolloverMonthlyPool = excessPrevDuesPaid;
-    let rolloverTransportPool = actualTransportPaid;
+    const directTaggedTransport = Object.values(transportPaidForMonth).reduce((s, v) => s + v, 0);
+    let rolloverTransportPool = Math.max(0, actualTransportPaid - directTaggedTransport);
 
     allMonths.forEach(m => {
         const isElapsed = elapsedMonths.includes(m);
@@ -346,12 +347,15 @@ export async function getStudentFeeLedger(studentId: string) {
             let directPaid = monthlyPaidForHeadAndMonth[head.name]?.[m] || 0;
             
             let allocated = 0;
-            if (directPaid > 0 && directPaid >= expected) {
-                allocated = expected;
-                currentMonthMoney = Math.max(0, currentMonthMoney - expected);
-            } else {
-                allocated = Math.min(currentMonthMoney, expected);
-                currentMonthMoney -= allocated;
+            if (directPaid > 0) {
+                allocated = Math.min(expected, directPaid);
+                currentMonthMoney = Math.max(0, currentMonthMoney - allocated);
+            }
+            if (allocated < expected && currentMonthMoney > 0) {
+                const needed = expected - allocated;
+                const cover = Math.min(needed, currentMonthMoney);
+                allocated += cover;
+                currentMonthMoney -= cover;
             }
 
             allocated = Math.round(allocated);
@@ -377,7 +381,9 @@ export async function getStudentFeeLedger(studentId: string) {
         let transportAllocated = 0;
         if (directTransport > 0) {
             transportAllocated = Math.min(transportExpected, Math.round(directTransport));
-            rolloverTransportPool = Math.max(0, rolloverTransportPool - transportAllocated);
+            if (directTransport > transportExpected) {
+                rolloverTransportPool += (directTransport - transportExpected);
+            }
         } else {
             transportAllocated = Math.min(transportExpected, rolloverTransportPool);
             rolloverTransportPool -= transportAllocated;
@@ -648,7 +654,8 @@ router.get('/transport-due-list', async (req, res) => {
             const previousSessionDue = student.previousSessionDue || 0;
             const excessPrevDuesPaid = Math.max(0, actualPrevDuesPaid - previousSessionDue);
             let rolloverMonthlyPool = excessPrevDuesPaid;
-            let rolloverTransportPool = actualTransportPaid;
+            const directTaggedTransport = Object.values(transportPaidForMonth).reduce((s, v) => s + v, 0);
+            let rolloverTransportPool = Math.max(0, actualTransportPaid - directTaggedTransport);
 
             const monthWisePaid: Record<string, number> = {};
             let totalAllocatedTransportPaid = 0;
@@ -661,11 +668,16 @@ router.get('/transport-due-list', async (req, res) => {
                 monthlyExpectedBreakdown.forEach(head => {
                     const expected = head.amount;
                     const directPaid = monthlyPaidForHeadAndMonth[head.name]?.[m] || 0;
-                    if (directPaid > 0 && directPaid >= expected) {
-                        currentMonthMoney = Math.max(0, currentMonthMoney - expected);
-                    } else {
-                        const allocated = Math.min(currentMonthMoney, expected);
-                        currentMonthMoney -= allocated;
+                    let allocated = 0;
+                    if (directPaid > 0) {
+                        allocated = Math.min(expected, directPaid);
+                        currentMonthMoney = Math.max(0, currentMonthMoney - allocated);
+                    }
+                    if (allocated < expected && currentMonthMoney > 0) {
+                        const needed = expected - allocated;
+                        const cover = Math.min(needed, currentMonthMoney);
+                        allocated += cover;
+                        currentMonthMoney -= cover;
                     }
                 });
 
@@ -675,7 +687,9 @@ router.get('/transport-due-list', async (req, res) => {
                 let transportAllocated = 0;
                 if (directTransport > 0) {
                     transportAllocated = Math.min(transportExpected, Math.round(directTransport));
-                    rolloverTransportPool = Math.max(0, rolloverTransportPool - transportAllocated);
+                    if (directTransport > transportExpected) {
+                        rolloverTransportPool += (directTransport - transportExpected);
+                    }
                 } else {
                     transportAllocated = Math.min(transportExpected, rolloverTransportPool);
                     rolloverTransportPool -= transportAllocated;
@@ -1632,7 +1646,8 @@ router.get('/due-list', async (req, res) => {
             }
 
             let rolloverMonthlyPool = excessPrevDuesPaid;
-            let rolloverTransportPool = actualTransportPaid;
+            const directTaggedTransport = Object.values(transportPaidForMonth).reduce((s, v) => s + v, 0);
+            let rolloverTransportPool = Math.max(0, actualTransportPaid - directTaggedTransport);
 
             allMonths.forEach(m => {
                 const isElapsed = elapsedMonths.includes(m);
@@ -1650,12 +1665,15 @@ router.get('/due-list', async (req, res) => {
                     let directPaid = monthlyPaidForHeadAndMonth[head.name]?.[m] || 0;
                     
                     let allocated = 0;
-                    if (directPaid > 0 && directPaid >= expected) {
-                        allocated = expected;
-                        currentMonthMoney = Math.max(0, currentMonthMoney - expected);
-                    } else {
-                        allocated = Math.min(currentMonthMoney, expected);
-                        currentMonthMoney -= allocated;
+                    if (directPaid > 0) {
+                        allocated = Math.min(expected, directPaid);
+                        currentMonthMoney = Math.max(0, currentMonthMoney - allocated);
+                    }
+                    if (allocated < expected && currentMonthMoney > 0) {
+                        const needed = expected - allocated;
+                        const cover = Math.min(needed, currentMonthMoney);
+                        allocated += cover;
+                        currentMonthMoney -= cover;
                     }
 
                     allocated = Math.round(allocated);
@@ -1681,7 +1699,9 @@ router.get('/due-list', async (req, res) => {
                 let transportAllocated = 0;
                 if (directTransport > 0) {
                     transportAllocated = Math.min(transportExpected, Math.round(directTransport));
-                    rolloverTransportPool = Math.max(0, rolloverTransportPool - transportAllocated);
+                    if (directTransport > transportExpected) {
+                        rolloverTransportPool += (directTransport - transportExpected);
+                    }
                 } else {
                     transportAllocated = Math.min(transportExpected, rolloverTransportPool);
                     rolloverTransportPool -= transportAllocated;

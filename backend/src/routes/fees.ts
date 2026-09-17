@@ -338,7 +338,7 @@ export async function getStudentFeeLedger(studentId: string) {
         const headsBreakdown: any[] = [];
 
         // Total money collected specifically for this month (excluding transport paid for this month)
-        let currentMonthMoney = Math.max(0, (monthWisePaid[m] || 0) - (transportPaidForMonth[m] || 0)) + rolloverMonthlyPool;
+        let currentMonthMoney = (genericMonthlyPaidForMonth[m] || 0) + rolloverMonthlyPool;
         rolloverMonthlyPool = 0;
 
         // 1. Allocate monthly fee heads sequentially for month m
@@ -349,7 +349,10 @@ export async function getStudentFeeLedger(studentId: string) {
             let allocated = 0;
             if (directPaid > 0) {
                 allocated = Math.min(expected, directPaid);
-                currentMonthMoney = Math.max(0, currentMonthMoney - allocated);
+                const extraDirect = Math.max(0, directPaid - expected);
+                if (extraDirect > 0) {
+                    currentMonthMoney += extraDirect;
+                }
             }
             if (allocated < expected && currentMonthMoney > 0) {
                 const needed = expected - allocated;
@@ -376,8 +379,8 @@ export async function getStudentFeeLedger(studentId: string) {
         });
 
         // 2. Allocate transport fee chronologically
-        const transportExpected = transportMonthlyFare;
         let directTransport = transportPaidForMonth[m] || 0;
+        const transportExpected = Math.max(transportMonthlyFare, directTransport);
         let transportAllocated = 0;
         if (directTransport > 0) {
             transportAllocated = Math.min(transportExpected, Math.round(directTransport));
@@ -615,6 +618,7 @@ router.get('/transport-due-list', async (req, res) => {
 
             const monthlyPaidForHeadAndMonth: Record<string, Record<string, number>> = {};
             const transportPaidForMonth: Record<string, number> = {};
+            const genericMonthlyPaidForMonth: Record<string, number> = {};
             const rawMonthWisePaid: Record<string, number> = {};
 
             studentPayments.forEach(p => {
@@ -640,10 +644,18 @@ router.get('/transport-due-list', async (req, res) => {
                         if (mths.length > 0) {
                             const amtPerMonth = item.amount / mths.length;
                             mths.forEach(m => {
-                                if (!monthlyPaidForHeadAndMonth[item.name]) {
-                                    monthlyPaidForHeadAndMonth[item.name] = {};
+                                const matchedHead = feeHeads.find(h => h.type === 'Monthly' && (
+                                    item.name.toLowerCase().includes(h.name.toLowerCase()) || 
+                                    h.name.toLowerCase().includes(item.name.toLowerCase())
+                                ));
+                                if (matchedHead) {
+                                    if (!monthlyPaidForHeadAndMonth[matchedHead.name]) {
+                                        monthlyPaidForHeadAndMonth[matchedHead.name] = {};
+                                    }
+                                    monthlyPaidForHeadAndMonth[matchedHead.name][m] = (monthlyPaidForHeadAndMonth[matchedHead.name][m] || 0) + amtPerMonth;
+                                } else {
+                                    genericMonthlyPaidForMonth[m] = (genericMonthlyPaidForMonth[m] || 0) + amtPerMonth;
                                 }
-                                monthlyPaidForHeadAndMonth[item.name][m] = (monthlyPaidForHeadAndMonth[item.name][m] || 0) + amtPerMonth;
                                 rawMonthWisePaid[m] = (rawMonthWisePaid[m] || 0) + amtPerMonth;
                             });
                         }
@@ -661,7 +673,7 @@ router.get('/transport-due-list', async (req, res) => {
             let totalAllocatedTransportPaid = 0;
 
             allMonths.forEach(m => {
-                let currentMonthMoney = Math.max(0, (rawMonthWisePaid[m] || 0) - (transportPaidForMonth[m] || 0)) + rolloverMonthlyPool;
+                let currentMonthMoney = (genericMonthlyPaidForMonth[m] || 0) + rolloverMonthlyPool;
                 rolloverMonthlyPool = 0;
 
                 // 1. Allocate regular monthly fee heads first
@@ -671,7 +683,10 @@ router.get('/transport-due-list', async (req, res) => {
                     let allocated = 0;
                     if (directPaid > 0) {
                         allocated = Math.min(expected, directPaid);
-                        currentMonthMoney = Math.max(0, currentMonthMoney - allocated);
+                        const extraDirect = Math.max(0, directPaid - expected);
+                        if (extraDirect > 0) {
+                            currentMonthMoney += extraDirect;
+                        }
                     }
                     if (allocated < expected && currentMonthMoney > 0) {
                         const needed = expected - allocated;
@@ -682,8 +697,8 @@ router.get('/transport-due-list', async (req, res) => {
                 });
 
                 // 2. Allocate transport fee chronologically
-                const transportExpected = monthlyFare;
                 let directTransport = transportPaidForMonth[m] || 0;
+                const transportExpected = Math.max(monthlyFare, directTransport);
                 let transportAllocated = 0;
                 if (directTransport > 0) {
                     transportAllocated = Math.min(transportExpected, Math.round(directTransport));
@@ -1566,6 +1581,7 @@ router.get('/due-list', async (req, res) => {
             const oneTimePaidForHead: Record<string, number> = {};
             const monthlyPaidForHeadAndMonth: Record<string, Record<string, number>> = {};
             const transportPaidForMonth: Record<string, number> = {};
+            const genericMonthlyPaidForMonth: Record<string, number> = {};
             const monthWisePaid: Record<string, number> = {};
 
             studentPayments.forEach(p => {
@@ -1590,21 +1606,38 @@ router.get('/due-list', async (req, res) => {
                         oneTimePaidForHead[item.name] = (oneTimePaidForHead[item.name] || 0) + item.amount;
                     } else {
                         actualMonthlyPaid += item.amount;
-                        if (item.months.length > 0) {
-                            const amtPerMonth = item.amount / item.months.length;
-                            item.months.forEach(m => {
-                                if (!monthlyPaidForHeadAndMonth[item.name]) {
-                                    monthlyPaidForHeadAndMonth[item.name] = {};
+                        const matchedHead = feeHeads.find(h => h.type === 'Monthly' && (
+                            item.name.toLowerCase().includes(h.name.toLowerCase()) || 
+                            h.name.toLowerCase().includes(item.name.toLowerCase())
+                        ));
+                        if (matchedHead) {
+                            if (item.months.length > 0) {
+                                const amtPerMonth = item.amount / item.months.length;
+                                item.months.forEach(m => {
+                                    if (!monthlyPaidForHeadAndMonth[matchedHead.name]) {
+                                        monthlyPaidForHeadAndMonth[matchedHead.name] = {};
+                                    }
+                                    monthlyPaidForHeadAndMonth[matchedHead.name][m] = (monthlyPaidForHeadAndMonth[matchedHead.name][m] || 0) + amtPerMonth;
+                                    monthWisePaid[m] = (monthWisePaid[m] || 0) + amtPerMonth;
+                                });
+                            } else if (p.month) {
+                                if (!monthlyPaidForHeadAndMonth[matchedHead.name]) {
+                                    monthlyPaidForHeadAndMonth[matchedHead.name] = {};
                                 }
-                                monthlyPaidForHeadAndMonth[item.name][m] = (monthlyPaidForHeadAndMonth[item.name][m] || 0) + amtPerMonth;
-                                monthWisePaid[m] = (monthWisePaid[m] || 0) + amtPerMonth;
-                            });
-                        } else if (p.month) {
-                            if (!monthlyPaidForHeadAndMonth[item.name]) {
-                                monthlyPaidForHeadAndMonth[item.name] = {};
+                                monthlyPaidForHeadAndMonth[matchedHead.name][p.month] = (monthlyPaidForHeadAndMonth[matchedHead.name][p.month] || 0) + item.amount;
+                                monthWisePaid[p.month] = (monthWisePaid[p.month] || 0) + item.amount;
                             }
-                            monthlyPaidForHeadAndMonth[item.name][p.month] = (monthlyPaidForHeadAndMonth[item.name][p.month] || 0) + item.amount;
-                            monthWisePaid[p.month] = (monthWisePaid[p.month] || 0) + item.amount;
+                        } else {
+                            if (item.months.length > 0) {
+                                const amtPerMonth = item.amount / item.months.length;
+                                item.months.forEach(m => {
+                                    genericMonthlyPaidForMonth[m] = (genericMonthlyPaidForMonth[m] || 0) + amtPerMonth;
+                                    monthWisePaid[m] = (monthWisePaid[m] || 0) + amtPerMonth;
+                                });
+                            } else if (p.month) {
+                                genericMonthlyPaidForMonth[p.month] = (genericMonthlyPaidForMonth[p.month] || 0) + item.amount;
+                                monthWisePaid[p.month] = (monthWisePaid[p.month] || 0) + item.amount;
+                            }
                         }
                     }
                 });
@@ -1656,7 +1689,7 @@ router.get('/due-list', async (req, res) => {
                 const headsBreakdown: any[] = [];
 
                 // Total money collected specifically for this month (excluding transport paid for this month)
-                let currentMonthMoney = Math.max(0, (monthWisePaid[m] || 0) - (transportPaidForMonth[m] || 0)) + rolloverMonthlyPool;
+                let currentMonthMoney = (genericMonthlyPaidForMonth[m] || 0) + rolloverMonthlyPool;
                 rolloverMonthlyPool = 0;
 
                 // 1. Allocate monthly fee heads sequentially for month m
@@ -1667,7 +1700,10 @@ router.get('/due-list', async (req, res) => {
                     let allocated = 0;
                     if (directPaid > 0) {
                         allocated = Math.min(expected, directPaid);
-                        currentMonthMoney = Math.max(0, currentMonthMoney - allocated);
+                        const extraDirect = Math.max(0, directPaid - expected);
+                        if (extraDirect > 0) {
+                            currentMonthMoney += extraDirect;
+                        }
                     }
                     if (allocated < expected && currentMonthMoney > 0) {
                         const needed = expected - allocated;
@@ -1694,8 +1730,8 @@ router.get('/due-list', async (req, res) => {
                 });
 
                 // 2. Allocate transport fee chronologically
-                const transportExpected = transportMonthlyFare;
                 let directTransport = transportPaidForMonth[m] || 0;
+                const transportExpected = Math.max(transportMonthlyFare, directTransport);
                 let transportAllocated = 0;
                 if (directTransport > 0) {
                     transportAllocated = Math.min(transportExpected, Math.round(directTransport));

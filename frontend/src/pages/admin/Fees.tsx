@@ -21,6 +21,8 @@ interface FeeRecord {
     paymentMode: string;
     txnid?: string;
     payuMoneyId?: string;
+    bankRefNum?: string;
+    utr?: string;
     gatewayStatus?: string;
     date: string;
     status: 'APPROVED' | 'PENDING' | 'REJECTED';
@@ -7320,8 +7322,8 @@ const Fees: React.FC = () => {
                             Payment Status  : {remainingDue > 0 ? 'Partial Payment' : 'Full Paid'}<br/>
                             Payment Mode    : {selectedReceipt.paymentMode || 'Cash'}<br/>
                             {(() => {
-                                const utrNum = selectedReceipt.bankRefNum || selectedReceipt.utr || selectedReceipt.bank_ref_num || null;
-                                const txnId = selectedReceipt.txnid || selectedReceipt.txnId || null;
+                                const utrNum = selectedReceipt.bankRefNum || selectedReceipt.utr || (selectedReceipt as any).bank_ref_num || null;
+                                const txnId = selectedReceipt.txnid || (selectedReceipt as any).txnId || null;
                                 const isOnline = (selectedReceipt.paymentMode || '').toLowerCase().includes('payu') || 
                                                  (selectedReceipt.paymentMode || '').toLowerCase().includes('online') || 
                                                  Boolean(utrNum) || Boolean(txnId);

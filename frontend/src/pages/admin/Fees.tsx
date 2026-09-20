@@ -311,24 +311,29 @@ const Fees: React.FC = () => {
         const list = reportData.daily || [];
 
         return list.filter((d: any) => {
-            // 1. Admission / Name / Father / Receipt search
+            // 1. Admission / Name / Father / Receipt / UTR search
             if (admSearch !== '') {
                 const sName = (d.studentName || '').toLowerCase();
                 const admNo = (d.admissionNo || '').toLowerCase();
                 const fName = (d.fatherName || '').toLowerCase();
                 const rNo = (d.receiptNo || '').toLowerCase();
-                const matches = admNo.includes(admSearch) || sName.includes(admSearch) || fName.includes(admSearch) || rNo.includes(admSearch);
+                const utr = (d.bankRefNum || d.utr || '').toLowerCase();
+                const txn = (d.txnid || '').toLowerCase();
+                const matches = admNo.includes(admSearch) || sName.includes(admSearch) || fName.includes(admSearch) || rNo.includes(admSearch) || utr.includes(admSearch) || txn.includes(admSearch);
                 if (!matches) return false;
             }
 
-            // 2. Receipt No search query
+            // 2. Receipt No / UTR search query
             if (rawQuery !== '') {
                 const rNo = (d.receiptNo || '').toLowerCase();
                 const sName = (d.studentName || '').toLowerCase();
                 const admNo = (d.admissionNo || '').toLowerCase();
+                const utr = (d.bankRefNum || d.utr || '').toLowerCase();
+                const txn = (d.txnid || '').toLowerCase();
                 const matches = rNo.includes(rawQuery) || (numOnlyQuery !== '' && rNo.includes(numOnlyQuery)) ||
                                 sName.includes(rawQuery) || (numOnlyQuery !== '' && sName.includes(numOnlyQuery)) ||
-                                admNo.includes(rawQuery) || (numOnlyQuery !== '' && admNo.includes(numOnlyQuery));
+                                admNo.includes(rawQuery) || (numOnlyQuery !== '' && admNo.includes(numOnlyQuery)) ||
+                                utr.includes(rawQuery) || txn.includes(rawQuery);
                 if (!matches) return false;
             }
 
@@ -967,7 +972,8 @@ const Fees: React.FC = () => {
             
             body = filtered.map((d, index) => {
                 const isOnline = (d.paymentMode || '').toLowerCase().includes('payu') || (d.paymentMode || '').toLowerCase().includes('online');
-                return [index + 1, d.date, d.studentName, d.fatherName || 'N/A', d.className, d.receiptNo, isOnline ? 'Online (PayU)' : 'Cash', `₹${(d.paidAmount || 0).toLocaleString('en-IN')}`];
+                const utrStr = d.bankRefNum || d.txnid ? `\nUTR: ${d.bankRefNum || d.txnid}` : '';
+                return [index + 1, d.date, d.studentName, d.fatherName || 'N/A', d.className, d.receiptNo, isOnline ? `Online (PayU)${utrStr}` : 'Cash', `₹${(d.paidAmount || 0).toLocaleString('en-IN')}`];
             });
             
             // Calculate totals and counts for Cash, Online, and Grand Total
@@ -1170,13 +1176,14 @@ const Fees: React.FC = () => {
             { header: 'Class', key: 'class', width: 14 },
             { header: 'Receipt No', key: 'receiptNo', width: 18 },
             { header: 'Payment Mode', key: 'paymentMode', width: 16 },
+            { header: 'UTR / Txn ID', key: 'utr', width: 22 },
             { header: 'Amount (₹)', key: 'amount', width: 18 }
         ];
 
         worksheet.insertRow(1, [`BIPS SENIOR SECONDARY SCHOOL | Fee Collection Report (${dateStr.replace(/_/g, ' ')}) | Session: ${activeSessionStr}`]);
         worksheet.insertRow(2, []);
 
-        worksheet.mergeCells('A1:I1');
+        worksheet.mergeCells('A1:J1');
         worksheet.getRow(1).font = { bold: true, size: 12, color: { argb: 'FF1F2937' } };
         worksheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'left' };
 
@@ -1195,6 +1202,7 @@ const Fees: React.FC = () => {
                 class: d.className || 'Unknown',
                 receiptNo: d.receiptNo || 'N/A',
                 paymentMode: isOnline ? 'Online (PayU)' : 'Cash',
+                utr: isOnline ? (d.bankRefNum || d.txnid || '-') : '-',
                 amount: d.paidAmount || 0
             });
             if (isOnline) {
@@ -7049,6 +7057,11 @@ const Fees: React.FC = () => {
                                                    <td style={{ padding: '1rem 1.5rem', fontWeight: '900', color: isOnlineRow ? '#047857' : '#2563eb' }}>
                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', alignItems: 'flex-start' }}>
                                                            {d.receiptNo}
+                                                           {(d.bankRefNum || d.txnid) && (
+                                                               <span style={{ fontSize: '0.68rem', fontWeight: 600, color: '#047857', fontFamily: 'monospace', backgroundColor: '#ecfdf5', padding: '0.1rem 0.35rem', borderRadius: '4px', border: '1px solid #a7f3d0' }}>
+                                                                   UTR: {d.bankRefNum || d.txnid}
+                                                               </span>
+                                                           )}
                                                            {isAdvancePayment && (
                                                                <span style={{ fontSize: '0.65rem', fontWeight: 800, padding: '0.1rem 0.4rem', borderRadius: '5px', backgroundColor: '#ede9fe', color: '#6d28d9', border: '1px solid #c4b5fd', whiteSpace: 'nowrap' }}>⚡ Advance</span>
                                                            )}
@@ -7306,6 +7319,20 @@ const Fees: React.FC = () => {
                             Remaining Due   : ₹{remainingDue.toLocaleString()}<br/>
                             Payment Status  : {remainingDue > 0 ? 'Partial Payment' : 'Full Paid'}<br/>
                             Payment Mode    : {selectedReceipt.paymentMode || 'Cash'}<br/>
+                            {(() => {
+                                const utrNum = selectedReceipt.bankRefNum || selectedReceipt.utr || selectedReceipt.bank_ref_num || null;
+                                const txnId = selectedReceipt.txnid || selectedReceipt.txnId || null;
+                                const isOnline = (selectedReceipt.paymentMode || '').toLowerCase().includes('payu') || 
+                                                 (selectedReceipt.paymentMode || '').toLowerCase().includes('online') || 
+                                                 Boolean(utrNum) || Boolean(txnId);
+                                if (!isOnline && !utrNum && !txnId) return null;
+                                return (
+                                    <>
+                                        Transaction ID  : {txnId || '-'}<br/>
+                                        Bank UTR / Ref  : {utrNum || txnId || '-'}<br/>
+                                    </>
+                                );
+                            })()}
                             {dashedLine}<br/>
                             <br/>
                             Remark:<br/>

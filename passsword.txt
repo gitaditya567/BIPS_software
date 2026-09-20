@@ -1,6 +1,6 @@
 Role: ADMIN (Superadmin (Administrator))
 Email: admin@schoolerp.com
-Password: admin123\
+Password: admin123
 
 
 

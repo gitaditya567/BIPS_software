@@ -489,6 +489,20 @@ const MyFees: React.FC = () => {
                                     Remaining Due   : ₹{Math.max(0, totalPayable - (selectedReceipt.paidAmount || selectedReceipt.amountPaid || 0)).toLocaleString()}<br/>
                                     Payment Status  : {Math.max(0, totalPayable - (selectedReceipt.paidAmount || selectedReceipt.amountPaid || 0)) > 0 ? 'Partial Payment' : 'Full Paid'}<br/>
                                     Payment Mode    : {selectedReceipt.paymentMode || 'Cash'}<br/>
+                                    {(() => {
+                                        const utrNum = selectedReceipt.bankRefNum || selectedReceipt.utr || selectedReceipt.bank_ref_num || null;
+                                        const txnId = selectedReceipt.txnid || selectedReceipt.txnId || null;
+                                        const isOnline = (selectedReceipt.paymentMode || '').toLowerCase().includes('payu') || 
+                                                         (selectedReceipt.paymentMode || '').toLowerCase().includes('online') || 
+                                                         Boolean(utrNum) || Boolean(txnId);
+                                        if (!isOnline && !utrNum && !txnId) return null;
+                                        return (
+                                            <>
+                                                Transaction ID  : {txnId || '-'}<br/>
+                                                Bank UTR / Ref  : {utrNum || txnId || '-'}<br/>
+                                            </>
+                                        );
+                                    })()}
                                     {dashedLine}<br/>
                                     <br/>
                                     Remark:<br/>

@@ -34,7 +34,15 @@ export const PublicFeePayment: React.FC = () => {
     };
 
     // Success Modal state after PayU return
-    const [paymentResult, setPaymentResult] = useState<{ status: string; receiptNo?: string; txnid?: string; amount?: number; feeHead?: string } | null>(null);
+    const [paymentResult, setPaymentResult] = useState<{ 
+        status: string; 
+        receiptNo?: string; 
+        txnid?: string; 
+        utr?: string;
+        payuId?: string;
+        amount?: number; 
+        feeHead?: string 
+    } | null>(null);
     const [showSuccessSlipModal, setShowSuccessSlipModal] = useState(false);
 
     const allMonths = ['April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December', 'January', 'February', 'March'];
@@ -56,6 +64,8 @@ export const PublicFeePayment: React.FC = () => {
         const paymentStatus = searchParams.get('payment');
         const receiptNo = searchParams.get('receipt');
         const txnid = searchParams.get('txnid');
+        const utr = searchParams.get('utr');
+        const payuId = searchParams.get('payuId');
         const studentId = searchParams.get('studentId');
         const admissionNo = searchParams.get('admissionNo');
         const amount = searchParams.get('amount');
@@ -73,6 +83,8 @@ export const PublicFeePayment: React.FC = () => {
                 status: paymentStatus,
                 receiptNo: receiptNo || undefined,
                 txnid: txnid || undefined,
+                utr: utr || undefined,
+                payuId: payuId || undefined,
                 amount: amount ? Number(amount) : undefined,
                 feeHead: feeHead || undefined
             };
@@ -420,9 +432,17 @@ export const PublicFeePayment: React.FC = () => {
         doc.text(`Payment Mode: Online (PayU)`, 14, 43);
         doc.text(`Txn ID: ${receipt.txnid || 'N/A'}`, 140, 43);
 
+        const utrVal = receipt.bankRefNum || receipt.utr || null;
+        if (utrVal && utrVal !== 'N/A' && utrVal !== '-') {
+            doc.text(`Bank UTR / Ref No: ${utrVal}`, 14, 49);
+            if (receipt.payuMoneyId || receipt.payuId) {
+                doc.text(`PayU Payment ID: ${receipt.payuMoneyId || receipt.payuId}`, 140, 49);
+            }
+        }
+
         // Student Info Box
         autoTable(doc, {
-            startY: 48,
+            startY: (utrVal && utrVal !== 'N/A' && utrVal !== '-') ? 54 : 48,
             theme: 'grid',
             head: [['Student Information', 'Details']],
             body: [
@@ -653,7 +673,10 @@ export const PublicFeePayment: React.FC = () => {
                                     date: new Date().toLocaleDateString('en-GB'), 
                                     amountPaid: paymentResult.amount || calculateSelectedTotal(), 
                                     feeHead: paymentResult.feeHead || 'Online Fee Collection', 
-                                    txnid: paymentResult.txnid 
+                                    txnid: paymentResult.txnid,
+                                    utr: paymentResult.utr,
+                                    bankRefNum: paymentResult.utr,
+                                    payuMoneyId: paymentResult.payuId
                                 }, studentData?.student)}
                                 style={{ padding: '0.3rem 0.65rem', backgroundColor: '#059669', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 700, fontSize: '0.72rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
                             >
@@ -1489,7 +1512,14 @@ export const PublicFeePayment: React.FC = () => {
                                     <tbody>
                                         {studentData.approvedReceipts.map((r: any) => (
                                             <tr key={r.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                                                <td style={{ padding: '0.6rem', fontWeight: 800, color: '#2563eb' }}>{r.receiptNo}</td>
+                                                <td style={{ padding: '0.6rem', fontWeight: 800, color: '#2563eb' }}>
+                                                    {r.receiptNo}
+                                                    {(r.bankRefNum || r.txnid) && (
+                                                        <div style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: 500, fontFamily: 'monospace', marginTop: '2px' }}>
+                                                            UTR: {r.bankRefNum || r.txnid}
+                                                        </div>
+                                                    )}
+                                                </td>
                                                 <td style={{ padding: '0.6rem', color: '#64748b' }}>{r.date}</td>
                                                 <td style={{ padding: '0.6rem', color: '#1e293b' }}>{r.feeHead} ({r.month})</td>
                                                 <td style={{ padding: '0.6rem', textAlign: 'right', fontWeight: 800, color: '#16a34a' }}>₹{r.amountPaid.toLocaleString('en-IN')}</td>
@@ -1582,6 +1612,17 @@ export const PublicFeePayment: React.FC = () => {
                                 <div>
                                     <span style={{ color: '#64748b' }}>Txn ID:</span> <strong style={{ fontFamily: 'monospace', color: '#334155' }}>{paymentResult.txnid || '-'}</strong>
                                 </div>
+                                <div style={{ gridColumn: 'span 2', backgroundColor: '#ecfdf5', padding: '0.45rem 0.75rem', borderRadius: '8px', border: '1px solid #a7f3d0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+                                    <div>
+                                        <span style={{ color: '#065f46', fontWeight: 600 }}>Bank UTR / Ref No:</span>{' '}
+                                        <strong style={{ fontFamily: 'monospace', color: '#047857', fontSize: '0.85rem' }}>{paymentResult.utr || paymentResult.txnid || '-'}</strong>
+                                    </div>
+                                    {paymentResult.payuId && (
+                                        <div style={{ fontSize: '0.75rem', color: '#047857' }}>
+                                            PayU Ref: <strong style={{ fontFamily: 'monospace' }}>{paymentResult.payuId}</strong>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
 
                             {/* Student Profile Particulars */}
@@ -1626,7 +1667,10 @@ export const PublicFeePayment: React.FC = () => {
                                         date: new Date().toLocaleDateString('en-GB'), 
                                         amountPaid: paymentResult.amount || 0, 
                                         feeHead: paymentResult.feeHead || 'Online Fee Collection', 
-                                        txnid: paymentResult.txnid 
+                                        txnid: paymentResult.txnid,
+                                        utr: paymentResult.utr,
+                                        bankRefNum: paymentResult.utr,
+                                        payuMoneyId: paymentResult.payuId
                                     }, studentData?.student)}
                                     style={{ padding: '0.55rem 1.1rem', backgroundColor: '#16a34a', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 800, fontSize: '0.82rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem', boxShadow: '0 2px 6px rgba(22, 163, 74, 0.3)' }}
                                 >

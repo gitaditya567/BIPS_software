@@ -966,6 +966,24 @@ router.post('/:id/pay-full', async (req, res) => {
     }
 });
 
+// Helper to safely extract bank UTR / reference number from payment or raw gateway response
+export function getTransactionUtr(payment: any): string | null {
+    if (!payment) return null;
+    if (payment.bankRefNum && String(payment.bankRefNum).trim()) return String(payment.bankRefNum).trim();
+    if (payment.rawGatewayResponse) {
+        try {
+            const raw = typeof payment.rawGatewayResponse === 'string' 
+                ? JSON.parse(payment.rawGatewayResponse) 
+                : payment.rawGatewayResponse;
+            const candidate = raw.bank_ref_num || raw.bank_ref_no || raw.bankRefNum || null;
+            if (candidate && String(candidate).trim()) return String(candidate).trim();
+        } catch (e) {
+            // ignore JSON parse error
+        }
+    }
+    return null;
+}
+
 // Get Fee History for Student
 router.get('/history/:studentId', async (req, res) => {
     try {
@@ -986,6 +1004,7 @@ router.get('/history/:studentId', async (req, res) => {
 
         const formatted = history.map(p => ({
             ...p,
+            bankRefNum: (p as any).bankRefNum || getTransactionUtr(p) || null,
             studentName: p.student?.user?.name || 'N/A',
             className: p.student?.class?.name || 'N/A',
             admissionNo: p.student?.admissionNo || 'N/A'
@@ -1016,6 +1035,7 @@ router.get('/', async (req, res) => {
         // Explicitly map student name at the top level
         const formatted = history.map(p => ({
             ...p,
+            bankRefNum: (p as any).bankRefNum || getTransactionUtr(p) || null,
             studentName: p.student?.user?.name || 'N/A',
             className: p.student?.class?.name || 'N/A',
             admissionNo: p.student?.admissionNo || 'N/A'
@@ -1171,6 +1191,7 @@ router.get('/reports', async (req, res) => {
         // 1. Detailed Daily Report (Individual transactions)
         const daily = paymentsFiltered.map(p => ({
             ...p,
+            bankRefNum: (p as any).bankRefNum || getTransactionUtr(p) || null,
             date: new Date(p.paymentDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
             paidAmount: p.amountPaid, 
             studentName: p.student?.user?.name || 'Unknown',
@@ -1337,7 +1358,9 @@ router.get('/public/student-dues', async (req: express.Request, res: express.Res
                 year: p.year || student.academicYear || '2026-2027',
                 paymentMode: p.paymentMode || 'Online - PayU',
                 amountPaid: p.amountPaid || 0,
-                txnid: p.txnid || '-'
+                txnid: p.txnid || '-',
+                payuMoneyId: p.payuMoneyId || '',
+                bankRefNum: (p as any).bankRefNum || getTransactionUtr(p) || ''
             }));
 
         const pendingTransactions = allPayments
@@ -1349,7 +1372,9 @@ router.get('/public/student-dues', async (req: express.Request, res: express.Res
                 feeHead: p.feeHead || 'Online Fee Collection',
                 month: p.month || 'N/A',
                 amount: p.amountPaid || 0,
-                paymentMode: p.paymentMode || 'Online - PayU'
+                paymentMode: p.paymentMode || 'Online - PayU',
+                payuMoneyId: p.payuMoneyId || '',
+                bankRefNum: (p as any).bankRefNum || getTransactionUtr(p) || ''
             }));
 
         // Compute discount info from fee structure + student category
@@ -2459,13 +2484,18 @@ const payuResponse = async (req: express.Request, res: express.Response): Promis
 
         // B. Secondary Confirmation via PayU S2S Verify Payment Web Service
         let finalStatus = 'REJECTED';
+        let s2sResult: any = null;
 
         if (status === 'success' && txnid) {
-            const s2sResult = await verifyTransactionWithPayU(String(txnid));
+            s2sResult = await verifyTransactionWithPayU(String(txnid));
             if (s2sResult.success || status === 'success') {
                 finalStatus = 'APPROVED';
             }
         }
+
+        const rawBankRef = postData.bank_ref_num || postData.bank_ref_no || (s2sResult?.raw?.bank_ref_num) || (s2sResult?.raw?.bank_ref_no) || null;
+        const resolvedBankRef = rawBankRef ? String(rawBankRef).trim() : null;
+        const resolvedPayuId = mihpayid ? String(mihpayid).trim() : (s2sResult?.mihpayid ? String(s2sResult.mihpayid) : null);
 
         let assignedReceiptNo = feePaymentRecord?.receiptNo || '';
 
@@ -2480,12 +2510,13 @@ const payuResponse = async (req: express.Request, res: express.Response): Promis
                 }
             }
 
-            await prisma.feePayment.update({
+            await (prisma.feePayment as any).update({
                 where: { id: feePaymentRecord.id },
                 data: {
                     status: finalStatus,
                     gatewayStatus: String(status || 'UNKNOWN'),
-                    payuMoneyId: mihpayid ? String(mihpayid) : null,
+                    payuMoneyId: resolvedPayuId || (feePaymentRecord as any).payuMoneyId || null,
+                    bankRefNum: resolvedBankRef || (feePaymentRecord as any).bankRefNum || null,
                     receiptNo: assignedReceiptNo,
                     approvalDate: finalStatus === 'APPROVED' ? new Date() : null,
                     rawGatewayResponse: JSON.stringify(postData)
@@ -2533,7 +2564,10 @@ const payuResponse = async (req: express.Request, res: express.Response): Promis
         }
         frontendBase = frontendBase.replace(/\/+$/, '');
 
-        const redirectUrl = `${frontendBase}${redirectPath}?payment=${finalStatus.toLowerCase()}&txnid=${txnid || ''}&receipt=${assignedReceiptNo || ''}&studentId=${stId}&admissionNo=${encodeURIComponent(targetAdmNo)}&amount=${paidAmountVal}&feeHead=${encodeURIComponent(feeHeadVal)}`;
+        const finalUtr = resolvedBankRef || (feePaymentRecord as any)?.bankRefNum || getTransactionUtr(feePaymentRecord) || '';
+        const finalPayuMoneyId = resolvedPayuId || feePaymentRecord?.payuMoneyId || '';
+
+        const redirectUrl = `${frontendBase}${redirectPath}?payment=${finalStatus.toLowerCase()}&txnid=${txnid || ''}&receipt=${assignedReceiptNo || ''}&utr=${encodeURIComponent(finalUtr)}&payuId=${encodeURIComponent(finalPayuMoneyId)}&studentId=${stId}&admissionNo=${encodeURIComponent(targetAdmNo)}&amount=${paidAmountVal}&feeHead=${encodeURIComponent(feeHeadVal)}`;
         
         return res.send(`
             <!DOCTYPE html>
@@ -2598,12 +2632,15 @@ router.post('/payu/webhook', async (req: express.Request, res: express.Response)
                 }
             }
 
-            await prisma.feePayment.update({
+            const webhookBankRef = postData.bank_ref_num || postData.bank_ref_no || s2s.raw?.bank_ref_num || null;
+
+            await (prisma.feePayment as any).update({
                 where: { id: payment.id },
                 data: {
                     status: isApproved ? 'APPROVED' : 'REJECTED',
                     gatewayStatus: status || 'UNKNOWN',
-                    payuMoneyId: mihpayid ? String(mihpayid) : null,
+                    payuMoneyId: mihpayid ? String(mihpayid) : (s2s.mihpayid ? String(s2s.mihpayid) : null),
+                    bankRefNum: webhookBankRef ? String(webhookBankRef) : undefined,
                     receiptNo: receiptNo,
                     approvalDate: isApproved ? new Date() : null,
                     rawGatewayResponse: JSON.stringify(postData)
@@ -2635,12 +2672,14 @@ router.get('/payu/verify-status/:txnid', async (req: express.Request, res: expre
             if (!receiptNo || receiptNo.startsWith('DRAFT-') || receiptNo.startsWith('FAILED-') || receiptNo.startsWith('REJECTED-')) {
                 receiptNo = await generateNextReceiptNo();
             }
-            const updated = await prisma.feePayment.update({
+            const s2sBankRef = s2sResult.raw?.bank_ref_num || s2sResult.raw?.bank_ref_no || null;
+            const updated = await (prisma.feePayment as any).update({
                 where: { id: payment.id },
                 data: {
                     status: 'APPROVED',
                     gatewayStatus: 'SUCCESS',
                     payuMoneyId: s2sResult.mihpayid ? String(s2sResult.mihpayid) : payment.payuMoneyId,
+                    bankRefNum: s2sBankRef ? String(s2sBankRef) : (payment as any).bankRefNum,
                     receiptNo,
                     approvalDate: new Date(),
                     rawGatewayResponse: JSON.stringify(s2sResult.raw)

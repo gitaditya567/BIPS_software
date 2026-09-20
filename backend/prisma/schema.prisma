@@ -255,6 +255,7 @@ model FeePayment {
   // PayU Online Payment Fields
   txnid              String?
   payuMoneyId        String?
+  bankRefNum         String? // Bank Reference / UTR Number from Gateway
   gatewayStatus      String?
   rawGatewayResponse String?
 

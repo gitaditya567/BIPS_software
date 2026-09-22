@@ -1339,19 +1339,23 @@ const Fees: React.FC = () => {
     };
 
     const isHeadPaidForMonth = (headName: string, month: string) => {
+        const currentStudent = students.find(s => s.admissionNo === admissionNo);
+        if (currentStudent && isFeeExempt(currentStudent, { name: headName, type: 'Monthly' })) {
+            return true;
+        }
         if (studentLedger && studentLedger.monthlyStatus && studentLedger.monthlyStatus.length > 0) {
             const mStatus = studentLedger.monthlyStatus.find((ms: any) => ms.month.trim().toLowerCase() === month.trim().toLowerCase());
             if (mStatus && mStatus.heads) {
                 const hStatus = mStatus.heads.find((h: any) => h.name.trim().toLowerCase() === headName.trim().toLowerCase());
                 if (hStatus) {
-                    return hStatus.pending === 0;
+                    return Math.round(hStatus.pending || 0) <= 0;
                 }
             }
         }
         const struct = feeStructure.find(s => s.className === selectedClass);
         const expected = struct?.fees?.[headName] || 0;
         if (expected <= 0) return true;
-        return getPaidAmountForHeadAndMonth(headName, month) >= expected;
+        return Math.round(getPaidAmountForHeadAndMonth(headName, month)) >= Math.round(expected);
     };
 
     const isTransportPaidForMonth = (month: string) => {
@@ -1360,13 +1364,13 @@ const Fees: React.FC = () => {
             if (mStatus && mStatus.heads) {
                 const tStatus = mStatus.heads.find((h: any) => h.name.toLowerCase().includes('transport') || h.name.toLowerCase().includes('bus'));
                 if (tStatus) {
-                    return tStatus.pending === 0;
+                    return Math.round(tStatus.pending || 0) <= 0;
                 }
             }
         }
         const fare = Number(transportRows[0]?.price) || 0;
         if (fare <= 0) return true;
-        return getPaidAmountForHeadAndMonth('Transport Fee', month) >= fare;
+        return Math.round(getPaidAmountForHeadAndMonth('Transport Fee', month)) >= Math.round(fare);
     };
 
     const isMonthPaid = (month: string) => {
@@ -1374,7 +1378,7 @@ const Fees: React.FC = () => {
         if (studentLedger && studentLedger.monthlyStatus && studentLedger.monthlyStatus.length > 0) {
             const mStatus = studentLedger.monthlyStatus.find((ms: any) => ms.month.trim().toLowerCase() === month.trim().toLowerCase());
             if (mStatus) {
-                return mStatus.pending === 0;
+                return mStatus.isPaid !== undefined ? mStatus.isPaid : Math.round(mStatus.pending || 0) <= 0;
             }
         }
 
@@ -1395,12 +1399,12 @@ const Fees: React.FC = () => {
         const isGeneralPaid = monthlyHeads.length === 0 || monthlyHeads.every(h => {
             const expectedAmt = struct.fees?.[h.name] || 0;
             const paidAmt = getPaidAmountForHeadAndMonth(h.name, month);
-            return paidAmt >= expectedAmt;
+            return Math.round(paidAmt) >= Math.round(expectedAmt);
         });
 
         if (currentStudent?.transportStopId || isTransportEnabled) {
             const fare = Number(transportRows[0]?.price) || 0;
-            const isTransportPaid = fare <= 0 || getPaidAmountForHeadAndMonth('Transport Fee', month) >= fare;
+            const isTransportPaid = fare <= 0 || Math.round(getPaidAmountForHeadAndMonth('Transport Fee', month)) >= Math.round(fare);
             return isGeneralPaid && isTransportPaid;
         }
 
@@ -3053,9 +3057,14 @@ const Fees: React.FC = () => {
                     return head?.type === 'Monthly';
                 }) || (isTransportEnabled && selectedFees.includes('Transport Fee'));
 
-                const feeHeadPrefix = hasMonthly ? `${selectedMonths.join(', ')} ==> ` : ' ==> ';
+                const activeBilledMonths = selectedMonths.filter(m => !isMonthPaid(m));
+                const monthsToRecord = activeBilledMonths.length > 0 ? activeBilledMonths : selectedMonths;
+                const feeHeadPrefix = hasMonthly ? `${monthsToRecord.join(', ')} ==> ` : ' ==> ';
                 feeHeadValue = `${feeHeadPrefix}${breakdownParts.join(' || ')}`;
             }
+
+            const activeBilledMonths = selectedMonths.filter(m => !isMonthPaid(m));
+            const monthsToRecord = activeBilledMonths.length > 0 ? activeBilledMonths : selectedMonths;
 
             const payload = {
                 studentId: student.id,
@@ -3067,7 +3076,7 @@ const Fees: React.FC = () => {
                 discountReason: isPending ? 'Requested Discount' : (Number(discount) > 0 ? 'Direct Discount' : ''),
                 feeHead: feeHeadValue,
                 paymentMode,
-                month: pendingDues > 0 ? (selectedMonths[0] || 'April') : selectedMonths[0], // Primary month for grouping
+                month: pendingDues > 0 ? (monthsToRecord[0] || 'April') : monthsToRecord[0], // Primary month for grouping
                 year: new Date().getFullYear().toString(),
                 submittedBy: user?.name || 'User',
                 remark: remark || (pendingDues > 0 ? 'Clearance of Outstanding Previous Dues' : '')
@@ -3080,7 +3089,7 @@ const Fees: React.FC = () => {
                     totalFee: Number(totalFee),
                     discount: Number(discount),
                     feeHead: feeHeadValue,
-                    month: selectedMonths[0] || 'April',
+                    month: monthsToRecord[0] || 'April',
                     year: new Date().getFullYear().toString(),
                     remark: remark || 'Paid via PayU Online Gateway',
                     customerName: student.name,
@@ -3451,8 +3460,8 @@ const Fees: React.FC = () => {
             const unpaidMonths = selectedMonths.filter(m => !isHeadPaidForMonth(h.name, m));
             const amount = perMonthAmount * unpaidMonths.length;
             const isSelected = selectedFees.includes(h.name);
-            const paid = isExempt ? true : (unpaidMonths.length === 0);
-            const partiallyPaid = !paid && unpaidMonths.length < selectedMonths.length;
+            const paid = isExempt ? true : (selectedMonths.length > 0 && unpaidMonths.length === 0);
+            const partiallyPaid = !paid && selectedMonths.length > 0 && unpaidMonths.length < selectedMonths.length;
 
             return {
                 id: h.id,
@@ -3474,8 +3483,8 @@ const Fees: React.FC = () => {
             const unpaidTransportMonths = selectedMonths.filter(m => !isTransportPaidForMonth(m));
             const amount = activeTransportFare * unpaidTransportMonths.length;
             const isSelected = selectedFees.includes('Transport Fee');
-            const paid = unpaidTransportMonths.length === 0;
-            const partiallyPaid = !paid && unpaidTransportMonths.length < selectedMonths.length;
+            const paid = selectedMonths.length > 0 && unpaidTransportMonths.length === 0;
+            const partiallyPaid = !paid && selectedMonths.length > 0 && unpaidTransportMonths.length < selectedMonths.length;
 
             headsToRender.push({
                 id: 'transport-fee-item',
@@ -3976,7 +3985,7 @@ const Fees: React.FC = () => {
                                     }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
                                             <p style={{ fontSize: '0.75rem', fontWeight: '800', color: '#64748b', margin: 0, textTransform: 'uppercase', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                                                <Calendar size={13} /> Monthly Payment Status (2024-25)
+                                                <Calendar size={13} /> Monthly Payment Status ({localStorage.getItem('activeSession') || '2026-2027'})
                                             </p>
                                             <div style={{ display: 'flex', gap: '0.4rem' }}>
                                                 <button 
@@ -4057,8 +4066,17 @@ const Fees: React.FC = () => {
                                                                 const mIdx = months.indexOf(m);
                                                                 
                                                                 if (isSelected) {
-                                                                    const remaining = selectedMonths.filter(month => months.indexOf(month) < mIdx);
-                                                                    setSelectedMonths(remaining);
+                                                                    if (selectedMonths.length > 1 && selectedMonths.includes(m)) {
+                                                                        const targetIdx = months.indexOf(m);
+                                                                        const filtered = selectedMonths.filter(month => months.indexOf(month) <= targetIdx);
+                                                                        if (filtered.length === selectedMonths.length) {
+                                                                            setSelectedMonths(selectedMonths.filter(month => month !== m));
+                                                                        } else {
+                                                                            setSelectedMonths(filtered);
+                                                                        }
+                                                                    } else {
+                                                                        setSelectedMonths([]);
+                                                                    }
                                                                 } else {
                                                                     const unpaidEarlierDetails: { month: string; amount: number; heads: string[] }[] = [];
                                                                     let totalUnpaidEarlier = 0;

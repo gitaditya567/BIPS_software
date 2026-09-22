@@ -147,7 +147,7 @@ export const PublicFeePayment: React.FC = () => {
         const m = (studentData.monthlyDues || []).find((x: any) => x.month === mName);
         if (!m) return false;
         if (studentData.student?.isRT) return true;
-        return m.isPaid !== undefined ? m.isPaid : (m.expected > 0 ? m.paid >= m.expected : m.pending <= 0);
+        return m.isPaid !== undefined ? m.isPaid : (m.expected > 0 ? Math.round(m.paid) >= Math.round(m.expected) : Math.round(m.pending || 0) <= 0);
     };
 
     // Calculate total selected amount

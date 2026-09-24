@@ -81,30 +81,43 @@ function parsePaymentBreakdown(feeHead: string | null, month: string | null, amo
         const itemParts = breakdownStr.split('||').map(item => item.trim()).filter(Boolean);
 
         const tempItems: { name: string; amt: number }[] = [];
+        let totalItemsAmount = 0;
         itemParts.forEach(itemPart => {
             const splitColon = itemPart.split(':');
             if (splitColon.length >= 2) {
                 const name = splitColon[0].trim();
                 const amt = parseFloat(splitColon[1].trim()) || 0;
                 tempItems.push({ name, amt });
+                totalItemsAmount += amt;
             } else {
                 const name = itemPart.trim();
                 tempItems.push({ name, amt: totalAmount });
+                totalItemsAmount += totalAmount;
             }
         });
 
-        // Allocate totalAmount sequentially to tempItems (prevents fractional scaling!)
+        // Use proportional allocation for partial payments to distribute lump-sum deposits fairly
+        const isPartial = totalItemsAmount > 0 && totalAmount < totalItemsAmount;
         let remainingToAllocate = totalAmount;
         tempItems.forEach((tempItem, idx) => {
             const { name, amt } = tempItem;
-            // If last item and remaining money left over, take remaining, otherwise cap at amt
             let allocatedAmt = 0;
-            if (idx === tempItems.length - 1 && remainingToAllocate > amt) {
-                allocatedAmt = remainingToAllocate;
+            if (isPartial) {
+                if (idx === tempItems.length - 1) {
+                    allocatedAmt = remainingToAllocate;
+                } else {
+                    allocatedAmt = Math.round((amt / totalItemsAmount) * totalAmount);
+                    allocatedAmt = Math.min(remainingToAllocate, allocatedAmt);
+                }
             } else {
-                allocatedAmt = Math.min(remainingToAllocate, amt);
+                if (idx === tempItems.length - 1 && remainingToAllocate > amt) {
+                    allocatedAmt = remainingToAllocate;
+                } else {
+                    allocatedAmt = Math.min(remainingToAllocate, amt);
+                }
             }
             remainingToAllocate = Math.max(0, remainingToAllocate - allocatedAmt);
+
 
             const nameLower = name.toLowerCase().trim();
             const isPreviousDues = nameLower.startsWith('previous dues') || nameLower.startsWith('previous due') || nameLower.includes('previous due');
@@ -237,11 +250,16 @@ export async function getStudentFeeLedger(studentId: string) {
     const genericMonthlyPaidForMonth: Record<string, number> = {};
     const monthWisePaid: Record<string, number> = {};
 
+    const initialPrevDue = student.previousSessionDue || 0;
+    let remainingInitialPrevDue = initialPrevDue;
+
+    const pendingDuesReceipts: { receipt: any; amount: number }[] = [];
+
     payments.forEach(p => {
         const parsedItems = parsePaymentBreakdown(p.feeHead, p.month, p.amountPaid || 0, p.discount || 0, feeHeads);
         parsedItems.forEach(item => {
             if (item.isPreviousDues) {
-                actualPrevDuesPaid += item.amount;
+                pendingDuesReceipts.push({ receipt: p, amount: item.amount });
             } else if (item.isTransport) {
                 actualTransportPaid += item.amount;
                 const targetMonths = item.months.length > 0 ? item.months : (p.month ? [p.month] : []);
@@ -283,6 +301,83 @@ export async function getStudentFeeLedger(studentId: string) {
         });
     });
 
+    // Allocate previous dues receipts chronologically to settle outstanding obligations
+    pendingDuesReceipts.forEach(({ receipt: p, amount }) => {
+        let unallocatedDues = amount;
+
+        // 1. Settle initial previousSessionDue first
+        if (remainingInitialPrevDue > 0) {
+            const toInitial = Math.min(remainingInitialPrevDue, unallocatedDues);
+            actualPrevDuesPaid += toInitial;
+            remainingInitialPrevDue -= toInitial;
+            unallocatedDues -= toInitial;
+        }
+        if (unallocatedDues <= 0) return;
+
+        // Helper to calculate true unpaid shortfall for a given month m
+        const getMonthShortfall = (m: string) => {
+            let headShortfall = 0;
+            monthlyExpectedBreakdown.forEach(h => {
+                const direct = monthlyPaidForHeadAndMonth[h.name]?.[m] || 0;
+                if (direct < h.amount) {
+                    headShortfall += (h.amount - direct);
+                }
+            });
+            const transExp = transportMonthlyFare > 0 ? transportMonthlyFare : (transportPaidForMonth[m] || 0);
+            const transDirect = transportPaidForMonth[m] || 0;
+            const transShortfall = Math.max(0, transExp - transDirect);
+            const alreadyAllocatedGeneric = genericMonthlyPaidForMonth[m] || 0;
+            return Math.max(0, (headShortfall + transShortfall) - alreadyAllocatedGeneric);
+        };
+
+        // 2. Check if a specific target month is designated and has an unallocated monthly shortfall
+        const targetMonth = (p.month && allMonths.includes(p.month)) ? p.month : (p.feeHead ? allMonths.find(m => p.feeHead!.includes(m)) : null);
+        if (targetMonth) {
+            const monthShortfall = getMonthShortfall(targetMonth);
+            if (monthShortfall > 0) {
+                const toMonth = Math.min(monthShortfall, unallocatedDues);
+                genericMonthlyPaidForMonth[targetMonth] = (genericMonthlyPaidForMonth[targetMonth] || 0) + toMonth;
+                actualMonthlyPaid += toMonth;
+                unallocatedDues -= toMonth;
+            }
+        }
+        if (unallocatedDues <= 0) return;
+
+        // 3. Settle any billed one-time heads with shortfall
+        oneTimeExpectedBreakdown.forEach(ot => {
+            if (unallocatedDues <= 0) return;
+            const currentPaid = oneTimePaidForHead[ot.name] || 0;
+            const pending = Math.max(0, ot.amount - currentPaid);
+            if (pending > 0) {
+                const wasBilled = payments.some(rec => rec.feeHead && rec.feeHead.toLowerCase().includes(ot.name.toLowerCase()));
+                if (wasBilled) {
+                    const toOt = Math.min(pending, unallocatedDues);
+                    oneTimePaidForHead[ot.name] = currentPaid + toOt;
+                    actualOneTimePaid += toOt;
+                    unallocatedDues -= toOt;
+                }
+            }
+        });
+        if (unallocatedDues <= 0) return;
+
+        // 4. Settle earliest unpaid months chronologically
+        for (const m of allMonths) {
+            if (unallocatedDues <= 0) break;
+            const shortfall = getMonthShortfall(m);
+            if (shortfall > 0) {
+                const toM = Math.min(shortfall, unallocatedDues);
+                genericMonthlyPaidForMonth[m] = (genericMonthlyPaidForMonth[m] || 0) + toM;
+                actualMonthlyPaid += toM;
+                unallocatedDues -= toM;
+            }
+        }
+
+        if (unallocatedDues > 0) {
+            actualMonthlyPaid += unallocatedDues;
+            genericMonthlyPaidForMonth['UNSPECIFIED'] = (genericMonthlyPaidForMonth['UNSPECIFIED'] || 0) + unallocatedDues;
+        }
+    });
+
     const previousSessionDue = student.previousSessionDue || 0;
     const cappedPrevDuesPaid = Math.min(previousSessionDue, actualPrevDuesPaid);
     const prevDuePending = Math.max(0, previousSessionDue - cappedPrevDuesPaid);
@@ -305,32 +400,11 @@ export async function getStudentFeeLedger(studentId: string) {
     const monthlyStatus: any[] = [];
     const pendingMonthsList: string[] = [];
 
-    // Track unused/rollover monthly payment pool
-    let excessPrevDuesPaid = Math.max(0, actualPrevDuesPaid - previousSessionDue);
-
-    // If there are excess dues paid and pending one-time fees (e.g. from partial previous receipts like RCP242),
-    // allocate to pending one-time fees first before rolling over to monthly pool
-    if (excessPrevDuesPaid > 0 && oneTimePending > 0) {
-        let remainingExcess = excessPrevDuesPaid;
-        oneTimeStatus.forEach(ot => {
-            if (remainingExcess <= 0) return;
-            const needed = ot.expected - ot.paid;
-            if (needed > 0) {
-                const cover = Math.min(needed, remainingExcess);
-                ot.paid += cover;
-                ot.pending = Math.max(0, ot.expected - ot.paid);
-                actualOneTimePaid += cover;
-                oneTimePending -= cover;
-                remainingExcess -= cover;
-            }
-        });
-        excessPrevDuesPaid = remainingExcess;
-    }
-
     const headRolloverPool: Record<string, number> = {};
     monthlyExpectedBreakdown.forEach(h => { headRolloverPool[h.name] = 0; });
     const directTaggedTransport = Object.values(transportPaidForMonth).reduce((s, v) => s + v, 0);
     let rolloverTransportPool = Math.max(0, actualTransportPaid - directTaggedTransport);
+    let poolGeneric = genericMonthlyPaidForMonth['UNSPECIFIED'] || 0;
 
     allMonths.forEach(m => {
         const isElapsed = elapsedMonths.includes(m);
@@ -339,6 +413,8 @@ export async function getStudentFeeLedger(studentId: string) {
         const headsBreakdown: any[] = [];
 
         let currentMonthGenericMoney = genericMonthlyPaidForMonth[m] || 0;
+        const hasDirectPayment = (monthWisePaid[m] || 0) > 0 || (transportPaidForMonth[m] || 0) > 0;
+        const canUsePoolGeneric = hasDirectPayment || currentMonthGenericMoney > 0;
 
         // 1. Allocate monthly fee heads sequentially for month m (isolated to each specific head)
         monthlyExpectedBreakdown.forEach(head => {
@@ -353,7 +429,7 @@ export async function getStudentFeeLedger(studentId: string) {
                     headRolloverPool[head.name] = (headRolloverPool[head.name] || 0) + extraDirect;
                 }
             }
-            if (allocated < expected && (headRolloverPool[head.name] || 0) > 0) {
+            if (allocated < expected && (headRolloverPool[head.name] || 0) > 0 && canUsePoolGeneric) {
                 const needed = expected - allocated;
                 const cover = Math.min(needed, headRolloverPool[head.name]);
                 allocated += cover;
@@ -364,6 +440,12 @@ export async function getStudentFeeLedger(studentId: string) {
                 const cover = Math.min(needed, currentMonthGenericMoney);
                 allocated += cover;
                 currentMonthGenericMoney -= cover;
+            }
+            if (allocated < expected && poolGeneric > 0 && canUsePoolGeneric) {
+                const needed = expected - allocated;
+                const cover = Math.min(needed, poolGeneric);
+                allocated += cover;
+                poolGeneric -= cover;
             }
 
             allocated = Math.round(allocated);
@@ -383,6 +465,38 @@ export async function getStudentFeeLedger(studentId: string) {
             });
         });
 
+        // Cross-head rollover settlement for month m:
+        // Any credit or excess money from earlier months settles shortfalls in the current month before rolling forward
+        headsBreakdown.forEach(h => {
+            if (h.paid < h.expected && canUsePoolGeneric) {
+                for (const otherHead of monthlyExpectedBreakdown) {
+                    if ((headRolloverPool[otherHead.name] || 0) > 0) {
+                        const needed = h.expected - h.paid;
+                        const cover = Math.min(needed, headRolloverPool[otherHead.name]);
+                        h.paid += cover;
+                        h.pending = Math.max(0, h.expected - h.paid);
+                        headRolloverPool[otherHead.name] -= cover;
+                        monthPaidTotal += cover;
+                        if (isElapsed) {
+                            monthlyPending -= cover;
+                        }
+                        if (h.paid >= h.expected) break;
+                    }
+                }
+                if (h.paid < h.expected && rolloverTransportPool > 0) {
+                    const needed = h.expected - h.paid;
+                    const cover = Math.min(needed, rolloverTransportPool);
+                    h.paid += cover;
+                    h.pending = Math.max(0, h.expected - h.paid);
+                    rolloverTransportPool -= cover;
+                    monthPaidTotal += cover;
+                    if (isElapsed) {
+                        monthlyPending -= cover;
+                    }
+                }
+            }
+        });
+
         // 2. Allocate transport fee chronologically
         let directTransport = transportPaidForMonth[m] || 0;
         const transportExpected = transportMonthlyFare > 0 ? transportMonthlyFare : Math.round(directTransport);
@@ -395,18 +509,43 @@ export async function getStudentFeeLedger(studentId: string) {
         }
 
         let transportShortfall = Math.max(0, transportExpected - transportAllocated);
-        if (transportShortfall > 0 && rolloverTransportPool > 0) {
+        if (transportShortfall > 0 && rolloverTransportPool > 0 && canUsePoolGeneric) {
             const fromTransportPool = Math.min(transportShortfall, Math.round(rolloverTransportPool));
             transportAllocated += fromTransportPool;
             rolloverTransportPool = Math.max(0, rolloverTransportPool - fromTransportPool);
             transportShortfall = Math.max(0, transportExpected - transportAllocated);
         }
 
-        // If generic money for THIS month is still remaining, it can cover transport shortfall in THIS month
         if (transportShortfall > 0 && currentMonthGenericMoney > 0) {
             const extraTransport = Math.min(transportShortfall, Math.round(currentMonthGenericMoney));
             transportAllocated += extraTransport;
             currentMonthGenericMoney = Math.max(0, currentMonthGenericMoney - extraTransport);
+            transportShortfall = Math.max(0, transportExpected - transportAllocated);
+        }
+
+        if (transportShortfall > 0 && canUsePoolGeneric) {
+            for (const otherHead of monthlyExpectedBreakdown) {
+                if ((headRolloverPool[otherHead.name] || 0) > 0) {
+                    const cover = Math.min(transportShortfall, headRolloverPool[otherHead.name]);
+                    transportAllocated += cover;
+                    headRolloverPool[otherHead.name] -= cover;
+                    transportShortfall -= cover;
+                    if (transportShortfall <= 0) break;
+                }
+            }
+        }
+
+        if (transportShortfall > 0 && poolGeneric > 0 && canUsePoolGeneric) {
+            const extraTransport = Math.min(transportShortfall, Math.round(poolGeneric));
+            transportAllocated += extraTransport;
+            poolGeneric = Math.max(0, poolGeneric - extraTransport);
+            transportShortfall = Math.max(0, transportExpected - transportAllocated);
+        }
+
+        // If this month had extra generic money left over, roll it forward into poolGeneric for subsequent months
+        if (currentMonthGenericMoney > 0) {
+            poolGeneric += currentMonthGenericMoney;
+            currentMonthGenericMoney = 0;
         }
 
         transportAllocated = Math.round(transportAllocated);
@@ -477,8 +616,10 @@ export async function getStudentFeeLedger(studentId: string) {
             totalExpectedWholeYear,
             totalExpectedUpToNow,
             totalPaidAllTime,
-            netOutstanding
+            netOutstanding,
+            advanceBalance: Math.round(poolGeneric + rolloverTransportPool + Object.values(headRolloverPool).reduce((s, v) => s + v, 0))
         },
+        advanceBalance: Math.round(poolGeneric + rolloverTransportPool + Object.values(headRolloverPool).reduce((s, v) => s + v, 0)),
         oneTimeStatus,
         monthlyStatus,
         pendingMonthsList,
@@ -616,21 +757,38 @@ router.get('/transport-due-list', async (req, res) => {
                 }
             });
 
+            // Billed One-Time Heads
+            const oneTimeExpectedBreakdown: { name: string; amount: number }[] = [];
+            feeHeads.forEach(head => {
+                if (head.type !== 'Monthly') {
+                    const amount = getExpectedFeeAmount(student, head, structure, student.class?.name);
+                    if (amount > 0) {
+                        oneTimeExpectedBreakdown.push({ name: head.name, amount });
+                    }
+                }
+            });
+
             let actualPrevDuesPaid = 0;
             let actualTransportPaid = 0;
             let actualMonthlyPaid = 0;
             let actualOneTimePaid = 0;
 
+            const oneTimePaidForHead: Record<string, number> = {};
             const monthlyPaidForHeadAndMonth: Record<string, Record<string, number>> = {};
             const transportPaidForMonth: Record<string, number> = {};
             const genericMonthlyPaidForMonth: Record<string, number> = {};
             const rawMonthWisePaid: Record<string, number> = {};
 
+            const initialPrevDue = student.previousSessionDue || 0;
+            let remainingInitialPrevDue = initialPrevDue;
+
+            const pendingDuesReceipts: { receipt: any; amount: number }[] = [];
+
             studentPayments.forEach(p => {
                 const parsedItems = parsePaymentBreakdown(p.feeHead, p.month, p.amountPaid || 0, p.discount || 0, feeHeads);
                 parsedItems.forEach(item => {
                     if (item.isPreviousDues) {
-                        actualPrevDuesPaid += item.amount;
+                        pendingDuesReceipts.push({ receipt: p, amount: item.amount });
                     } else if (item.isTransport) {
                         actualTransportPaid += item.amount;
                         const mths = item.months.length > 0 ? item.months : (p.month ? p.month.split(',').map((m: string) => m.trim()) : []);
@@ -643,6 +801,7 @@ router.get('/transport-due-list', async (req, res) => {
                         }
                     } else if (item.isOneTime) {
                         actualOneTimePaid += item.amount;
+                        oneTimePaidForHead[item.name] = (oneTimePaidForHead[item.name] || 0) + item.amount;
                     } else {
                         actualMonthlyPaid += item.amount;
                         const mths = item.months.length > 0 ? item.months : (p.month ? p.month.split(',').map((m: string) => m.trim()) : []);
@@ -668,12 +827,78 @@ router.get('/transport-due-list', async (req, res) => {
                 });
             });
 
+            pendingDuesReceipts.forEach(({ receipt: p, amount }) => {
+                let unallocatedDues = amount;
+
+                if (remainingInitialPrevDue > 0) {
+                    const toInitial = Math.min(remainingInitialPrevDue, unallocatedDues);
+                    actualPrevDuesPaid += toInitial;
+                    remainingInitialPrevDue -= toInitial;
+                    unallocatedDues -= toInitial;
+                }
+                if (unallocatedDues <= 0) return;
+
+                const targetMonth = (p.month && allMonths.includes(p.month)) ? p.month : (p.feeHead ? allMonths.find(m => p.feeHead!.includes(m)) : null);
+                if (targetMonth) {
+                    const monthExp = monthlyExpectedBreakdown.reduce((sum, h) => sum + h.amount, 0) + monthlyFare;
+                    let directPaidForMonth = (genericMonthlyPaidForMonth[targetMonth] || 0) + (transportPaidForMonth[targetMonth] || 0);
+                    monthlyExpectedBreakdown.forEach(h => {
+                        directPaidForMonth += (monthlyPaidForHeadAndMonth[h.name]?.[targetMonth] || 0);
+                    });
+                    const monthShortfall = Math.max(0, monthExp - directPaidForMonth);
+                    if (monthShortfall > 0) {
+                        const toMonth = Math.min(monthShortfall, unallocatedDues);
+                        genericMonthlyPaidForMonth[targetMonth] = (genericMonthlyPaidForMonth[targetMonth] || 0) + toMonth;
+                        actualMonthlyPaid += toMonth;
+                        unallocatedDues -= toMonth;
+                    }
+                }
+                if (unallocatedDues <= 0) return;
+
+                oneTimeExpectedBreakdown.forEach(ot => {
+                    if (unallocatedDues <= 0) return;
+                    const currentPaid = oneTimePaidForHead[ot.name] || 0;
+                    const pending = Math.max(0, ot.amount - currentPaid);
+                    if (pending > 0) {
+                        const wasBilled = studentPayments.some(rec => rec.feeHead && rec.feeHead.toLowerCase().includes(ot.name.toLowerCase()));
+                        if (wasBilled) {
+                            const toOt = Math.min(pending, unallocatedDues);
+                            oneTimePaidForHead[ot.name] = currentPaid + toOt;
+                            actualOneTimePaid += toOt;
+                            unallocatedDues -= toOt;
+                        }
+                    }
+                });
+                if (unallocatedDues <= 0) return;
+
+                for (const m of allMonths) {
+                    if (unallocatedDues <= 0) break;
+                    const monthExp = monthlyExpectedBreakdown.reduce((sum, h) => sum + h.amount, 0) + monthlyFare;
+                    let directPaid = (genericMonthlyPaidForMonth[m] || 0) + (transportPaidForMonth[m] || 0);
+                    monthlyExpectedBreakdown.forEach(h => {
+                        directPaid += (monthlyPaidForHeadAndMonth[h.name]?.[m] || 0);
+                    });
+                    const shortfall = Math.max(0, monthExp - directPaid);
+                    if (shortfall > 0) {
+                        const toM = Math.min(shortfall, unallocatedDues);
+                        genericMonthlyPaidForMonth[m] = (genericMonthlyPaidForMonth[m] || 0) + toM;
+                        actualMonthlyPaid += toM;
+                        unallocatedDues -= toM;
+                    }
+                }
+
+                if (unallocatedDues > 0) {
+                    actualMonthlyPaid += unallocatedDues;
+                    genericMonthlyPaidForMonth['UNSPECIFIED'] = (genericMonthlyPaidForMonth['UNSPECIFIED'] || 0) + unallocatedDues;
+                }
+            });
+
             const previousSessionDue = student.previousSessionDue || 0;
-            let excessPrevDuesPaid = Math.max(0, actualPrevDuesPaid - previousSessionDue);
             const headRolloverPool: Record<string, number> = {};
             monthlyExpectedBreakdown.forEach(h => { headRolloverPool[h.name] = 0; });
             const directTaggedTransport = Object.values(transportPaidForMonth).reduce((s, v) => s + v, 0);
             let rolloverTransportPool = Math.max(0, actualTransportPaid - directTaggedTransport);
+            let poolGeneric = genericMonthlyPaidForMonth['UNSPECIFIED'] || 0;
 
             const monthWisePaid: Record<string, number> = {};
             let totalAllocatedTransportPaid = 0;
@@ -705,6 +930,32 @@ router.get('/transport-due-list', async (req, res) => {
                         allocated += cover;
                         currentMonthGenericMoney -= cover;
                     }
+                    if (allocated < expected && poolGeneric > 0) {
+                        const needed = expected - allocated;
+                        const cover = Math.min(needed, poolGeneric);
+                        allocated += cover;
+                        poolGeneric -= cover;
+                    }
+                    if (!monthlyPaidForHeadAndMonth[head.name]) monthlyPaidForHeadAndMonth[head.name] = {};
+                    monthlyPaidForHeadAndMonth[head.name][m] = allocated;
+                });
+
+                // Cross-head rollover settlement for month m
+                monthlyExpectedBreakdown.forEach(h => {
+                    const expected = h.amount;
+                    let allocated = monthlyPaidForHeadAndMonth[h.name]?.[m] || 0;
+                    if (allocated < expected) {
+                        for (const otherHead of monthlyExpectedBreakdown) {
+                            if ((headRolloverPool[otherHead.name] || 0) > 0) {
+                                const needed = expected - allocated;
+                                const cover = Math.min(needed, headRolloverPool[otherHead.name]);
+                                allocated += cover;
+                                headRolloverPool[otherHead.name] -= cover;
+                                monthlyPaidForHeadAndMonth[h.name][m] = allocated;
+                                if (allocated >= expected) break;
+                            }
+                        }
+                    }
                 });
 
                 // 2. Allocate transport fee chronologically
@@ -730,6 +981,18 @@ router.get('/transport-due-list', async (req, res) => {
                     const extraTransport = Math.min(transportShortfall, Math.round(currentMonthGenericMoney));
                     transportAllocated += extraTransport;
                     currentMonthGenericMoney = Math.max(0, currentMonthGenericMoney - extraTransport);
+                    transportShortfall = Math.max(0, transportExpected - transportAllocated);
+                }
+
+                if (transportShortfall > 0 && poolGeneric > 0) {
+                    const extraTransport = Math.min(transportShortfall, Math.round(poolGeneric));
+                    transportAllocated += extraTransport;
+                    poolGeneric = Math.max(0, poolGeneric - extraTransport);
+                }
+
+                if (currentMonthGenericMoney > 0) {
+                    poolGeneric += currentMonthGenericMoney;
+                    currentMonthGenericMoney = 0;
                 }
 
                 transportAllocated = Math.round(transportAllocated);
@@ -1619,11 +1882,16 @@ router.get('/due-list', async (req, res) => {
             const genericMonthlyPaidForMonth: Record<string, number> = {};
             const monthWisePaid: Record<string, number> = {};
 
+            const initialPrevDue = student.previousSessionDue || 0;
+            let remainingInitialPrevDue = initialPrevDue;
+
+            const pendingDuesReceipts: { receipt: any; amount: number }[] = [];
+
             studentPayments.forEach(p => {
                 const parsedItems = parsePaymentBreakdown(p.feeHead, p.month, p.amountPaid || 0, p.discount || 0, feeHeads);
                 parsedItems.forEach(item => {
                     if (item.isPreviousDues) {
-                        actualPrevDuesPaid += item.amount;
+                        pendingDuesReceipts.push({ receipt: p, amount: item.amount });
                     } else if (item.isTransport) {
                         actualTransportPaid += item.amount;
                         if (item.months.length > 0) {
@@ -1678,6 +1946,78 @@ router.get('/due-list', async (req, res) => {
                 });
             });
 
+            // Helper to calculate true unpaid shortfall for a given month m
+            const getMonthShortfall = (m: string) => {
+                let headShortfall = 0;
+                monthlyExpectedBreakdown.forEach(h => {
+                    const direct = monthlyPaidForHeadAndMonth[h.name]?.[m] || 0;
+                    if (direct < h.amount) {
+                        headShortfall += (h.amount - direct);
+                    }
+                });
+                const transExp = transportMonthlyFare > 0 ? transportMonthlyFare : (transportPaidForMonth[m] || 0);
+                const transDirect = transportPaidForMonth[m] || 0;
+                const transShortfall = Math.max(0, transExp - transDirect);
+                const alreadyAllocatedGeneric = genericMonthlyPaidForMonth[m] || 0;
+                return Math.max(0, (headShortfall + transShortfall) - alreadyAllocatedGeneric);
+            };
+
+            pendingDuesReceipts.forEach(({ receipt: p, amount }) => {
+                let unallocatedDues = amount;
+
+                if (remainingInitialPrevDue > 0) {
+                    const toInitial = Math.min(remainingInitialPrevDue, unallocatedDues);
+                    actualPrevDuesPaid += toInitial;
+                    remainingInitialPrevDue -= toInitial;
+                    unallocatedDues -= toInitial;
+                }
+                if (unallocatedDues <= 0) return;
+
+                const targetMonth = (p.month && allMonths.includes(p.month)) ? p.month : (p.feeHead ? allMonths.find(m => p.feeHead!.includes(m)) : null);
+                if (targetMonth) {
+                    const monthShortfall = getMonthShortfall(targetMonth);
+                    if (monthShortfall > 0) {
+                        const toMonth = Math.min(monthShortfall, unallocatedDues);
+                        genericMonthlyPaidForMonth[targetMonth] = (genericMonthlyPaidForMonth[targetMonth] || 0) + toMonth;
+                        actualMonthlyPaid += toMonth;
+                        unallocatedDues -= toMonth;
+                    }
+                }
+                if (unallocatedDues <= 0) return;
+
+                oneTimeBreakdown.forEach(ot => {
+                    if (unallocatedDues <= 0) return;
+                    const currentPaid = oneTimePaidForHead[ot.name] || 0;
+                    const pending = Math.max(0, ot.amount - currentPaid);
+                    if (pending > 0) {
+                        const wasBilled = studentPayments.some(rec => rec.feeHead && rec.feeHead.toLowerCase().includes(ot.name.toLowerCase()));
+                        if (wasBilled) {
+                            const toOt = Math.min(pending, unallocatedDues);
+                            oneTimePaidForHead[ot.name] = currentPaid + toOt;
+                            actualOneTimePaid += toOt;
+                            unallocatedDues -= toOt;
+                        }
+                    }
+                });
+                if (unallocatedDues <= 0) return;
+
+                for (const m of allMonths) {
+                    if (unallocatedDues <= 0) break;
+                    const shortfall = getMonthShortfall(m);
+                    if (shortfall > 0) {
+                        const toM = Math.min(shortfall, unallocatedDues);
+                        genericMonthlyPaidForMonth[m] = (genericMonthlyPaidForMonth[m] || 0) + toM;
+                        actualMonthlyPaid += toM;
+                        unallocatedDues -= toM;
+                    }
+                }
+
+                if (unallocatedDues > 0) {
+                    actualMonthlyPaid += unallocatedDues;
+                    genericMonthlyPaidForMonth['UNSPECIFIED'] = (genericMonthlyPaidForMonth['UNSPECIFIED'] || 0) + unallocatedDues;
+                }
+            });
+
             // Calculate dues
             const previousSessionDue = student.previousSessionDue || 0;
             const cappedPrevDuesPaid = Math.min(previousSessionDue, actualPrevDuesPaid);
@@ -1693,30 +2033,11 @@ router.get('/due-list', async (req, res) => {
             const pendingMonthsList: string[] = [];
             const monthlyStatus: any[] = [];
 
-            // Track unused/rollover monthly payment pool
-            let excessPrevDuesPaid = Math.max(0, actualPrevDuesPaid - previousSessionDue);
-
-            if (excessPrevDuesPaid > 0 && oneTimePending > 0) {
-                let remainingExcess = excessPrevDuesPaid;
-                oneTimeBreakdown.forEach(ot => {
-                    if (remainingExcess <= 0) return;
-                    const paid = oneTimePaidForHead[ot.name] || 0;
-                    const needed = ot.amount - paid;
-                    if (needed > 0) {
-                        const cover = Math.min(needed, remainingExcess);
-                        oneTimePaidForHead[ot.name] = paid + cover;
-                        actualOneTimePaid += cover;
-                        oneTimePending -= cover;
-                        remainingExcess -= cover;
-                    }
-                });
-                excessPrevDuesPaid = remainingExcess;
-            }
-
             const headRolloverPool: Record<string, number> = {};
             monthlyExpectedBreakdown.forEach(h => { headRolloverPool[h.name] = 0; });
             const directTaggedTransport = Object.values(transportPaidForMonth).reduce((s, v) => s + v, 0);
             let rolloverTransportPool = Math.max(0, actualTransportPaid - directTaggedTransport);
+            let poolGeneric = genericMonthlyPaidForMonth['UNSPECIFIED'] || 0;
 
             allMonths.forEach(m => {
                 const isElapsed = elapsedMonths.includes(m);
@@ -1725,6 +2046,8 @@ router.get('/due-list', async (req, res) => {
                 const headsBreakdown: any[] = [];
 
                 let currentMonthGenericMoney = genericMonthlyPaidForMonth[m] || 0;
+                const hasDirectPayment = (monthWisePaid[m] || 0) > 0 || (transportPaidForMonth[m] || 0) > 0;
+                const canUsePoolGeneric = hasDirectPayment || currentMonthGenericMoney > 0;
 
                 // 1. Allocate monthly fee heads sequentially for month m (isolated to each head)
                 monthlyExpectedBreakdown.forEach(head => {
@@ -1739,7 +2062,7 @@ router.get('/due-list', async (req, res) => {
                             headRolloverPool[head.name] = (headRolloverPool[head.name] || 0) + extraDirect;
                         }
                     }
-                    if (allocated < expected && (headRolloverPool[head.name] || 0) > 0) {
+                    if (allocated < expected && (headRolloverPool[head.name] || 0) > 0 && canUsePoolGeneric) {
                         const needed = expected - allocated;
                         const cover = Math.min(needed, headRolloverPool[head.name]);
                         allocated += cover;
@@ -1750,6 +2073,12 @@ router.get('/due-list', async (req, res) => {
                         const cover = Math.min(needed, currentMonthGenericMoney);
                         allocated += cover;
                         currentMonthGenericMoney -= cover;
+                    }
+                    if (allocated < expected && poolGeneric > 0 && canUsePoolGeneric) {
+                        const needed = expected - allocated;
+                        const cover = Math.min(needed, poolGeneric);
+                        allocated += cover;
+                        poolGeneric -= cover;
                     }
 
                     allocated = Math.round(allocated);
@@ -1769,6 +2098,37 @@ router.get('/due-list', async (req, res) => {
                     });
                 });
 
+                // Cross-head settlement for month m
+                headsBreakdown.forEach(h => {
+                    if (h.paid < h.expected && canUsePoolGeneric) {
+                        for (const otherHead of monthlyExpectedBreakdown) {
+                            if ((headRolloverPool[otherHead.name] || 0) > 0) {
+                                const needed = h.expected - h.paid;
+                                const cover = Math.min(needed, headRolloverPool[otherHead.name]);
+                                h.paid += cover;
+                                h.pending = Math.max(0, h.expected - h.paid);
+                                headRolloverPool[otherHead.name] -= cover;
+                                monthPaidTotal += cover;
+                                if (isElapsed) {
+                                    monthlyPending -= cover;
+                                }
+                                if (h.paid >= h.expected) break;
+                            }
+                        }
+                        if (h.paid < h.expected && rolloverTransportPool > 0) {
+                            const needed = h.expected - h.paid;
+                            const cover = Math.min(needed, rolloverTransportPool);
+                            h.paid += cover;
+                            h.pending = Math.max(0, h.expected - h.paid);
+                            rolloverTransportPool -= cover;
+                            monthPaidTotal += cover;
+                            if (isElapsed) {
+                                monthlyPending -= cover;
+                            }
+                        }
+                    }
+                });
+
                 // 2. Allocate transport fee chronologically
                 let directTransport = transportPaidForMonth[m] || 0;
                 const transportExpected = transportMonthlyFare > 0 ? transportMonthlyFare : Math.round(directTransport);
@@ -1781,18 +2141,43 @@ router.get('/due-list', async (req, res) => {
                 }
 
                 let transportShortfall = Math.max(0, transportExpected - transportAllocated);
-                if (transportShortfall > 0 && rolloverTransportPool > 0) {
+                if (transportShortfall > 0 && rolloverTransportPool > 0 && canUsePoolGeneric) {
                     const fromTransportPool = Math.min(transportShortfall, Math.round(rolloverTransportPool));
                     transportAllocated += fromTransportPool;
                     rolloverTransportPool = Math.max(0, rolloverTransportPool - fromTransportPool);
                     transportShortfall = Math.max(0, transportExpected - transportAllocated);
                 }
 
-                // If generic money for THIS month is still remaining, it can cover transport shortfall in THIS month
                 if (transportShortfall > 0 && currentMonthGenericMoney > 0) {
                     const extraTransport = Math.min(transportShortfall, Math.round(currentMonthGenericMoney));
                     transportAllocated += extraTransport;
                     currentMonthGenericMoney = Math.max(0, currentMonthGenericMoney - extraTransport);
+                    transportShortfall = Math.max(0, transportExpected - transportAllocated);
+                }
+
+                if (transportShortfall > 0 && canUsePoolGeneric) {
+                    for (const otherHead of monthlyExpectedBreakdown) {
+                        if ((headRolloverPool[otherHead.name] || 0) > 0) {
+                            const cover = Math.min(transportShortfall, headRolloverPool[otherHead.name]);
+                            transportAllocated += cover;
+                            headRolloverPool[otherHead.name] -= cover;
+                            transportShortfall -= cover;
+                            if (transportShortfall <= 0) break;
+                        }
+                    }
+                }
+
+                if (transportShortfall > 0 && poolGeneric > 0 && canUsePoolGeneric) {
+                    const extraTransport = Math.min(transportShortfall, Math.round(poolGeneric));
+                    transportAllocated += extraTransport;
+                    poolGeneric = Math.max(0, poolGeneric - extraTransport);
+                    transportShortfall = Math.max(0, transportExpected - transportAllocated);
+                }
+
+                // If this month had extra generic money left over, roll it forward into poolGeneric for subsequent months
+                if (currentMonthGenericMoney > 0) {
+                    poolGeneric += currentMonthGenericMoney;
+                    currentMonthGenericMoney = 0;
                 }
 
                 transportAllocated = Math.round(transportAllocated);
@@ -1831,7 +2216,7 @@ router.get('/due-list', async (req, res) => {
             const totalExpected = expectedOneTimeTotal + (monthlyFeeAmountValue * elapsedMonths.length) + (transportMonthlyFare * elapsedMonths.length);
             const totalPaid = actualOneTimePaid + actualMonthlyPaid + actualTransportPaid + actualPrevDuesPaid;
             const advancePaid = Math.max(0, totalPaid - (previousSessionDue + expectedOneTimeTotal + (monthlyFeeAmountValue + transportMonthlyFare) * elapsedMonths.length));
-            const advanceBalance = Math.round(excessPrevDuesPaid + rolloverTransportPool + Object.values(headRolloverPool).reduce((s, v) => s + v, 0));
+            const advanceBalance = Math.round(poolGeneric + rolloverTransportPool + Object.values(headRolloverPool).reduce((s, v) => s + v, 0));
 
             // Determine target month breakdown for currentMonth fields
             const targetMonth = elapsedMonths[elapsedMonths.length - 1];

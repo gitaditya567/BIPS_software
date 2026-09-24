@@ -1452,11 +1452,19 @@ const Fees: React.FC = () => {
             if (selectedMonths.length === 0) return false;
             return selectedMonths.every(m => isHeadPaidForMonth(headName, m));
         }
+
+        // Check ledger one-time status first if available
+        if (studentLedger && studentLedger.oneTimeStatus && studentLedger.oneTimeStatus.length > 0) {
+            const ot = studentLedger.oneTimeStatus.find((o: any) => o.name?.trim().toLowerCase() === headName.trim().toLowerCase());
+            if (ot) {
+                return Math.round(ot.pending || 0) <= 0;
+            }
+        }
         
         return studentHistory.some(r => {
             if (r.status !== 'APPROVED') return false;
             
-            const parts = r.feeHead.split('==>');
+            const parts = (r.feeHead || '').split('==>');
             if (parts.length < 2) return false;
             
             const headsPart = parts[1];
@@ -1755,6 +1763,15 @@ const Fees: React.FC = () => {
                     const unpaidHeads: string[] = [];
                     
                     const checkIsHeadPaidForMonth = (headName: string, month: string) => {
+                        if (ledgerRes.data?.monthlyStatus) {
+                            const mStatus = ledgerRes.data.monthlyStatus.find((ms: any) => ms.month.trim().toLowerCase() === month.trim().toLowerCase());
+                            if (mStatus && mStatus.heads) {
+                                const hStatus = mStatus.heads.find((h: any) => h.name.trim().toLowerCase() === headName.trim().toLowerCase());
+                                if (hStatus) {
+                                    return Math.round(hStatus.pending || 0) <= 0;
+                                }
+                            }
+                        }
                         return mappedHistory.some((r: any) => {
                             if (r.status !== 'APPROVED') return false;
                             let paidMonths = [r.month?.trim()];
@@ -1762,7 +1779,7 @@ const Fees: React.FC = () => {
                                 paidMonths = r.feeHead.split('==>')[0].split(',').map((m: string) => m.trim());
                             }
                             if (!paidMonths.includes(month)) return false;
-                            const parts = r.feeHead.split('==>');
+                            const parts = (r.feeHead || '').split('==>');
                             const headsPart = parts.length > 1 ? parts[1] : parts[0];
                             const headNames = headsPart.split('||').map((hn: string) => hn.split(':')[0].trim());
                             return headNames.includes(headName);
@@ -1770,6 +1787,15 @@ const Fees: React.FC = () => {
                     };
 
                     const checkIsTransportPaidForMonth = (month: string) => {
+                        if (ledgerRes.data?.monthlyStatus) {
+                            const mStatus = ledgerRes.data.monthlyStatus.find((ms: any) => ms.month.trim().toLowerCase() === month.trim().toLowerCase());
+                            if (mStatus && mStatus.heads) {
+                                const tStatus = mStatus.heads.find((h: any) => h.name.toLowerCase().includes('transport') || h.name.toLowerCase().includes('bus'));
+                                if (tStatus) {
+                                    return Math.round(tStatus.pending || 0) <= 0;
+                                }
+                            }
+                        }
                         const shortToFull: Record<string, string> = {
                             'Jan': 'January', 'Feb': 'February', 'Mar': 'March',
                             'Apr': 'April', 'May': 'May', 'Jun': 'June',
@@ -1785,7 +1811,7 @@ const Fees: React.FC = () => {
                             }
                             const normalizedPaidMonths = paidMonths.map(m => shortToFull[m] || m);
                             if (!normalizedPaidMonths.includes(normalizedMonth)) return false;
-                            return r.feeHead.includes('Transport');
+                            return (r.feeHead || '').toLowerCase().includes('transport');
                         });
                     };
 
@@ -1806,9 +1832,18 @@ const Fees: React.FC = () => {
                                 unpaidHeads.push(h.name);
                             }
                         } else {
+                            if (ledgerRes.data?.oneTimeStatus) {
+                                const ot = ledgerRes.data.oneTimeStatus.find((o: any) => o.name?.trim().toLowerCase() === h.name.trim().toLowerCase());
+                                if (ot) {
+                                    if (Math.round(ot.pending || 0) > 0) {
+                                        unpaidHeads.push(h.name);
+                                    }
+                                    return;
+                                }
+                            }
                             const isPaid = mappedHistory.some((r: any) => {
                                 if (r.status !== 'APPROVED') return false;
-                                const parts = r.feeHead.split('==>');
+                                const parts = (r.feeHead || '').split('==>');
                                 const headsPart = parts.length > 1 ? parts[1] : parts[0];
                                 const headNames = headsPart.split('||').map((hn: string) => hn.split(':')[0].trim());
                                 return headNames.includes(h.name);
@@ -3066,6 +3101,12 @@ const Fees: React.FC = () => {
             const activeBilledMonths = selectedMonths.filter(m => !isMonthPaid(m));
             const monthsToRecord = activeBilledMonths.length > 0 ? activeBilledMonths : selectedMonths;
 
+            const latestApproved = (studentHistory || []).find((r: any) => r.status === 'APPROVED');
+            const targetDueMonth = studentLedger?.monthlyStatus?.find((m: any) => !m.isPaid && Number(m.pending || 0) > 0)?.month 
+                || latestApproved?.month 
+                || monthsToRecord[0] 
+                || 'April';
+
             const payload = {
                 studentId: student.id,
                 admissionNo: student.admissionNo,
@@ -3076,10 +3117,10 @@ const Fees: React.FC = () => {
                 discountReason: isPending ? 'Requested Discount' : (Number(discount) > 0 ? 'Direct Discount' : ''),
                 feeHead: feeHeadValue,
                 paymentMode,
-                month: pendingDues > 0 ? (monthsToRecord[0] || 'April') : monthsToRecord[0], // Primary month for grouping
+                month: pendingDues > 0 ? targetDueMonth : (monthsToRecord[0] || 'April'), // Primary month for grouping
                 year: new Date().getFullYear().toString(),
                 submittedBy: user?.name || 'User',
-                remark: remark || (pendingDues > 0 ? 'Clearance of Outstanding Previous Dues' : '')
+                remark: remark || (pendingDues > 0 ? `Clearance of Outstanding Previous Dues (For ${targetDueMonth})` : '')
             };
 
             if (paymentMode === 'PayU') {
@@ -3089,9 +3130,9 @@ const Fees: React.FC = () => {
                     totalFee: Number(totalFee),
                     discount: Number(discount),
                     feeHead: feeHeadValue,
-                    month: monthsToRecord[0] || 'April',
+                    month: pendingDues > 0 ? targetDueMonth : (monthsToRecord[0] || 'April'),
                     year: new Date().getFullYear().toString(),
-                    remark: remark || 'Paid via PayU Online Gateway',
+                    remark: remark || (pendingDues > 0 ? `Clearance of Outstanding Previous Dues (For ${targetDueMonth})` : 'Paid via PayU Online Gateway'),
                     customerName: student.name,
                     customerEmail: 'student@school.com',
                     customerPhone: '9999999999',

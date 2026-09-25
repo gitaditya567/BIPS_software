@@ -330,20 +330,7 @@ export async function getStudentFeeLedger(studentId: string) {
             return Math.max(0, (headShortfall + transShortfall) - alreadyAllocatedGeneric);
         };
 
-        // 2. Check if a specific target month is designated and has an unallocated monthly shortfall
-        const targetMonth = (p.month && allMonths.includes(p.month)) ? p.month : (p.feeHead ? allMonths.find(m => p.feeHead!.includes(m)) : null);
-        if (targetMonth) {
-            const monthShortfall = getMonthShortfall(targetMonth);
-            if (monthShortfall > 0) {
-                const toMonth = Math.min(monthShortfall, unallocatedDues);
-                genericMonthlyPaidForMonth[targetMonth] = (genericMonthlyPaidForMonth[targetMonth] || 0) + toMonth;
-                actualMonthlyPaid += toMonth;
-                unallocatedDues -= toMonth;
-            }
-        }
-        if (unallocatedDues <= 0) return;
-
-        // 3. Settle any billed one-time heads with shortfall
+        // 2. Settle any billed one-time heads with shortfall first (e.g. unpaid balances on previous receipts)
         oneTimeExpectedBreakdown.forEach(ot => {
             if (unallocatedDues <= 0) return;
             const currentPaid = oneTimePaidForHead[ot.name] || 0;
@@ -358,6 +345,19 @@ export async function getStudentFeeLedger(studentId: string) {
                 }
             }
         });
+        if (unallocatedDues <= 0) return;
+
+        // 3. Check if a specific target month is designated and has an unallocated monthly shortfall
+        const targetMonth = (p.month && allMonths.includes(p.month)) ? p.month : (p.feeHead ? allMonths.find(m => p.feeHead!.includes(m)) : null);
+        if (targetMonth) {
+            const monthShortfall = getMonthShortfall(targetMonth);
+            if (monthShortfall > 0) {
+                const toMonth = Math.min(monthShortfall, unallocatedDues);
+                genericMonthlyPaidForMonth[targetMonth] = (genericMonthlyPaidForMonth[targetMonth] || 0) + toMonth;
+                actualMonthlyPaid += toMonth;
+                unallocatedDues -= toMonth;
+            }
+        }
         if (unallocatedDues <= 0) return;
 
         // 4. Settle earliest unpaid months chronologically
@@ -1973,18 +1973,6 @@ router.get('/due-list', async (req, res) => {
                 }
                 if (unallocatedDues <= 0) return;
 
-                const targetMonth = (p.month && allMonths.includes(p.month)) ? p.month : (p.feeHead ? allMonths.find(m => p.feeHead!.includes(m)) : null);
-                if (targetMonth) {
-                    const monthShortfall = getMonthShortfall(targetMonth);
-                    if (monthShortfall > 0) {
-                        const toMonth = Math.min(monthShortfall, unallocatedDues);
-                        genericMonthlyPaidForMonth[targetMonth] = (genericMonthlyPaidForMonth[targetMonth] || 0) + toMonth;
-                        actualMonthlyPaid += toMonth;
-                        unallocatedDues -= toMonth;
-                    }
-                }
-                if (unallocatedDues <= 0) return;
-
                 oneTimeBreakdown.forEach(ot => {
                     if (unallocatedDues <= 0) return;
                     const currentPaid = oneTimePaidForHead[ot.name] || 0;
@@ -1999,6 +1987,18 @@ router.get('/due-list', async (req, res) => {
                         }
                     }
                 });
+                if (unallocatedDues <= 0) return;
+
+                const targetMonth = (p.month && allMonths.includes(p.month)) ? p.month : (p.feeHead ? allMonths.find(m => p.feeHead!.includes(m)) : null);
+                if (targetMonth) {
+                    const monthShortfall = getMonthShortfall(targetMonth);
+                    if (monthShortfall > 0) {
+                        const toMonth = Math.min(monthShortfall, unallocatedDues);
+                        genericMonthlyPaidForMonth[targetMonth] = (genericMonthlyPaidForMonth[targetMonth] || 0) + toMonth;
+                        actualMonthlyPaid += toMonth;
+                        unallocatedDues -= toMonth;
+                    }
+                }
                 if (unallocatedDues <= 0) return;
 
                 for (const m of allMonths) {

@@ -1352,8 +1352,11 @@ const Fees: React.FC = () => {
                 }
             }
         }
-        const struct = feeStructure.find(s => s.className === selectedClass);
-        const expected = struct?.fees?.[headName] || 0;
+        const struct = feeStructure.find(s => s.className?.trim().toLowerCase() === selectedClass?.trim().toLowerCase());
+        if (!struct || !struct.fees) return false;
+
+        const feeKey = Object.keys(struct.fees).find(k => k.trim().toLowerCase() === headName.trim().toLowerCase());
+        const expected = feeKey ? (struct.fees[feeKey] || 0) : 0;
         if (expected <= 0) return true;
         return Math.round(getPaidAmountForHeadAndMonth(headName, month)) >= Math.round(expected);
     };
@@ -1383,23 +1386,23 @@ const Fees: React.FC = () => {
         }
 
         // 2. Otherwise compute from fee structure and student history
-        const struct = feeStructure.find(s => s.className === selectedClass);
-        if (!struct) return false;
+        const struct = feeStructure.find(s => s.className?.trim().toLowerCase() === selectedClass?.trim().toLowerCase());
+        if (!struct || !struct.fees) return false;
         
         const currentStudent = students.find(s => s.admissionNo === admissionNo);
         
         const monthlyHeads = feeHeads.filter(h => {
             const isMonthly = h.type && h.type.toLowerCase().includes('month');
             if (!isMonthly) return false;
-            if ((struct.fees?.[h.name] || 0) <= 0) return false;
+            const feeKey = Object.keys(struct.fees).find(k => k.trim().toLowerCase() === h.name.trim().toLowerCase());
+            const amount = feeKey ? (struct.fees[feeKey] || 0) : 0;
+            if (amount <= 0) return false;
             if (currentStudent && isFeeExempt(currentStudent, h)) return false;
             return true;
         });
 
         const isGeneralPaid = monthlyHeads.length === 0 || monthlyHeads.every(h => {
-            const expectedAmt = struct.fees?.[h.name] || 0;
-            const paidAmt = getPaidAmountForHeadAndMonth(h.name, month);
-            return Math.round(paidAmt) >= Math.round(expectedAmt);
+            return isHeadPaidForMonth(h.name, month);
         });
 
         if (currentStudent?.transportStopId || isTransportEnabled) {
@@ -1668,6 +1671,7 @@ const Fees: React.FC = () => {
     ) => {
         try {
             setLoadingLedger(true);
+            setStudentLedger(null);
             const res = await axios.get(`/erp-api/fees/history/${studentId}`);
             const mappedHistory = res.data.map((r: any) => ({
                 ...r,
@@ -1865,6 +1869,35 @@ const Fees: React.FC = () => {
 
                     setSelectedFees(unpaidHeads);
                 }
+            } else if (!autoSelect) {
+                const months = ['April','May','June','July','August','September','October','November','December','January','February','March'];
+                const firstUnpaid = months.find(m => {
+                    const mStatus = ledgerRes.data?.monthlyStatus?.find((ms: any) => ms.month.trim().toLowerCase() === m.toLowerCase());
+                    return mStatus ? (!mStatus.isPaid && Math.round(mStatus.pending || 0) > 0) : true;
+                }) || 'April';
+
+                setSelectedMonth(firstUnpaid);
+                setSelectedMonths([firstUnpaid]);
+
+                const targetClass = mappedHistory[0]?.className || selectedClass;
+                const struct = feeStructure.find(s => s.className?.trim().toLowerCase() === (targetClass || '').trim().toLowerCase());
+                const unpaidHeads: string[] = [];
+                if (struct && struct.fees) {
+                    feeHeads.filter(h => h.type === 'Monthly').forEach(h => {
+                        const feeKey = Object.keys(struct.fees).find(k => k.trim().toLowerCase() === h.name.trim().toLowerCase());
+                        const amount = feeKey ? (struct.fees[feeKey] || 0) : 0;
+                        if (amount > 0) {
+                            const isExempt = isFeeExempt(students.find(s => s.id === studentId), h);
+                            if (!isExempt) {
+                                unpaidHeads.push(h.name);
+                            }
+                        }
+                    });
+                }
+                if (hasTr) {
+                    unpaidHeads.push('Transport Fee');
+                }
+                setSelectedFees(unpaidHeads);
             }
         } catch (err) {
             console.error('Failed to fetch history:', err);

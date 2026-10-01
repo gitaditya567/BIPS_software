@@ -3,9 +3,9 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import {
     LayoutDashboard, Users, BookOpen, Wallet, Calendar,
     LogOut, Shield, Bus, FileText, GraduationCap,
-    Bell, IndianRupee, Settings, Download, Smartphone, X
+    Bell, IndianRupee, Settings, X,
+    ChevronsLeft, ChevronsRight
 } from 'lucide-react';
-import { usePWAInstall } from '../hooks/usePWAInstall';
 
 // ─── Role accent colors & labels ────────────────────────────────────────────
 const ROLE_META: Record<string, { label: string; color: string; bg: string }> = {
@@ -52,17 +52,26 @@ const ROLE_DEFAULT_IDS: Record<string, string[]> = {
     STUDENT:   ['dashboard','profile','fees','attendance','notice'],
 };
 
+// ─── Sidebar sections (links render grouped in this order) ───────────────────
+const NAV_GROUPS: { title: string; ids: string[] }[] = [
+    { title: 'Overview',       ids: ['dashboard'] },
+    { title: 'Academics',      ids: ['students', 'teachers', 'classes', 'my-classes', 'profile', 'attendance', 'marks', 'report-card'] },
+    { title: 'Finance',        ids: ['fees', 'expenses'] },
+    { title: 'Administration', ids: ['transport', 'tc', 'roles', 'service-record', 'settings'] },
+    { title: 'Communication',  ids: ['notice'] },
+];
+
 interface SidebarProps {
-    onOpenInstallModal?: () => void;
     isOpen?: boolean;
     onClose?: () => void;
+    collapsed?: boolean;
+    onToggleCollapse?: () => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ onOpenInstallModal, isOpen, onClose }) => {
+const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, collapsed, onToggleCollapse }) => {
     const [role, setRole] = useState('ADMIN');
     const [permissions, setPermissions] = useState<Record<string, string[]>>({});
     const [userObj, setUserObj] = useState<any>(null);
-    const { isInstalled, isIOS, promptInstall } = usePWAInstall();
     const navigate = useNavigate();
 
     const loadPermissions = () => {
@@ -117,12 +126,18 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenInstallModal, isOpen, onClose }
 
     const meta = ROLE_META[role] || ROLE_META['ADMIN'];
 
+    const groupedIds = new Set(NAV_GROUPS.flatMap(g => g.ids));
+    const sections = [
+        ...NAV_GROUPS.map(g => ({ title: g.title, items: links.filter(l => g.ids.includes(l.id)) })),
+        { title: 'More', items: links.filter(l => !groupedIds.has(l.id)) },
+    ].filter(sec => sec.items.length > 0);
+
     return (
-        <div className={`sidebar ${isOpen ? 'open' : ''}`} style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+        <aside className={`sidebar ${isOpen ? 'open' : ''} ${collapsed ? 'collapsed' : ''}`} aria-label="Main navigation">
 
             {/* ── Logo Header ── */}
-            <div style={{
-                padding: '1.5rem 1.25rem',
+            <div className="sidebar-logo-header" style={{
+                padding: '1.25rem 1.25rem',
                 borderBottom: '1px solid rgba(255,255,255,0.08)',
                 flexShrink: 0,
                 display: 'flex',
@@ -145,11 +160,20 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenInstallModal, isOpen, onClose }
                             flexShrink: 0
                         }}
                     />
-                    <div style={{ minWidth: 0 }}>
+                    <div className="sidebar-label" style={{ minWidth: 0 }}>
                         <h2 style={{ margin: 0, fontWeight: '800', fontSize: '1.1rem', letterSpacing: '0.5px', color: 'white' }}>BIPS ERP</h2>
                         <p style={{ margin: 0, fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)', letterSpacing: '0.5px', textTransform: 'uppercase' }}>School Management</p>
                     </div>
                 </div>
+                {/* Desktop-only collapse toggle */}
+                <button
+                    className="sidebar-collapse-btn"
+                    onClick={onToggleCollapse}
+                    aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                    title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                >
+                    {collapsed ? <ChevronsRight size={18} /> : <ChevronsLeft size={18} />}
+                </button>
                 {/* Mobile-only close button */}
                 <button
                     className="sidebar-close-btn"
@@ -172,77 +196,44 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenInstallModal, isOpen, onClose }
                 </button>
             </div>
 
-            {/* ── Nav Links ── */}
-            <nav style={{
-                flex: 1,
-                overflowY: 'auto',
-                padding: '1.5rem 1rem 1rem', // Increased top padding to look balanced after removing the badge
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '0.25rem'
-            }}>
-                <p style={{ fontSize: '0.65rem', fontWeight: '700', color: 'rgba(255,255,255,0.35)', letterSpacing: '0.08em', textTransform: 'uppercase', margin: '0.5rem 0.5rem 0.75rem' }}>Navigation</p>
-                {links.map((link) => (
-                    <NavLink
-                        key={link.id}
-                        to={link.path}
-                        end={link.path.split('/').length <= 2}
-                        onClick={onClose}
-                        className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
-                        style={({ isActive }) => isActive ? {
-                            background: `linear-gradient(90deg, ${meta.color}, ${meta.color}cc)`,
-                            color: 'white',
-                            boxShadow: `0 4px 12px ${meta.color}40`
-                        } : {}}
-                    >
-                        {link.icon}
-                        <span>{link.name}</span>
-                    </NavLink>
+            {/* ── Nav Links (grouped into sections) ── */}
+            <nav className="sidebar-nav-list">
+                {sections.map(section => (
+                    <div key={section.title} className="nav-section">
+                        <p className="nav-section-title sidebar-label">{section.title}</p>
+                        <div className="nav-section-divider" aria-hidden="true" />
+                        {section.items.map(link => (
+                            <NavLink
+                                key={link.id}
+                                to={link.path}
+                                end={link.path.split('/').length <= 2}
+                                onClick={onClose}
+                                title={collapsed ? link.name : undefined}
+                                className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+                                style={({ isActive }) => isActive ? {
+                                    background: `linear-gradient(90deg, ${meta.color}, ${meta.color}cc)`,
+                                    color: 'white',
+                                    boxShadow: `0 4px 12px ${meta.color}40`
+                                } : {}}
+                            >
+                                <span className="nav-icon">{link.icon}</span>
+                                <span className="sidebar-label">{link.name}</span>
+                            </NavLink>
+                        ))}
+                    </div>
                 ))}
             </nav>
 
             {/* ── Footer Section (Logout & Copyright) ── */}
-            <div style={{ 
+            <div className="sidebar-footer" style={{ 
                 marginTop: 'auto',
                 borderTop: '1px solid rgba(255,255,255,0.06)',
                 background: 'rgba(0,0,0,0.15)',
-                padding: '1.25rem'
+                padding: '1rem 1.25rem'
             }}>
-                {/* ── PWA Install App Button ── */}
-                {!isInstalled && (
-                    <button
-                        onClick={() => {
-                            if (onOpenInstallModal) onOpenInstallModal();
-                            else promptInstall();
-                        }}
-                        style={{
-                            width: '100%', 
-                            display: 'flex', 
-                            alignItems: 'center', 
-                            justifyContent: 'center',
-                            gap: '0.75rem',
-                            padding: '0.75rem', 
-                            borderRadius: '10px',
-                            background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
-                            color: '#ffffff',
-                            border: 'none',
-                            cursor: 'pointer', 
-                            fontWeight: '700', 
-                            fontSize: '0.85rem',
-                            transition: 'all 0.3s ease',
-                            marginBottom: '0.75rem',
-                            boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)',
-                        }}
-                        onMouseOver={e => { (e.currentTarget as HTMLElement).style.transform = 'translateY(-2px)' }}
-                        onMouseOut={e => { (e.currentTarget as HTMLElement).style.transform = 'translateY(0)' }}
-                    >
-                        {isIOS ? <Smartphone size={16} /> : <Download size={16} />}
-                        <span>{isIOS ? 'Add to Home Screen' : 'Install App'}</span>
-                    </button>
-                )}
-
                 <button
                     onClick={handleLogout}
+                    title={collapsed ? 'Sign Out' : undefined}
                     style={{
                         width: '100%', 
                         display: 'flex', 
@@ -258,7 +249,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenInstallModal, isOpen, onClose }
                         fontWeight: '700', 
                         fontSize: '0.85rem',
                         transition: 'all 0.3s ease',
-                        marginBottom: '1.25rem'
+                        marginBottom: '0.9rem'
                     }}
                     onMouseOver={e => { 
                         (e.currentTarget as HTMLElement).style.background = 'rgba(239,68,68,0.15)';
@@ -270,10 +261,10 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenInstallModal, isOpen, onClose }
                     }}
                 >
                     <LogOut size={16} />
-                    <span>Sign Out</span>
+                    <span className="sidebar-label">Sign Out</span>
                 </button>
 
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+                <div className="sidebar-label" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                         <span style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.25)', fontWeight: '600' }}>© 2026</span>
                         <span style={{ width: '3px', height: '3px', borderRadius: '50%', background: 'rgba(255,255,255,0.1)' }}></span>
@@ -300,7 +291,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onOpenInstallModal, isOpen, onClose }
                     </div>
                 </div>
             </div>
-        </div>
+        </aside>
     );
 };
 

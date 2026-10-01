@@ -61,13 +61,11 @@ interface ParsedItem {
 
 function parsePaymentBreakdown(feeHead: string | null, month: string | null, amountPaid: number, discount: number, feeHeadsList: any[]): ParsedItem[] {
     const totalAmount = Math.round(amountPaid + discount);
-    if (!feeHead) {
-        return [];
-    }
-
     const items: ParsedItem[] = [];
 
-    if (feeHead.includes('==>') || feeHead.includes('||') || feeHead.includes(':')) {
+    if (!feeHead || !feeHead.trim()) {
+        // No breakdown at all - handled by the unallocated fallback below
+    } else if (feeHead.includes('==>') || feeHead.includes('||') || feeHead.includes(':')) {
         let monthsStr = "";
         let breakdownStr = feeHead;
 
@@ -96,19 +94,34 @@ function parsePaymentBreakdown(feeHead: string | null, month: string | null, amo
             }
         });
 
-        // Use proportional allocation for partial payments to distribute lump-sum deposits fairly
+        // Use proportional allocation for partial payments to distribute lump-sum deposits fairly.
+        // "Previous Dues" lines are settled last: legacy receipts listed them for reference only
+        // (e.g. "Tuition Fee: 1900 || Previous Dues: 900" with 1900 paid), so billed heads get paid first.
         const isPartial = totalItemsAmount > 0 && totalAmount < totalItemsAmount;
+        const isPrevDuesName = (n: string) => n.toLowerCase().includes('previous due');
+        const regularItemsTotal = tempItems.filter(t => !isPrevDuesName(t.name)).reduce((s, t) => s + t.amt, 0);
+        const prevDuesItemsTotal = totalItemsAmount - regularItemsTotal;
+        const regularBudget = Math.min(totalAmount, regularItemsTotal);
+        const groupBudget = { regular: regularBudget, prev: totalAmount - regularBudget };
+        const groupRemaining = { ...groupBudget };
+        const lastIdxOfGroup = {
+            regular: tempItems.map(t => !isPrevDuesName(t.name)).lastIndexOf(true),
+            prev: tempItems.map(t => isPrevDuesName(t.name)).lastIndexOf(true)
+        };
         let remainingToAllocate = totalAmount;
         tempItems.forEach((tempItem, idx) => {
             const { name, amt } = tempItem;
             let allocatedAmt = 0;
             if (isPartial) {
-                if (idx === tempItems.length - 1) {
-                    allocatedAmt = remainingToAllocate;
+                const group = isPrevDuesName(name) ? 'prev' : 'regular';
+                const groupTotal = group === 'prev' ? prevDuesItemsTotal : regularItemsTotal;
+                if (idx === lastIdxOfGroup[group]) {
+                    allocatedAmt = groupRemaining[group];
                 } else {
-                    allocatedAmt = Math.round((amt / totalItemsAmount) * totalAmount);
-                    allocatedAmt = Math.min(remainingToAllocate, allocatedAmt);
+                    allocatedAmt = groupTotal > 0 ? Math.round((amt / groupTotal) * groupBudget[group]) : 0;
+                    allocatedAmt = Math.min(groupRemaining[group], allocatedAmt);
                 }
+                groupRemaining[group] = Math.max(0, groupRemaining[group] - allocatedAmt);
             } else {
                 if (idx === tempItems.length - 1 && remainingToAllocate > amt) {
                     allocatedAmt = remainingToAllocate;
@@ -177,7 +190,31 @@ function parsePaymentBreakdown(feeHead: string | null, month: string | null, amo
         });
     }
 
+    // A receipt with money but no readable breakdown (e.g. feeHead " ==> ") must still be credited:
+    // treat it as an unallocated settlement so it clears the earliest outstanding dues.
+    if (totalAmount > 0 && items.length === 0) {
+        items.push({ name: 'Previous Dues', amount: totalAmount, months: [], isMonthly: false, isOneTime: false, isTransport: false, isPreviousDues: true });
+    }
+
     return items;
+}
+
+// Money collected against a monthly head that is not billable for this student (e.g. Tuition for RT /
+// third-child students) would otherwise vanish. Convert it into generic credit for that month.
+// The receipt discount is absorbed by such exempt heads first, so waived amounts never become credit.
+function creditExemptMonthlyItems(items: ParsedItem[], discount: number, monthlyExpectedBreakdown: { name: string }[], feeHeadsList: any[]): ParsedItem[] {
+    let discountLeft = discount || 0;
+    return items.map(item => {
+        if (item.isPreviousDues || item.isTransport || item.isOneTime) return item;
+        const matchedHead = feeHeadsList.find(h => h.type === 'Monthly' && (
+            item.name.toLowerCase().includes(h.name.toLowerCase()) ||
+            h.name.toLowerCase().includes(item.name.toLowerCase())
+        ));
+        if (!matchedHead || monthlyExpectedBreakdown.some(e => e.name === matchedHead.name)) return item;
+        const absorbed = Math.min(item.amount, discountLeft);
+        discountLeft -= absorbed;
+        return { ...item, name: 'Unallocated Credit', amount: item.amount - absorbed };
+    });
 }
 
 export async function getStudentFeeLedger(studentId: string) {
@@ -256,7 +293,7 @@ export async function getStudentFeeLedger(studentId: string) {
     const pendingDuesReceipts: { receipt: any; amount: number }[] = [];
 
     payments.forEach(p => {
-        const parsedItems = parsePaymentBreakdown(p.feeHead, p.month, p.amountPaid || 0, p.discount || 0, feeHeads);
+        const parsedItems = creditExemptMonthlyItems(parsePaymentBreakdown(p.feeHead, p.month, p.amountPaid || 0, p.discount || 0, feeHeads), p.discount || 0, monthlyExpectedBreakdown, feeHeads);
         parsedItems.forEach(item => {
             if (item.isPreviousDues) {
                 pendingDuesReceipts.push({ receipt: p, amount: item.amount });
@@ -785,7 +822,7 @@ router.get('/transport-due-list', async (req, res) => {
             const pendingDuesReceipts: { receipt: any; amount: number }[] = [];
 
             studentPayments.forEach(p => {
-                const parsedItems = parsePaymentBreakdown(p.feeHead, p.month, p.amountPaid || 0, p.discount || 0, feeHeads);
+                const parsedItems = creditExemptMonthlyItems(parsePaymentBreakdown(p.feeHead, p.month, p.amountPaid || 0, p.discount || 0, feeHeads), p.discount || 0, monthlyExpectedBreakdown, feeHeads);
                 parsedItems.forEach(item => {
                     if (item.isPreviousDues) {
                         pendingDuesReceipts.push({ receipt: p, amount: item.amount });
@@ -1888,7 +1925,7 @@ router.get('/due-list', async (req, res) => {
             const pendingDuesReceipts: { receipt: any; amount: number }[] = [];
 
             studentPayments.forEach(p => {
-                const parsedItems = parsePaymentBreakdown(p.feeHead, p.month, p.amountPaid || 0, p.discount || 0, feeHeads);
+                const parsedItems = creditExemptMonthlyItems(parsePaymentBreakdown(p.feeHead, p.month, p.amountPaid || 0, p.discount || 0, feeHeads), p.discount || 0, monthlyExpectedBreakdown, feeHeads);
                 parsedItems.forEach(item => {
                     if (item.isPreviousDues) {
                         pendingDuesReceipts.push({ receipt: p, amount: item.amount });

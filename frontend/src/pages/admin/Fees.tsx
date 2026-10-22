@@ -431,14 +431,16 @@ const Fees: React.FC = () => {
         }
 
         const prevBalance = fee.previousSessionDue || 0;
-        const expectedOneTime = fee.isRT ? 0 : (fee.expectedOneTime || 0);
+        // Backend already applies RT exemptions (RT students still pay Fee Card / Annual / Exam fees)
+        const expectedOneTime = fee.expectedOneTime || 0;
         const monthlyFee = fee.isRT ? 0 : (fee.monthlyFeeAmount || 0);
 
         const actualOneTimePaid = fee.actualOneTimePaid ?? 0;
         const actualMonthlyPaid = fee.actualMonthlyPaid ?? 0;
         const actualPrevDuesPaid = fee.actualPrevDuesPaid ?? 0;
 
-        const pendingOneTime = Math.max(0, expectedOneTime - actualOneTimePaid);
+        // Per-head pending from the backend: paying one head (or an unexpected head) must not hide another unpaid head
+        const pendingOneTime = fee.oneTimePending ?? Math.max(0, expectedOneTime - actualOneTimePaid);
         const adjustedPrevBalance = Math.max(0, prevBalance - actualPrevDuesPaid);
 
         const cumulativeMonthlyExpected = monthlyFee * monthsToCalculate;
@@ -2153,14 +2155,14 @@ const Fees: React.FC = () => {
                     "",
                     headers.join(","),
                     ...filtered.map((f, index) => {
-                        const exp = f.isRT ? 0 : (f.expectedOneTime || 0);
+                        const exp = (f.expectedOneTime || 0);
                         const paid = f.actualOneTimePaid || 0;
-                        const bal = Math.max(0, exp - paid);
+                        const bal = f.oneTimePending ?? Math.max(0, exp - paid);
 
                         let status = "Pending";
                         if (exp === 0) {
                             status = f.isRT ? "RT Student" : "No Fee Assigned";
-                        } else if (paid >= exp) {
+                        } else if (bal === 0) {
                             status = "Paid";
                         } else if (paid > 0) {
                             status = "Partially Paid";
@@ -5333,9 +5335,9 @@ const Fees: React.FC = () => {
                                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                                             <span>📋 Showing {filtered.length} student(s) for <strong>One-Time / Annual Fees</strong></span>
                                                             <div style={{ display: 'flex', gap: '1.5rem' }}>
-                                                                <span>Expected: <strong>₹{filtered.reduce((s: number, f: any) => s + (f.isRT ? 0 : (f.expectedOneTime || 0)), 0).toLocaleString()}</strong></span>
+                                                                <span>Expected: <strong>₹{filtered.reduce((s: number, f: any) => s + ((f.expectedOneTime || 0)), 0).toLocaleString()}</strong></span>
                                                                 <span style={{ color: '#059669' }}>Paid: <strong>₹{filtered.reduce((s: number, f: any) => s + (f.actualOneTimePaid || 0), 0).toLocaleString()}</strong></span>
-                                                                <span style={{ color: '#ef4444' }}>Pending: <strong>₹{filtered.reduce((s: number, f: any) => s + Math.max(0, (f.isRT ? 0 : (f.expectedOneTime || 0)) - (f.actualOneTimePaid || 0)), 0).toLocaleString()}</strong></span>
+                                                                <span style={{ color: '#ef4444' }}>Pending: <strong>₹{filtered.reduce((s: number, f: any) => s + (f.oneTimePending ?? Math.max(0, (f.expectedOneTime || 0) - (f.actualOneTimePaid || 0))), 0).toLocaleString()}</strong></span>
                                                             </div>
                                                         </div>
                                                     </td>
@@ -5368,9 +5370,9 @@ const Fees: React.FC = () => {
                                                 const dyn = calculateDynamicDues(fee, effectiveMonth);
                                                 
                                                 if (dueFeeTypeFilter === 'One-time Only') {
-                                                    const expectedAmt = fee.isRT ? 0 : (fee.expectedOneTime || 0);
+                                                    const expectedAmt = (fee.expectedOneTime || 0);
                                                     const paidAmt = fee.actualOneTimePaid || 0;
-                                                    const balanceAmt = Math.max(0, expectedAmt - paidAmt);
+                                                    const balanceAmt = fee.oneTimePending ?? Math.max(0, expectedAmt - paidAmt);
                                                     
                                                     let statusText = "Pending";
                                                     let statusColor = "#ef4444";
@@ -5380,7 +5382,7 @@ const Fees: React.FC = () => {
                                                         statusText = fee.isRT ? "RT Student" : "No Fee Assigned";
                                                         statusColor = "#059669";
                                                         statusBg = "#ecfdf5";
-                                                    } else if (paidAmt >= expectedAmt) {
+                                                    } else if (balanceAmt === 0) {
                                                         statusText = "Paid";
                                                         statusColor = "#059669";
                                                         statusBg = "#ecfdf5";
@@ -8070,9 +8072,9 @@ const Fees: React.FC = () => {
                         let totalPending = 0;
 
                         if (dueFeeTypeFilter === 'One-time Only') {
-                            totalExpected = filtered.reduce((s: number, f: any) => s + (f.isRT ? 0 : (f.expectedOneTime || 0)), 0);
+                            totalExpected = filtered.reduce((s: number, f: any) => s + ((f.expectedOneTime || 0)), 0);
                             totalPaid = filtered.reduce((s: number, f: any) => s + (f.actualOneTimePaid || 0), 0);
-                            totalPending = filtered.reduce((s: number, f: any) => s + Math.max(0, (f.isRT ? 0 : (f.expectedOneTime || 0)) - (f.actualOneTimePaid || 0)), 0);
+                            totalPending = filtered.reduce((s: number, f: any) => s + (f.oneTimePending ?? Math.max(0, (f.expectedOneTime || 0) - (f.actualOneTimePaid || 0))), 0);
                         } else if (dueCalculationMode === 'cumulative') {
                             const totalPrev = filtered.reduce((s: number, f: any) => s + Math.max(0, (f.previousSessionDue || 0) - (f.actualPrevDuesPaid || 0)), 0);
                             const totalMonthlyCumulative = filtered.reduce((s: number, f: any) => s + calculateDynamicDues(f, effectiveMonth).totalCumulativeDueTillMonth, 0);
@@ -8172,7 +8174,7 @@ const Fees: React.FC = () => {
                                             const dyn = calculateDynamicDues(fee, effectiveMonth);
 
                                             if (dueFeeTypeFilter === 'One-time Only') {
-                                                const expectedVal = fee.isRT ? 0 : (fee.expectedOneTime || 0);
+                                                const expectedVal = (fee.expectedOneTime || 0);
                                                 const paidVal = fee.actualOneTimePaid || 0;
                                                 const pendingVal = Math.max(0, expectedVal - paidVal);
 

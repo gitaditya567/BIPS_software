@@ -1378,6 +1378,30 @@ const Fees: React.FC = () => {
         return Math.round(getPaidAmountForHeadAndMonth('Transport Fee', month)) >= Math.round(fare);
     };
 
+    // Amount still due for a head in a month. Uses the ledger's pending so a partly paid month
+    // only asks for the remaining balance; falls back to the full fee when no ledger data exists.
+    const getLedgerHeadPending = (month: string, isTransport: boolean, headName = '') => {
+        const mStatus = studentLedger?.monthlyStatus?.find((ms: any) => ms.month.trim().toLowerCase() === month.trim().toLowerCase());
+        const h = mStatus?.heads?.find((x: any) => isTransport
+            ? (x.name.toLowerCase().includes('transport') || x.name.toLowerCase().includes('bus'))
+            : x.name.trim().toLowerCase() === headName.trim().toLowerCase());
+        return h && h.expected > 0 ? Math.max(0, Math.round(h.pending || 0)) : null;
+    };
+
+    const getHeadDueForMonths = (headName: string, months: string[], perMonthAmount: number) =>
+        months.reduce((sum, m) => {
+            if (isHeadPaidForMonth(headName, m)) return sum;
+            const pending = getLedgerHeadPending(m, false, headName);
+            return sum + (pending !== null ? Math.min(perMonthAmount, pending) : perMonthAmount);
+        }, 0);
+
+    const getTransportDueForMonths = (months: string[], fare: number) =>
+        months.reduce((sum, m) => {
+            if (isTransportPaidForMonth(m)) return sum;
+            const pending = getLedgerHeadPending(m, true);
+            return sum + (pending !== null ? Math.min(fare, pending) : fare);
+        }, 0);
+
     const isMonthPaid = (month: string) => {
         // 1. If studentLedger is available, check monthlyStatus
         if (studentLedger && studentLedger.monthlyStatus && studentLedger.monthlyStatus.length > 0) {
@@ -2848,17 +2872,14 @@ const Fees: React.FC = () => {
 
                 const subtotal = selectedFees.reduce((sum, feeName) => {
                     if (feeName === 'Transport Fee') {
-                        const unpaidTransportMonths = selectedMonths.filter(m => !isTransportPaidForMonth(m));
                         const fareVal = isTransportEnabled ? (Number(transportRows[0]?.price) || 0) : 0;
-                        const unpaidCount = unpaidTransportMonths.length;
-                        return sum + (fareVal * unpaidCount);
+                        return sum + getTransportDueForMonths(selectedMonths, fareVal);
                     }
                     const head = feeHeads.find(h => h.name === feeName);
                     const isMonthly = head?.type === 'Monthly';
                     const isExempt = currentStudent && head ? isFeeExempt(currentStudent, head) : false;
                     const amount = isExempt ? 0 : (struct.fees[feeName] || 0);
-                    const multiplier = isMonthly ? selectedMonths.filter(m => !isHeadPaidForMonth(feeName, m)).length : 1;
-                    return sum + (amount * multiplier);
+                    return sum + (isMonthly ? getHeadDueForMonths(feeName, selectedMonths, amount) : amount);
                 }, 0);
                 
                 const total = subtotal;
@@ -2869,7 +2890,7 @@ const Fees: React.FC = () => {
                 setPaidAmount(netPayable); // Auto-fill amount being paid
             }
         }
-    }, [selectedClass, selectedFees, discount, feeStructure, isTransportEnabled, transportRows, pendingDues, selectedMonths]);
+    }, [selectedClass, selectedFees, discount, feeStructure, isTransportEnabled, transportRows, pendingDues, selectedMonths, studentLedger]);
 
     const handleCollectOtherFee = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -3108,14 +3129,12 @@ const Fees: React.FC = () => {
                     const isMonthly = head?.type === 'Monthly';
                     const isExempt = currentStudent && head ? isFeeExempt(currentStudent, head) : false;
                     const amount = isExempt ? 0 : (struct?.fees?.[f] || 0);
-                    const unpaidCount = isMonthly ? selectedMonths.filter(m => !isHeadPaidForMonth(f, m)).length : 1;
-                    return `${f}: ${amount * unpaidCount}`;
+                    return `${f}: ${isMonthly ? getHeadDueForMonths(f, selectedMonths, amount) : amount}`;
                 });
                 if (isTransportEnabled && selectedFees.includes('Transport Fee')) {
                     transportRows.forEach(r => {
                         if (r.name && r.price) {
-                            const unpaidTransportCount = selectedMonths.filter(m => !isTransportPaidForMonth(m)).length;
-                            const amount = Number(r.price) * unpaidTransportCount;
+                            const amount = getTransportDueForMonths(selectedMonths, Number(r.price));
                             breakdownParts.push(`Transport (${r.name}): ${amount}`);
                         }
                     });
@@ -3534,7 +3553,7 @@ const Fees: React.FC = () => {
             const isExempt = currentStudent ? isFeeExempt(currentStudent, h) : false;
             const perMonthAmount = isExempt ? 0 : (struct?.fees?.[h.name] || 0);
             const unpaidMonths = selectedMonths.filter(m => !isHeadPaidForMonth(h.name, m));
-            const amount = perMonthAmount * unpaidMonths.length;
+            const amount = getHeadDueForMonths(h.name, selectedMonths, perMonthAmount);
             const isSelected = selectedFees.includes(h.name);
             const paid = isExempt ? true : (selectedMonths.length > 0 && unpaidMonths.length === 0);
             const partiallyPaid = !paid && selectedMonths.length > 0 && unpaidMonths.length < selectedMonths.length;
@@ -3557,7 +3576,7 @@ const Fees: React.FC = () => {
 
         if (showTransportFeeHead) {
             const unpaidTransportMonths = selectedMonths.filter(m => !isTransportPaidForMonth(m));
-            const amount = activeTransportFare * unpaidTransportMonths.length;
+            const amount = getTransportDueForMonths(selectedMonths, activeTransportFare);
             const isSelected = selectedFees.includes('Transport Fee');
             const paid = selectedMonths.length > 0 && unpaidTransportMonths.length === 0;
             const partiallyPaid = !paid && selectedMonths.length > 0 && unpaidTransportMonths.length < selectedMonths.length;
@@ -4464,7 +4483,7 @@ const Fees: React.FC = () => {
                                                             const isExempt = currentStudent && head ? isFeeExempt(currentStudent, head) : false;
                                                             const amount = isExempt ? 0 : (struct?.fees?.[feeName] || 0);
                                                             const unpaidCount = isMonthly ? selectedMonths.filter(m => !isHeadPaidForMonth(feeName, m)).length : 1;
-                                                            const itemTotal = amount * unpaidCount;
+                                                            const itemTotal = isMonthly ? getHeadDueForMonths(feeName, selectedMonths, amount) : amount;
                                                             return (
                                                                 <div key={feeName} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.25rem 0', borderBottom: '1px dashed #e2e8f0', fontSize: '0.8rem' }}>
                                                                     <span style={{ color: '#334155' }}>{feeName} {unpaidCount > 1 ? `(${unpaidCount}x)` : ''}</span>
@@ -4481,7 +4500,7 @@ const Fees: React.FC = () => {
                                                     return row.price && (
                                                         <div key={`trans-${idx}`} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.25rem 0', borderBottom: '1px dashed #e2e8f0', fontSize: '0.8rem', color: '#7c3aed' }}>
                                                             <span>Transport: {row.name || `Route ${idx+1}`} ({count} Mo)</span>
-                                                            <span style={{ fontWeight: '700' }}>₹{(Number(row.price) * count).toLocaleString()}</span>
+                                                            <span style={{ fontWeight: '700' }}>₹{getTransportDueForMonths(selectedMonths, Number(row.price)).toLocaleString()}</span>
                                                         </div>
                                                     );
                                                 })}
